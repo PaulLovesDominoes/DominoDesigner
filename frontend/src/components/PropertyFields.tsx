@@ -34,6 +34,11 @@ export function FieldLabel({
   );
 }
 
+/** A rule between groups of rows, for editors long enough to want sections. */
+export function Separator() {
+  return <hr className={styles.separator} />;
+}
+
 export function TextField({
   label,
   value,
@@ -179,6 +184,45 @@ export function CheckboxField({
           checked={value}
           onChange={(e) => onChange(e.target.checked)}
         />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A pull-down over a fixed set of string options. Like the other controls it
+ * holds no draft: `value` is the currently-selected option, driven entirely by
+ * the caller, so a value that changes underneath us (or a selection derived from
+ * some other field) is reflected without extra wiring.
+ */
+export function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: FieldProps & {
+  value: string;
+  options: readonly string[];
+  onChange: (value: string) => void;
+}) {
+  const id = useId();
+
+  return (
+    <div className={styles.field}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <div className={styles.control}>
+        <select
+          id={id}
+          className={styles.select}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );

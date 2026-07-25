@@ -10,6 +10,18 @@
   margin-top: 0;
 }
 
+/*
+ * Groups related rows. The browser default is a two-tone inset line that reads
+ * as a seam on this dark chrome, so it is replaced by a single hairline in the
+ * same color as the dialog's own rules. No bottom margin: the next .field's
+ * margin-top collapses with it and sets the gap below.
+ */
+.separator {
+  margin: 18px 0 0;
+  border: none;
+  border-top: 1px solid var(--color-border);
+}
+
 .label {
   color: var(--color-text-dim);
   text-align: right;
@@ -63,6 +75,23 @@
 
 .fieldDisabled .label {
   opacity: 0.6;
+}
+
+/* A pull-down. Same chrome as the text/number inputs above. */
+.select {
+  padding: 8px 10px;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--color-accent);
 }
 
 /* Checkbox sits where the input would, so the row lines up with its siblings. */

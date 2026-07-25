@@ -44,7 +44,7 @@ const clamp = (v: number, lo: number, hi: number) =>
  * Drag state is deliberately local: only the finished rectangle ever reaches
  * the store.
  */
-export default function RegionTool() {
+export default function CreateByRegionTool() {
   const activeTool = useStore((s) => s.activeTool);
   const editing = useStore((s) => s.editingDDObjectId !== null);
   const setTool = useStore((s) => s.setTool);

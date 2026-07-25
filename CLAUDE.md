@@ -95,8 +95,8 @@ reference or a primitive) must be wrapped in `useShallow`** (from `zustand/shall
 "Maximum update depth exceeded," and in a canvas component it takes the WebGL context down
 with it. `getDDObjectBounds` ([registry.ts](frontend/src/object-types/registry.ts)) is the one
 function in this codebase with that shape today, since every `bounds()` implementation returns
-a new object literal; `CameraRig.tsx` and `RegionTool.tsx` both subscribe to it and both need
-the wrapper. `s.ddObjects[id]` and similar direct reads are exempt — they return the store's own
+a new object literal; `CameraRig.tsx`, `CreateByRegionTool.tsx` and `SelectionTool.tsx` all
+subscribe to it and each needs the wrapper. `s.ddObjects[id]` and similar direct reads are exempt — they return the store's own
 stable reference, not a computed one.
 
 Screens are a registry, not a router: `ScreenId` -> component in `frontend/src/App.tsx`.
@@ -207,7 +207,7 @@ camera directly. It fits the view to whatever footprint the root DDObject's `bou
 (via `getDDObjectBounds`, shallow-subscribed so renames/recolors don't re-run the fit); if the
 root type declares no `bounds()` it warns once and leaves the camera at its defaults.
 `frameDDObject(id)` fits any DDObject that declares bounds — it is no longer a stub, though it
-is uncalled until a selection model exists to call it.
+is not yet wired to the selection model (nothing calls it on select).
 
 Note that drei's `<OrbitControls>` calls `invalidate()` on its own `change` event, so ordinary
 user pan/zoom repaints without CameraRig doing anything. Only imperative changes you make
@@ -270,8 +270,8 @@ per-domino editing.
 ### Element placement and creation
 
 Placement tools draw their element onto the build plane rather than dropping a default one.
-`designer/RegionTool.tsx` is **fully generic** — it imports no concrete DDObject type, only the
-registry — which makes it the pattern to copy alongside `Scene.tsx` and `CameraRig.tsx`:
+`designer/CreateByRegionTool.tsx` is **fully generic** — it imports no concrete DDObject type,
+only the registry — which makes it the pattern to copy alongside `Scene.tsx` and `CameraRig.tsx`:
 
 - It lives **inside** the `<Canvas>`, because a region has to be read in build-plane
   millimetres and a raycast gives exactly that — `event.point`'s world X/Y *are* build-plane
@@ -305,6 +305,44 @@ the root and opens its properties in **creating** mode, tracked by `creatingDDOb
 flag is the whole difference between creating and editing — **Cancel on a creation deletes the
 DDObject**, where Cancel on an edit rolls its properties back, and finishing either way returns
 the active tool to Select. There is no per-type creation logic in the store.
+
+### Selection and direct manipulation
+
+The store holds a single `selectedDDObjectId` (distinct from `activeTool`, which is the drawing
+tool). `designer/SelectionTool.tsx` is the canvas half and, like `CreateByRegionTool.tsx`, is
+**fully generic** — it manipulates any DDObject the registry reports as selectable-with-a-footprint
+and references no concrete type. It arms only for the Select tool with no dialog open, so it and
+`CreateByRegionTool` are mutually exclusive. It draws a light-gray overlay + border over the
+selected object's `bounds()`, offers **move** (drag the body) and **resize** (drag a corner/edge,
+with the opposite corner/edge anchored), and deletes on `Delete`. Selection also happens from the
+sidebar (`DDObjectsPanel` row click) and clears on a click that misses every object (an empty spot
+on the plane, off the plane via the `<Canvas onPointerMissed>`, blank sidebar space, or Escape).
+
+Two registry members drive it, alongside `bounds()`:
+
+- **`selectable?: boolean`** on the `DDObjectTypeDefinition` (default selectable; the root
+  `buildPlane` sets `false` — it is the world frame, not a movable object). Consumed via
+  `isDDObjectSelectable`.
+- **`setBounds?(ddObject, bounds): Partial<T> | undefined`** — the write path for move/resize, the
+  manipulation analogue of `createFromRegion`, resolved via `applyDDObjectBounds`. Per-type for the
+  same reason: each type maps a target rectangle onto its own position/size fields. `undefined`
+  means the target is too small/invalid and the tool discards that drag frame. `fieldElement`'s
+  implementation rounds through the field's `displayUnit` and runs `normalizeField`, and a **resize
+  forces `fixed_size` on** so the drag sticks (a pure move leaves it alone).
+
+Deliberate decisions a fresh session could otherwise reverse:
+
+- **Move/resize write live through `updateDDObject`**, with no snapshot — identical to how the
+  property editors preview, and consistent with **Delete being non-undoable** for now. When the
+  op/undo stack lands, these become operations.
+- **Move/resize are clamped to the build plane** (the tool clamps the target rect to the root's
+  `bounds()` before calling `setBounds`), matching how `CreateByRegionTool` clamps a new region.
+- **The overlay draws with `depthTest={false}` + a high `renderOrder`**, not a tall z, so it floats
+  over the standing dominoes without the generic tool needing to know how tall a domino is. Its
+  pick planes stay at low z and still work because dominoes are handler-less meshes that don't stop
+  the ray. During a drag a huge transparent catch-plane is mounted so pointer move/up keep arriving
+  when the cursor leaves the grabbed handle — the same role the placement tool's footprint plane
+  plays.
 
 ### Help system
 
@@ -356,8 +394,9 @@ otherwise "correct" backwards:
 - **`color` is a `"#rrggbb"` hex string** specifically because that is the shape color-picker
   controls consume directly — including the native `<input type="color">` that `ColorField`
   wraps, which is why no color-picker dependency was added.
-- **There is still no selection model.** The row menu acts on the DDObject whose ⋯ was clicked;
-  nothing is "selected", and `CameraApi.frameDDObject` remains a stub for when that changes.
+- **Selection exists now** (`selectedDDObjectId`, see *Selection and direct manipulation*), but
+  `CameraApi.frameDDObject` is still not called on select — framing a selected object is left for
+  later. The row ⋯ menu continues to act on its own DDObject independently of what is selected.
 
 ## Code style
 

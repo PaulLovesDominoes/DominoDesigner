@@ -66,6 +66,30 @@ export const getDDObjectBounds = (ddObject: DDObject): DDObjectBounds | undefine
 };
 
 /**
+ * Whether this DDObject can be selected and directly manipulated. A type opts
+ * out with `selectable: false` (the root BuildPlane does); callers that draw
+ * the selection overlay additionally require `getDDObjectBounds` to be defined.
+ */
+export const isDDObjectSelectable = (ddObject: DDObject): boolean =>
+  DD_OBJECT_TYPES[ddObject.type].selectable !== false;
+
+/**
+ * The store patch that makes `ddObject` occupy `bounds` (cursor move/resize), or
+ * undefined if its type declares no `setBounds`, or if `bounds` was too
+ * small/invalid. Takes the instance, and casts to undo the registry's type
+ * erasure, exactly like getDDObjectBounds.
+ */
+export const applyDDObjectBounds = (
+  ddObject: DDObject,
+  bounds: DDObjectBounds,
+): Partial<DDObject> | undefined => {
+  const setBounds = DD_OBJECT_TYPES[ddObject.type].setBounds as
+    | ((ddObject: DDObject, bounds: DDObjectBounds) => Partial<DDObject> | undefined)
+    | undefined;
+  return setBounds?.(ddObject, bounds);
+};
+
+/**
  * The creation patch for a region drawn on the build plane, or undefined if
  * this type doesn't support region placement, or if `region` was too
  * small/invalid for it. Cast as per getDDObjectBounds: indexing by a union

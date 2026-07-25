@@ -74,6 +74,23 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
    */
   bounds?(ddObject: T): DDObjectBounds | undefined;
   /**
+   * Whether instances of this type can be selected and directly manipulated on
+   * the canvas / in the hierarchy. Defaults to selectable; set false to opt out
+   * (the root BuildPlane does — it is the world frame, not a movable object).
+   * A type is only actually selectable when it also declares `bounds()`, since
+   * the selection overlay needs a footprint to draw.
+   */
+  selectable?: boolean;
+  /**
+   * Optional: realise a target footprint on this instance — the write path for
+   * cursor-based move and resize, the manipulation analogue of
+   * `createFromRegion`. Returns the store patch that makes the instance occupy
+   * `bounds`, or undefined if the target is too small/invalid (the manipulation
+   * tool then discards that drag frame, keeping the last valid state). Per-type
+   * because each type maps a rectangle onto its own position/size fields.
+   */
+  setBounds?(ddObject: T, bounds: DDObjectBounds): Partial<T> | undefined;
+  /**
    * Optional: how a region drawn on the build plane becomes an instance of
    * this type. Returns the creation patch (merged over create()'s defaults),
    * or undefined if the region is too small/invalid — the placement tool

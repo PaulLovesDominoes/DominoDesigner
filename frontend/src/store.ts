@@ -55,6 +55,12 @@ interface AppState {
   activeTool: ToolId;
   setTool: (tool: ToolId) => void;
 
+  // The DDObject the user has selected for direct manipulation on the canvas /
+  // in the hierarchy (null = nothing selected). Distinct from `activeTool`,
+  // which is the drawing tool. The root BuildPlane is never selectable.
+  selectedDDObjectId: DDObjectId | null;
+  selectDDObject: (id: DDObjectId | null) => void;
+
   // The build's DDObject hierarchy, indexed by DDObject id. `rootId` is the
   // BuildPlane; each DDObject with children lists their ids in `children`.
   ddObjects: Record<DDObjectId, DDObject>;
@@ -105,6 +111,9 @@ export const useStore = create<AppState>()((set, get) => ({
   activeTool: "select",
   setTool: (activeTool) => set({ activeTool }),
 
+  selectedDDObjectId: null,
+  selectDDObject: (selectedDDObjectId) => set({ selectedDDObjectId }),
+
   ...createInitialDDObjects(),
   createElement: (type, patch) =>
     set((s) => {
@@ -123,6 +132,8 @@ export const useStore = create<AppState>()((set, get) => ({
         editingDDObjectId: id,
         editingSnapshot: element,
         creatingDDObjectId: id,
+        // A fresh creation shouldn't leave a previous selection highlighted.
+        selectedDDObjectId: null,
       };
     }),
 
@@ -155,6 +166,10 @@ export const useStore = create<AppState>()((set, get) => ({
       const editingDeleted =
         s.editingDDObjectId !== null && doomed.has(s.editingDDObjectId);
 
+      // A selection on a deleted DDObject would dangle; clear it.
+      const selectionDeleted =
+        s.selectedDDObjectId !== null && doomed.has(s.selectedDDObjectId);
+
       return {
         ddObjects,
         ...(editingDeleted && {
@@ -162,6 +177,7 @@ export const useStore = create<AppState>()((set, get) => ({
           editingSnapshot: null,
           creatingDDObjectId: null,
         }),
+        ...(selectionDeleted && { selectedDDObjectId: null }),
       };
     }),
 

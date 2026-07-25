@@ -87,4 +87,6 @@ export const buildPlaneDefinition: DDObjectTypeDefinition<BuildPlaneDDObject> = 
   modeller: BuildPlaneModeller,
   // Origin is the plane's lower-left corner, so it sits at 0,0 by definition.
   bounds: ({ width, height }) => ({ x: 0, y: 0, width, height }),
+  // The plane is the world frame, not a movable object — never selectable.
+  selectable: false,
 };

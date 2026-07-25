@@ -145,6 +145,18 @@ function normalizeSize<T extends FieldSize>(field: T): T {
   };
 }
 
+/**
+ * A field given by a physical size but stored counts-authoritative: fit the
+ * counts to the size, then let the size shrink to exactly what those counts
+ * occupy. Two passes of the same relationship, so the field satisfies its own
+ * fixed_size === false invariant the instant it exists.
+ */
+function fitCountsThenSize<T extends FieldSize>(field: T): T {
+  const fitted = normalizeSize({ ...field, fixed_size: true });
+  return normalizeSize({ ...fitted, fixed_size: false });
+}
+
+
 /** normalizeSize specialised to a full field — the shape every write path but
  *  region-creation already has in hand. */
 export const normalizeField = (field: FieldElementDDObject): FieldElementDDObject =>
@@ -157,7 +169,7 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
   // Sized physically, with the counts left for normalizeField to fit — the same
   // path a drawn field takes.
   create: (id) =>
-    normalizeField({
+    fitCountsThenSize({
       id,
       type: "fieldElement",
       name: "Domino Field",
@@ -166,7 +178,7 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
       ...FIELD_DEFAULT_SPACING,
       width: 300,
       height: 250,
-      fixed_size: true,
+      fixed_size: false,
       position: { x: 0, y: 0 },
       displayWidth:0.300,
       displayHeight:0.250,
@@ -199,7 +211,7 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
     const newDispX = roundDisplay(fromMm(region.x, DEFAULT_DISPLAY_UNIT), DEFAULT_DISPLAY_UNIT);
     const newDispY = roundDisplay(fromMm(region.y, DEFAULT_DISPLAY_UNIT), DEFAULT_DISPLAY_UNIT);
 
-    const fitted = normalizeSize({
+    const fitted = fitCountsThenSize({
       width: toMm(newDispWidth, DEFAULT_DISPLAY_UNIT),
       height: toMm(newDispHeight, DEFAULT_DISPLAY_UNIT),
       displayWidth: newDispWidth,
@@ -213,13 +225,44 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
     if (fitted.rows < 1 || fitted.dominoes_per_row < 1) return undefined;
 
     return {
-      position: { 
-        x: toMm(newDispX, DEFAULT_DISPLAY_UNIT), 
-        y: toMm(newDispY, DEFAULT_DISPLAY_UNIT) 
+      position: {
+        x: toMm(newDispX, DEFAULT_DISPLAY_UNIT),
+        y: toMm(newDispY, DEFAULT_DISPLAY_UNIT)
       },
       displayPosition: { x: newDispX, y: newDispY },
       ...fitted,
     };
+  },
+
+  // Cursor move/resize: realise a target footprint on an existing field. Rounds
+  // through the field's own displayUnit and runs normalizeField, so it agrees
+  // with the editor and createFromRegion by construction. A resize (width or
+  // height changed) forces fixed_size ON so the drag sticks — otherwise the
+  // counts would reassert the old size; a pure move leaves fixed_size alone.
+  setBounds: (field, bounds) => {
+    const unit = field.displayUnit;
+    const resized = bounds.width !== field.width || bounds.height !== field.height;
+
+    const newDispWidth = roundDisplay(fromMm(bounds.width, unit), unit);
+    const newDispHeight = roundDisplay(fromMm(bounds.height, unit), unit);
+    const newDispX = roundDisplay(fromMm(bounds.x, unit), unit);
+    const newDispY = roundDisplay(fromMm(bounds.y, unit), unit);
+
+    const fitted = normalizeField({
+      ...field,
+      fixed_size: resized ? true : field.fixed_size,
+      width: toMm(newDispWidth, unit),
+      height: toMm(newDispHeight, unit),
+      displayWidth: newDispWidth,
+      displayHeight: newDispHeight,
+      position: { x: toMm(newDispX, unit), y: toMm(newDispY, unit) },
+      displayPosition: { x: newDispX, y: newDispY },
+    });
+    // Too small to hold a domino — discard this drag frame (min-size guard,
+    // exactly as createFromRegion does).
+    if (fitted.rows < 1 || fitted.dominoes_per_row < 1) return undefined;
+
+    return fitted;
   },
 };
 

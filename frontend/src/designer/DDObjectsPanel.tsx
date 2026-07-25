@@ -6,7 +6,7 @@ import {
 } from "@remixicon/react";
 
 import { useStore } from "../store";
-import { getDDObjectIcon } from "../object-types/registry";
+import { getDDObjectIcon, isDDObjectSelectable } from "../object-types/registry";
 import type { DDObjectId } from "../object-types/base";
 import DDObjectMenu from "./DDObjectMenu";
 import styles from "./DDObjectsPanel.module.css";
@@ -26,6 +26,8 @@ interface RowProps {
  */
 function ObjectRow({ ddObjectId, depth }: RowProps) {
   const ddObject = useStore((s) => s.ddObjects[ddObjectId]);
+  const selected = useStore((s) => s.selectedDDObjectId === ddObjectId);
+  const selectDDObject = useStore((s) => s.selectDDObject);
   const [expanded, setExpanded] = useState(true);
   // Anchor rect of the "more" button while its menu is open; null = closed.
   const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
@@ -36,13 +38,27 @@ function ObjectRow({ ddObjectId, depth }: RowProps) {
   const children = "children" in ddObject ? ddObject.children : [];
   const hasChildren = children.length > 0;
   const Icon = getDDObjectIcon(ddObject.type);
+  const selectable = isDDObjectSelectable(ddObject);
 
   const openMenu = (e: MouseEvent<HTMLButtonElement>) =>
     setMenuAnchor(e.currentTarget.getBoundingClientRect());
 
+  // Clicking the row selects the DDObject — except on the chevron/⋯ buttons,
+  // which keep their own behaviour (same closest("button") guard the properties
+  // dialog uses for its drag handle). Non-selectable types (the root plane) are
+  // inert.
+  const onRowClick = (e: MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    if (selectable) selectDDObject(ddObjectId);
+  };
+
   return (
     <>
-      <div className={styles.row} style={{ paddingLeft: depth * INDENT }}>
+      <div
+        className={`${styles.row} ${selected ? styles.selected : ""}`}
+        style={{ paddingLeft: depth * INDENT }}
+        onClick={onRowClick}
+      >
         {hasChildren ? (
           <button
             className={styles.chevron}
@@ -96,9 +112,17 @@ function ObjectRow({ ddObjectId, depth }: RowProps) {
  */
 export default function DDObjectsPanel() {
   const rootId = useStore((s) => s.rootId);
+  const selectDDObject = useStore((s) => s.selectDDObject);
 
   return (
-    <div className={styles.tree}>
+    <div
+      className={styles.tree}
+      // A click on the blank space below the rows (the container itself, not a
+      // row) deselects; row clicks select and don't reach here.
+      onClick={(e) => {
+        if (e.target === e.currentTarget) selectDDObject(null);
+      }}
+    >
       <ObjectRow ddObjectId={rootId} depth={0} />
     </div>
   );

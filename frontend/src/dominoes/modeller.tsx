@@ -153,7 +153,7 @@ export function DominoModeller({
     <group position={[position.x, position.y, 0]}>
       {/* An InstancedMesh's count is fixed at construction, so a resized field
           needs a fresh one — hence keying on capacity. */}
-      <instancedMesh key={capacity} ref={meshRef} args={[undefined, undefined, capacity]}>
+      <instancedMesh key={`fill-${capacity}`} ref={meshRef} args={[undefined, undefined, capacity]}>
         <boxGeometry args={[DOMINO_SIZE.thickness, DOMINO_SIZE.width, DOMINO_SIZE.length]} />
         <meshBasicMaterial />
       </instancedMesh>
@@ -161,7 +161,7 @@ export function DominoModeller({
           (it's one domino at the origin plus per-instance offsets the CPU never
           sees), so opt it out of frustum culling rather than let it vanish. */}
       <lineSegments
-        key={capacity}
+        key={`outline-${capacity}`}
         geometry={outlineGeometry}
         material={outlineMaterial}
         frustumCulled={false}

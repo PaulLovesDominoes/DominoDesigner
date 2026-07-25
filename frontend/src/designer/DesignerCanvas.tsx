@@ -4,7 +4,9 @@ import * as THREE from "three";
 
 import Scene from "./Scene";
 import CameraRig from "./CameraRig";
-import RegionTool from "./RegionTool";
+import CreateByRegionTool from "./CreateByRegionTool";
+import SelectionTool from "./SelectionTool";
+import { useStore } from "../store";
 
 /**
  * The 2D designer canvas. Orthographic top-down view, 1 three.js unit = 1 mm.
@@ -18,12 +20,24 @@ export default function DesignerCanvas() {
       frameloop="demand"
       camera={{ position: [0, 0, 100], near: 0.1, far: 2000, zoom: 0.4 }}
       style={{ position: "absolute", inset: 0 }}
+      // A left-click that hits no mesh at all (the dark area outside the build
+      // plane) deselects, mirroring a click on the plane's empty surface. Read
+      // imperatively so it doesn't re-render the canvas; gated to the select
+      // tool with no dialog open, matching SelectionTool's own guard.
+      onPointerMissed={(e) => {
+        if (e.button !== 0) return;
+        const s = useStore.getState();
+        if (s.activeTool === "select" && s.editingDDObjectId === null) {
+          s.selectDDObject(null);
+        }
+      }}
     >
       <color attach="background" args={["#14161a"]} />
 
       <Scene />
 
-      <RegionTool />
+      <CreateByRegionTool />
+      <SelectionTool />
 
       <OrbitControls
         makeDefault

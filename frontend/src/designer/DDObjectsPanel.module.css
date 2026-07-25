@@ -3,6 +3,9 @@
   flex-direction: column;
   gap: 1px;
   user-select: none;
+  /* Fill the panel so there is blank space below the rows to click-to-deselect. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .row {
@@ -13,10 +16,18 @@
   border-radius: 4px;
   color: var(--color-text);
   white-space: nowrap;
+  cursor: default;
 }
 
 .row:hover {
   background: var(--color-chrome-2);
+}
+
+/* Selected DDObject: accent tint plus a left rule, distinct from :hover. */
+.selected,
+.selected:hover {
+  background: var(--color-accent-dim);
+  box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
 .chevron {

@@ -14,7 +14,7 @@ export interface ToolDef {
   /**
    * If set, this tool draws a region on the build plane to create an instance
    * of this type (via the type's createFromRegion). Omit for tools that don't
-   * place an element — RegionTool only arms for a tool that declares one.
+   * place an element — CreateByRegionTool only arms for a tool that declares one.
    */
   elementType?: DDObjectType;
 }
