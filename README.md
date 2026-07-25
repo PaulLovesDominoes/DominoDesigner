@@ -10,6 +10,12 @@ This is **v1**: the expandable app framework — a title bar with menu-driven sc
 and a Designer screen with a working pan/zoom 2D canvas, an extensible object model for the
 build's contents, and live property editing.
 
+Future plans:
+- Domino inventory & colors
+- Domino-by-domino editing
+  .  Individual selection, region selection, setting colors, deleting dominoes
+  .  All with undo/redo
+
 ## Conventions
 
 -  Units internally are all millimeters, this includes the three.js units.
@@ -63,11 +69,13 @@ frontend (`npm run build`) after changing frontend code.
   mouse-wheel zoom and right-drag pan. A toolbar with Select/Field tools and Zoom In / Zoom
   Out / Reset Zoom buttons. The build's contents are a hierarchy of **DDObjects** rooted at
   the build plane, shown in a left sidebar as a live tree (type icon + name) that updates as
-  objects are created. Choosing the **Field** tool and dragging a rectangle on the plane
-  places a domino field there; each field draws its dominoes as one instanced mesh with
+  objects are created. 
+- **Field** tool - allows dragging a rectangle on the plane to 
+  place a domino field there; each field draws its dominoes as one instanced mesh with
   line-segment edge outlines. A row's **⋯** menu opens **Properties** for any object —
   including the build plane's own size and color — in a modeless dialog that previews edits
   live on the canvas, with Save/Cancel.
+- **Undo/Redo** - Currently scoped to the element level (not yet for individual domino editing)
 - **Settings** — currently empty. The build-plane size it once held now lives on the
   build-plane object itself, edited through its properties. Nothing is persisted; every load
   starts a fresh default project.

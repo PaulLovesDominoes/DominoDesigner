@@ -263,9 +263,9 @@ per-instance `aOffset`/`aScale` attributes placed by an `onBeforeCompile`-patche
 `LineBasicMaterial`. Same one-draw-call, no-per-object-allocation budget as the fill; the
 outline's attributes come only from positions/visibility, so a color change never touches them.
 
-Not built yet, and designed to land on this substrate: an operation/command model with
-undo/redo stacks, and raycast picking (`intersection.instanceId` → domino index) to enable
-per-domino editing.
+DDObject-level undo/redo exists now (see *Undo/redo*). Not built yet, and designed to land on
+this same `Operation` union when it does: a domino-level operation kind, and raycast picking
+(`intersection.instanceId` → domino index) to enable per-domino editing.
 
 ### Element placement and creation
 
@@ -332,9 +332,10 @@ Two registry members drive it, alongside `bounds()`:
 
 Deliberate decisions a fresh session could otherwise reverse:
 
-- **Move/resize write live through `updateDDObject`**, with no snapshot — identical to how the
-  property editors preview, and consistent with **Delete being non-undoable** for now. When the
-  op/undo stack lands, these become operations.
+- **Move/resize write live through `updateDDObject`**, with no snapshot of their own — identical
+  to how the property editors preview. Both move/resize and Delete are undoable now (see
+  *Undo/redo*); the "before" state undo needs is captured by the caller (`dragRef.current`'s
+  `originalObject` here, `editingSnapshot` for the dialog), not by `updateDDObject` itself.
 - **Move/resize are clamped to the build plane** (the tool clamps the target rect to the root's
   `bounds()` before calling `setBounds`), matching how `CreateByRegionTool` clamps a new region.
 - **The overlay draws with `depthTest={false}` + a high `renderOrder`**, not a tall z, so it floats
@@ -343,6 +344,54 @@ Deliberate decisions a fresh session could otherwise reverse:
   the ray. During a drag a huge transparent catch-plane is mounted so pointer move/up keep arriving
   when the cursor leaves the grabbed handle — the same role the placement tool's footprint plane
   plays.
+
+### Undo/redo
+
+`store.ts` holds a single unified `undoStack`/`redoStack` over a discriminated `Operation`
+union (`create` / `delete` / `transform` / `properties`) — one stack for every DDObject-level
+change, not a separate stack per subsystem. Two independent histories can't preserve true
+chronological ordering without effectively rebuilding one timeline anyway, so this stays one
+stack even though only DDObject-level operations exist today; a future domino-level operation
+kind is meant to join the same union rather than get a stack of its own.
+
+Every variant stores **whole-DDObject snapshots**, never per-field patches — `fieldElement`'s
+`normalizeSize` coupling (width/height ↔ counts via `fixed_size`) makes fields too
+interdependent to diff/reapply piecemeal, so undo/redo always restores (or removes/reinserts)
+a complete object.
+
+The commit points are deliberately **not** where the data first changes — `updateDDObject`
+fires continuously (once per keystroke in the properties dialog, once per pointermove frame
+during a canvas drag) and is never itself a commit, matching how it was already just the shared
+write primitive before undo/redo existed. The real commits are `saveProperties()` (covers both
+a properties-edit session and a creation session, branching on whether `creatingDDObjectId` was
+set — a creation records the finished object as a `create`, never a chain of the edits made
+while its just-opened dialog was still up) and `SelectionTool`'s `endDrag(false)` (a successful
+drop, via the new `recordTransform` action). `removeDDObject` is the one exception: already
+atomic at both its call sites (`SelectionTool`'s Delete key, `DDObjectMenu`'s Delete button), so
+it records directly. Both commit points diff before/after (`ddObjectsEqual`, a `JSON.stringify`
+comparison — cheap since it only ever runs at a commit, never per-frame) and push nothing when
+nothing actually changed, so opening-and-Saving a dialog with no edits, or a zero-distance drag,
+adds no undo entry. Cancel (`cancelProperties`) and Escape-mid-drag were already fully
+self-healing before undo/redo existed and still need no entries: nothing was ever pushed for a
+cancelled session, so there is nothing to invert.
+
+**Re-entrancy is the load-bearing constraint**: applying history (`undo()`/`redo()`) must never
+itself record a new operation, or inverting a `create` would push a `delete`, corrupting the
+stacks. The fix is a raw/public split, not a suppression flag — `removeDDObject` is a thin
+recording wrapper around the non-exported `applyRemoveDDObject` (and its inverse,
+`applyInsertDDObjects`); `undo()`/`redo()` call these raw helpers directly and never the public
+action, so there's no flag for a future instrumented action to forget to check. This is also
+why `cancelProperties`'s discard-on-cancel-a-creation path calls `applyRemoveDDObject` directly
+rather than the public `removeDDObject`: a cancelled creation never had a `create` pushed for
+it, so discarding it through the recording path would push a dangling `delete` with nothing to
+pair against, and undoing that later would resurrect an object the user explicitly discarded.
+
+A `delete` operation stores the whole removed subtree (`collectSubtree`'s doomed set, snapshot
+before removal) plus the *external* parent and index only the subtree's root sat at — a
+descendant's own parent link is already correct in its own snapshot, so undo only needs to
+splice the root back into its live parent's `children` at the original index (not append),
+which is what keeps deleting a middle sibling and undoing it from moving it to the end of the
+list.
 
 ### Help system
 

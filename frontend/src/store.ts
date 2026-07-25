@@ -36,6 +36,143 @@ function collectSubtree(
   return into;
 }
 
+/**
+ * One undoable action. Whole-DDObject snapshots throughout (never per-field
+ * patches) — fieldElement's normalizeSize coupling makes fields too
+ * interdependent to diff/reapply piecemeal. A future domino-level operation
+ * kind can join this union without restructuring the stack around it.
+ */
+type Operation =
+  | { kind: "create"; ddObject: DDObject; parentId: DDObjectId }
+  | { kind: "delete"; subtree: DDObject[]; parentId: DDObjectId; index: number }
+  | { kind: "transform"; before: DDObject; after: DDObject }
+  | { kind: "properties"; before: DDObject; after: DDObject };
+
+// Undo entries are capped so a long session can't grow the stack unbounded.
+const HISTORY_LIMIT = 100;
+
+/** Push a new operation and clear the redo stack, per standard undo/redo semantics. */
+function pushOperation(undoStack: Operation[], op: Operation) {
+  return { undoStack: [...undoStack, op].slice(-HISTORY_LIMIT), redoStack: [] as Operation[] };
+}
+
+// DDObjects are plain JSON-safe data, so whole-object equality is cheap. This
+// only ever runs at a commit point (dialog Save, drag pointer-up) — never per
+// keystroke/frame — so a no-op session (nothing actually changed) pushes nothing.
+function ddObjectsEqual(a: DDObject, b: DDObject): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+interface RemovalResult {
+  // Nested (rather than flattened with subtree/parentId/index alongside it) so
+  // call sites can spread `result.patch` straight into a store update without
+  // ever destructuring-to-discard the bookkeeping fields.
+  patch: {
+    ddObjects: Record<DDObjectId, DDObject>;
+    editingDDObjectId?: null;
+    editingSnapshot?: null;
+    creatingDDObjectId?: null;
+    selectedDDObjectId?: null;
+  };
+  subtree: DDObject[];
+  parentId: DDObjectId;
+  index: number;
+}
+
+/**
+ * Pure computation of removing `id` and its subtree: the doomed DDObjects (so
+ * undo can restore them), the parent `id` sat in and its index there (so undo
+ * reinserts at the same spot instead of appending), and the resulting
+ * ddObjects/editing/selection patch. Returns undefined if `id` is the root or
+ * already gone.
+ *
+ * This is the raw half of removeDDObject, shared with undo/redo. Applying
+ * history must never itself record a new operation — the public removeDDObject
+ * action below calls this and additionally pushes a `delete` entry; undo/redo
+ * call this directly and never push anything from it, which is what keeps
+ * inverting a `create` (a raw removal) from being mistaken for a user-initiated
+ * delete.
+ */
+function applyRemoveDDObject(
+  ddObjects: Record<DDObjectId, DDObject>,
+  rootId: DDObjectId,
+  editingDDObjectId: DDObjectId | null,
+  selectedDDObjectId: DDObjectId | null,
+  id: DDObjectId,
+): RemovalResult | undefined {
+  if (id === rootId || !ddObjects[id]) return undefined;
+
+  const doomedSet = collectSubtree(ddObjects, id);
+  const subtree = Array.from(doomedSet).map((did) => ddObjects[did]);
+
+  // The external parent is whichever surviving object lists `id` as a child.
+  let parentId: DDObjectId = rootId;
+  let index = 0;
+  for (const ddObject of Object.values(ddObjects)) {
+    if (doomedSet.has(ddObject.id)) continue;
+    if ("children" in ddObject && ddObject.children.includes(id)) {
+      parentId = ddObject.id;
+      index = ddObject.children.indexOf(id);
+      break;
+    }
+  }
+
+  const nextDDObjects: Record<DDObjectId, DDObject> = {};
+  for (const [key, ddObject] of Object.entries(ddObjects)) {
+    if (doomedSet.has(key)) continue;
+    nextDDObjects[key] =
+      "children" in ddObject && ddObject.children.includes(id)
+        ? { ...ddObject, children: ddObject.children.filter((c) => c !== id) }
+        : ddObject;
+  }
+
+  const editingDeleted = editingDDObjectId !== null && doomedSet.has(editingDDObjectId);
+  const selectionDeleted = selectedDDObjectId !== null && doomedSet.has(selectedDDObjectId);
+
+  return {
+    patch: {
+      ddObjects: nextDDObjects,
+      ...(editingDeleted && {
+        editingDDObjectId: null,
+        editingSnapshot: null,
+        creatingDDObjectId: null,
+      }),
+      ...(selectionDeleted && { selectedDDObjectId: null }),
+    },
+    subtree,
+    parentId,
+    index,
+  };
+}
+
+/**
+ * Inverse of applyRemoveDDObject: reinsert `objects` (subtree[0] is the one the
+ * caller cares about) under `parentId`, at `index` if given or appended
+ * otherwise. Create's redo always appends (createElement only ever appends);
+ * delete's undo passes the original index so a deleted sibling reappears in the
+ * middle of a list rather than jumping to the end.
+ */
+function applyInsertDDObjects(
+  ddObjects: Record<DDObjectId, DDObject>,
+  objects: DDObject[],
+  parentId: DDObjectId,
+  index?: number,
+): Record<DDObjectId, DDObject> {
+  const parent = ddObjects[parentId];
+  if (!parent || !("children" in parent) || objects.length === 0) return ddObjects;
+
+  const children = [...parent.children];
+  if (index === undefined) children.push(objects[0].id);
+  else children.splice(index, 0, objects[0].id);
+
+  const next: Record<DDObjectId, DDObject> = {
+    ...ddObjects,
+    [parentId]: { ...parent, children },
+  };
+  for (const ddObject of objects) next[ddObject.id] = ddObject;
+  return next;
+}
+
 interface AppState {
   // Which screen is showing.
   screen: ScreenId;
@@ -75,6 +212,21 @@ interface AppState {
   updateDDObject: (id: DDObjectId, patch: Partial<DDObject>) => void;
   // Delete a DDObject and its descendants. The root plane cannot be deleted.
   removeDDObject: (id: DDObjectId) => void;
+
+  // Unified undo/redo history over DDObject-level operations (create, delete,
+  // transform, properties). Not persisted, like the rest of the store. A future
+  // domino-level operation kind would join the same Operation union rather than
+  // getting a stack of its own.
+  undoStack: Operation[];
+  redoStack: Operation[];
+  undo: () => void;
+  redo: () => void;
+  // Records a completed canvas drag (move/resize) as one undo step. Called by
+  // SelectionTool at a successful drop; it only records (it never touches
+  // ddObjects itself, since the drag's live updateDDObject calls already left
+  // the final state in place), and no-ops if before/after are equal (a
+  // zero-distance drag).
+  recordTransform: (before: DDObject, after: DDObject) => void;
 
   // DDObject whose properties dialog is open (null = closed); one at a time.
   editingDDObjectId: DDObjectId | null;
@@ -148,38 +300,119 @@ export const useStore = create<AppState>()((set, get) => ({
 
   removeDDObject: (id) =>
     set((s) => {
+      const result = applyRemoveDDObject(
+        s.ddObjects,
+        s.rootId,
+        s.editingDDObjectId,
+        s.selectedDDObjectId,
+        id,
+      );
       // The build plane is the hierarchy's root; there is nowhere to put its
       // children, so it is undeletable (the row menu greys the entry out too).
-      if (id === s.rootId || !s.ddObjects[id]) return {};
-
-      const doomed = collectSubtree(s.ddObjects, id);
-      const ddObjects: Record<DDObjectId, DDObject> = {};
-      for (const [key, ddObject] of Object.entries(s.ddObjects)) {
-        if (doomed.has(key)) continue;
-        ddObjects[key] =
-          "children" in ddObject && ddObject.children.includes(id)
-            ? { ...ddObject, children: ddObject.children.filter((c) => c !== id) }
-            : ddObject;
-      }
-
-      // A dialog left open on a deleted DDObject would put it back on cancel.
-      const editingDeleted =
-        s.editingDDObjectId !== null && doomed.has(s.editingDDObjectId);
-
-      // A selection on a deleted DDObject would dangle; clear it.
-      const selectionDeleted =
-        s.selectedDDObjectId !== null && doomed.has(s.selectedDDObjectId);
-
+      // undefined also covers an id that's already gone — nothing to record.
+      if (!result) return {};
       return {
-        ddObjects,
-        ...(editingDeleted && {
-          editingDDObjectId: null,
-          editingSnapshot: null,
-          creatingDDObjectId: null,
+        ...result.patch,
+        ...pushOperation(s.undoStack, {
+          kind: "delete",
+          subtree: result.subtree,
+          parentId: result.parentId,
+          index: result.index,
         }),
-        ...(selectionDeleted && { selectedDDObjectId: null }),
       };
     }),
+
+  undoStack: [],
+  redoStack: [],
+  undo: () => {
+    const s = get();
+    const op = s.undoStack[s.undoStack.length - 1];
+    if (!op) return;
+    const undoStack = s.undoStack.slice(0, -1);
+    const redoStack = [...s.redoStack, op];
+
+    switch (op.kind) {
+      case "create": {
+        const result = applyRemoveDDObject(
+          s.ddObjects,
+          s.rootId,
+          s.editingDDObjectId,
+          s.selectedDDObjectId,
+          op.ddObject.id,
+        );
+        if (!result) {
+          set({ undoStack, redoStack });
+          break;
+        }
+        set({ ...result.patch, undoStack, redoStack, selectedDDObjectId: null });
+        break;
+      }
+      case "delete": {
+        const ddObjects = applyInsertDDObjects(s.ddObjects, op.subtree, op.parentId, op.index);
+        set({
+          ddObjects,
+          undoStack,
+          redoStack,
+          selectedDDObjectId: op.subtree.length === 1 ? op.subtree[0].id : null,
+        });
+        break;
+      }
+      case "transform":
+      case "properties":
+        set({
+          ddObjects: { ...s.ddObjects, [op.before.id]: op.before },
+          undoStack,
+          redoStack,
+          selectedDDObjectId: op.before.id,
+        });
+        break;
+    }
+  },
+  redo: () => {
+    const s = get();
+    const op = s.redoStack[s.redoStack.length - 1];
+    if (!op) return;
+    const redoStack = s.redoStack.slice(0, -1);
+    const undoStack = [...s.undoStack, op];
+
+    switch (op.kind) {
+      case "create": {
+        const ddObjects = applyInsertDDObjects(s.ddObjects, [op.ddObject], op.parentId);
+        set({ ddObjects, undoStack, redoStack, selectedDDObjectId: op.ddObject.id });
+        break;
+      }
+      case "delete": {
+        const result = applyRemoveDDObject(
+          s.ddObjects,
+          s.rootId,
+          s.editingDDObjectId,
+          s.selectedDDObjectId,
+          op.subtree[0].id,
+        );
+        if (!result) {
+          set({ undoStack, redoStack });
+          break;
+        }
+        set({ ...result.patch, undoStack, redoStack, selectedDDObjectId: null });
+        break;
+      }
+      case "transform":
+      case "properties":
+        set({
+          ddObjects: { ...s.ddObjects, [op.after.id]: op.after },
+          undoStack,
+          redoStack,
+          selectedDDObjectId: op.after.id,
+        });
+        break;
+    }
+  },
+  recordTransform: (before, after) =>
+    set((s) =>
+      ddObjectsEqual(before, after)
+        ? {}
+        : pushOperation(s.undoStack, { kind: "transform", before, after }),
+    ),
 
   editingDDObjectId: null,
   editingSnapshot: null,
@@ -187,22 +420,69 @@ export const useStore = create<AppState>()((set, get) => ({
   openProperties: (id) =>
     set((s) => ({ editingDDObjectId: id, editingSnapshot: s.ddObjects[id] ?? null })),
   saveProperties: () =>
-    set((s) => ({
-      editingDDObjectId: null,
-      editingSnapshot: null,
-      creatingDDObjectId: null,
-      // Finishing a creation ends the tool's placement mode. A plain edit
-      // leaves whatever tool is active alone.
-      ...(s.creatingDDObjectId ? { activeTool: "select" as ToolId } : {}),
-    })),
+    set((s) => {
+      const base = {
+        editingDDObjectId: null,
+        editingSnapshot: null,
+        creatingDDObjectId: null,
+        // Finishing a creation ends the tool's placement mode. A plain edit
+        // leaves whatever tool is active alone.
+        ...(s.creatingDDObjectId ? { activeTool: "select" as ToolId } : {}),
+      };
+
+      // A creation's "before" state is "didn't exist" — always record, and
+      // record the whole final object rather than each edit made while the
+      // dialog was open (Cancel would have discarded them all anyway).
+      if (s.creatingDDObjectId) {
+        const ddObject = s.ddObjects[s.creatingDDObjectId];
+        if (!ddObject) return base;
+        return {
+          ...base,
+          ...pushOperation(s.undoStack, { kind: "create", ddObject, parentId: s.rootId }),
+        };
+      }
+
+      // A plain edit: diff the pre-dialog snapshot against the live object.
+      // Equal means nothing actually changed — Save-with-no-edits records nothing.
+      if (s.editingDDObjectId && s.editingSnapshot) {
+        const live = s.ddObjects[s.editingDDObjectId];
+        if (live && !ddObjectsEqual(s.editingSnapshot, live)) {
+          return {
+            ...base,
+            ...pushOperation(s.undoStack, {
+              kind: "properties",
+              before: s.editingSnapshot,
+              after: live,
+            }),
+          };
+        }
+      }
+
+      return base;
+    }),
   cancelProperties: () => {
     const creatingId = get().creatingDDObjectId;
 
-    // Cancelling a creation discards the DDObject outright — it was never saved.
-    // removeDDObject already detaches it from its parent and closes the dialog.
+    // Cancelling a creation discards the DDObject outright — it was never
+    // saved, so no `create` was ever pushed either. This must go through the
+    // raw removal helper, not the public removeDDObject, or it would push a
+    // dangling `delete` with nothing to pair against — Undo would then
+    // resurrect an object the user explicitly discarded.
     if (creatingId) {
-      get().removeDDObject(creatingId);
-      set({ creatingDDObjectId: null, activeTool: "select" });
+      set((s) => {
+        const result = applyRemoveDDObject(
+          s.ddObjects,
+          s.rootId,
+          s.editingDDObjectId,
+          s.selectedDDObjectId,
+          creatingId,
+        );
+        return {
+          ...(result?.patch ?? {}),
+          creatingDDObjectId: null,
+          activeTool: "select" as ToolId,
+        };
+      });
       return;
     }
 

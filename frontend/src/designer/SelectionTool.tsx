@@ -174,6 +174,13 @@ export default function SelectionTool() {
       // Put the whole object back — counts may have changed during the drag,
       // so restoring just the bounds would leave them inconsistent.
       useStore.getState().updateDDObject(d.originalObject.id, d.originalObject);
+    } else if (d) {
+      // A successful drop: the live updateDDObject calls during the drag
+      // already left the final state in place, so this only records the
+      // gesture as one undo step (store no-ops on a zero-distance drag).
+      const s = useStore.getState();
+      const current = s.ddObjects[d.originalObject.id];
+      if (current) s.recordTransform(d.originalObject, current);
     }
     dragRef.current = null;
     setDragging(false);

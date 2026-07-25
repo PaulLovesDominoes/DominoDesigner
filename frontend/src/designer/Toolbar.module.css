@@ -16,6 +16,14 @@
   gap: 4px;
 }
 
+/* Wraps two or more .group clusters together so .bar's space-between treats
+   them as one right-hand block, with visible separation between clusters. */
+.clusterGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .iconBtn {
   display: inline-flex;
   align-items: center;
@@ -32,6 +40,16 @@
 .iconBtn:hover {
   background: var(--color-chrome-2);
   color: var(--color-text);
+}
+
+.iconBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.iconBtn:disabled:hover {
+  background: transparent;
+  color: var(--color-text-dim);
 }
 
 .active {
