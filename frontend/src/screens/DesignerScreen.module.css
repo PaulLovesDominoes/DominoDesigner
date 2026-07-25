@@ -1,0 +1,33 @@
+.screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvasArea {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Placement mode: the "+" pointer, promising a click-drag on the plane. */
+.canvasAreaPlacing {
+  cursor: crosshair;
+}
+
+/*
+ * Lifts the canvas above the properties dialog's scrim (z-index 50) so edits
+ * are previewed undimmed while the rest of the chrome darkens. None of the
+ * ancestors here establish a stacking context, so this competes at the root.
+ */
+.canvasAreaRaised {
+  z-index: 60;
+}

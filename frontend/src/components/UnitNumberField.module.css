@@ -1,0 +1,49 @@
+.control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.input {
+  width: 70px;
+  padding: 8px 20px 8px 10px;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.input:disabled {
+  color: var(--color-text-dim);
+  background: transparent;
+  cursor: default;
+}
+
+.unitSelect {
+  padding: 6px 2px 6px 6px;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.unitSelect:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.unitSelect:disabled {
+  color: var(--color-text-dim);
+  cursor: default;
+}

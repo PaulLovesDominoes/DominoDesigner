@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+
+# Node / Vite
+node_modules/
+frontend/dist/
+.vite/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Environment / editor
+.venv/
+venv/
+.env
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,84 @@
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  user-select: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.row:hover {
+  background: var(--color-chrome-2);
+}
+
+.chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--color-text-dim);
+  cursor: pointer;
+}
+
+.chevron:hover {
+  color: var(--color-text);
+}
+
+/* Keeps leaf rows aligned with rows that have a chevron. */
+.chevronSpacer {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.icon {
+  flex: 0 0 auto;
+  color: var(--color-text-dim);
+}
+
+.name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Revealed on hover (and while its menu is open, or when tabbed to). */
+.more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.row:hover .more,
+.more:focus-visible,
+.moreOpen {
+  opacity: 1;
+}
+
+.more:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}

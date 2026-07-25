@@ -1,0 +1,107 @@
+.field {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.field:first-child {
+  margin-top: 0;
+}
+
+.label {
+  color: var(--color-text-dim);
+  text-align: right;
+  min-width: 0;
+}
+
+.control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.control input[type="text"],
+.control input[type="number"] {
+  width: 110px;
+  padding: 8px 10px;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.control input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/* Reserve room on the right for the overlaid Steppers (see Steppers.module.css). */
+.control input.stepInput {
+  padding-right: 20px;
+}
+
+.unit {
+  color: var(--color-text-dim);
+  font-size: 13px;
+  width: 20px;
+}
+
+/*
+ * A derived value: shown so the result stays visible, but not editable. Reads
+ * as inert rather than broken — dimmed, no focus ring, default cursor.
+ */
+.control input:disabled {
+  color: var(--color-text-dim);
+  background: transparent;
+  cursor: default;
+}
+
+.fieldDisabled .label {
+  opacity: 0.6;
+}
+
+/* Checkbox sits where the input would, so the row lines up with its siblings. */
+.checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+/* Hex value reads as data, so it gets a monospace treatment. */
+.control input.hex {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: lowercase;
+  width: 84px;
+}
+
+/* The native swatch draws its own chrome; strip it back to a flat tile. */
+.swatch {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.swatch::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+.swatch::-moz-color-swatch {
+  border: none;
+  border-radius: 4px;
+}

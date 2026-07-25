@@ -1,0 +1,55 @@
+:root {
+  --titlebar-height: 50px;
+  --toolbar-height: 44px;
+  --sidebar-width: 240px;
+
+  --color-chrome: #2b2f36;
+  --color-chrome-2: #343941;
+  --color-border: #454b54;
+  --color-text: #e7e9ec;
+  --color-text-dim: #a2a8b2;
+  --color-accent: #4f8cff;
+  --color-accent-dim: #2f4a7a;
+  --color-canvas-bg: #14161a;
+  --color-input-bg: #1f2329;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: var(--color-text);
+  background: var(--color-canvas-bg);
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Region below the title bar that hosts the active screen. */
+.app-content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}

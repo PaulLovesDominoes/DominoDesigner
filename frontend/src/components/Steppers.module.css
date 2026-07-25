@@ -1,0 +1,42 @@
+/*
+ * Wrapper an input + Steppers share: the input reserves right padding for the
+ * buttons, which overlay its right edge absolutely. Any field using Steppers
+ * puts its <input> and <Steppers> inside this.
+ */
+.numberWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.steppers {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  bottom: 1px;
+  display: flex;
+  flex-direction: column;
+  width: 18px;
+}
+
+.stepper {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.stepper:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-chrome-2);
+}
+
+.stepper:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

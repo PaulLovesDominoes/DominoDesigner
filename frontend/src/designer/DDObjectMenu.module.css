@@ -1,0 +1,45 @@
+/* Transparent click-catcher, same trick as HamburgerMenu. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+}
+
+/*
+ * Fixed rather than absolute: the sidebar scrolls (overflow-y: auto), so an
+ * absolutely positioned menu would be clipped by it.
+ */
+.menu {
+  position: fixed;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--color-chrome-2);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 30;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--color-chrome);
+}
+
+.item:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
