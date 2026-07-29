@@ -1,0 +1,112 @@
+.cellInput,
+.cellSelect {
+  width: 100%;
+  padding: 4px 6px;
+  background: var(--color-input-bg);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.cellSelect {
+  cursor: pointer;
+}
+
+.cellInput:focus,
+.cellSelect:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.cellInput:disabled,
+.cellSelect:disabled {
+  color: var(--color-text-dim);
+  background: transparent;
+  cursor: default;
+}
+
+.truncate {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.colorCell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Hex value reads as data, so it gets a monospace treatment (matches
+   PropertyFields.module.css's .hex). */
+.hexInput {
+  width: 74px;
+  padding: 4px 6px;
+  background: var(--color-input-bg);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--color-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: lowercase;
+  flex: 0 0 auto;
+}
+
+.hexInput:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.hexInput:disabled {
+  color: var(--color-text-dim);
+  background: transparent;
+  cursor: default;
+}
+
+/* The native swatch draws its own chrome; strip it back to a flat tile
+   (matches PropertyFields.module.css's .swatch, sized for a table row). */
+.swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.swatch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.swatch::-webkit-color-swatch-wrapper {
+  padding: 1px;
+}
+
+.swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.swatch::-moz-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.activeToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  color: var(--color-text-dim);
+  cursor: pointer;
+}
+
+.activeToggle.on {
+  color: #4caf50;
+}

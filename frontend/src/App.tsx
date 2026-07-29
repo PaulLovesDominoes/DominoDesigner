@@ -3,7 +3,7 @@ import type { ComponentType } from "react";
 import PropertiesDialog from "./components/PropertiesDialog";
 import TitleBar from "./components/TitleBar";
 import DesignerScreen from "./screens/DesignerScreen";
-import SettingsScreen from "./screens/SettingsScreen";
+import DominoInventoryScreen from "./screens/DominoInventoryScreen";
 import { useStore } from "./store";
 import type { ScreenId } from "./types";
 
@@ -11,7 +11,7 @@ import type { ScreenId } from "./types";
 // in HamburgerMenu.
 const SCREENS: Record<ScreenId, ComponentType> = {
   designer: DesignerScreen,
-  settings: SettingsScreen,
+  dominoInventory: DominoInventoryScreen,
 };
 
 export default function App() {

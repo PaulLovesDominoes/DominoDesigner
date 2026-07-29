@@ -1,0 +1,115 @@
+.tableWrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.table th,
+.table td {
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--color-chrome);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 1;
+}
+
+/* Column widths, set on <col> (table-layout: fixed) rather than the header
+   cells, so data rows follow the same width without repeating it per-<td>.
+   Every column but Notes is sized to its minimum required content (an icon,
+   a short dropdown, a 3-char shortcut, ...); Notes has no width set here, so
+   table-layout: fixed hands it all of the table's remaining space. */
+.colSelect {
+  width: 32px;
+}
+
+.colActive {
+  width: 56px;
+}
+
+.colColorName {
+  width: 140px;
+}
+
+.colColor {
+  width: 110px;
+}
+
+.colMaterial {
+  width: 90px;
+}
+
+.colFinish {
+  width: 120px;
+}
+
+.colBrand {
+  width: 110px;
+}
+
+.colAvailable {
+  width: 80px;
+}
+
+.colShortcut {
+  width: 70px;
+}
+
+.colNotes {
+  width: auto;
+}
+
+.sortableHeader {
+  padding: 0 !important;
+}
+
+.headerButton {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.headerButton:hover {
+  color: var(--color-text);
+}
+
+.row:hover {
+  background: var(--color-chrome-2);
+}
+
+.row.inactive {
+  color: var(--color-text-dim);
+  opacity: 0.6;
+}
+
+.notesCell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

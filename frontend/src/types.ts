@@ -1,4 +1,4 @@
-export type ScreenId = "settings" | "designer";
+export type ScreenId = "dominoInventory" | "designer";
 
 export type ToolId = "select" | "field";
 

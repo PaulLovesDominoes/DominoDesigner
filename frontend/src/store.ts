@@ -8,6 +8,17 @@ import {
 } from "./object-types/registry";
 import type { DDObjectId } from "./object-types/base";
 import type { BuildPlaneDDObject } from "./object-types/buildPlane/object-model";
+import {
+  createSeedInventory,
+  modeDefault,
+  MATERIAL_OPTIONS,
+  FINISH_OPTIONS,
+  BRAND_OPTIONS,
+  NEW_ENTRY_COLOR,
+  type InventoryEntry,
+  type InventoryEntryId,
+  type InventorySortColumn,
+} from "./domino-inventory/object-model";
 
 /**
  * Seed a fresh project's DDObject hierarchy: a single root BuildPlane (DDO-1)
@@ -246,6 +257,36 @@ interface AppState {
   // Imperative camera bridge, registered by CameraRig inside the <Canvas>.
   cameraApi: CameraApi | null;
   setCameraApi: (cameraApi: CameraApi | null) => void;
+
+  // ---- Domino Inventory (Domino Inventory screen) ----
+  // A flat catalog of domino *types*, distinct from the placed-domino SoA data
+  // in dominoes/store.ts. Small (dozens of rows), not performance-sensitive,
+  // so it's a plain array here rather than a Record<id, Entry> — unlike
+  // ddObjects, nothing here needs O(1) id-keyed lookup or parent/child
+  // bookkeeping. Ephemeral: reseeded fresh every load, like the rest of the store.
+  inventoryEntries: InventoryEntry[];
+  // Next counter value for minting "INV-#" ids.
+  nextInventoryNumber: number;
+  // Prepend a new entry at the top with the spec's defaults; dropdown fields
+  // default to the current mode across existing entries.
+  addInventoryEntry: () => void;
+  // The single write path for inline cell edits.
+  updateInventoryEntry: (id: InventoryEntryId, patch: Partial<InventoryEntry>) => void;
+  // Bulk delete (the trash-can button), called only after the confirm dialog.
+  removeInventoryEntries: (ids: readonly InventoryEntryId[]) => void;
+
+  // Row ids checked via the Select column, for bulk delete.
+  inventorySelectedIds: Record<InventoryEntryId, true>;
+  toggleInventorySelected: (id: InventoryEntryId) => void;
+  // Used by the Select column header's select-all/none checkbox.
+  setAllInventorySelected: (ids: readonly InventoryEntryId[], selected: boolean) => void;
+
+  // Single active sort key + direction; null column = unsorted (seed/insertion order).
+  inventorySortColumn: InventorySortColumn | null;
+  inventorySortDirection: "asc" | "desc";
+  // Clicking a header: same column reverses direction, a different column
+  // sorts by it ascending.
+  setInventorySort: (column: InventorySortColumn) => void;
 }
 
 export const useStore = create<AppState>()((set, get) => ({
@@ -511,4 +552,64 @@ export const useStore = create<AppState>()((set, get) => ({
 
   cameraApi: null,
   setCameraApi: (cameraApi) => set({ cameraApi }),
+
+  inventoryEntries: createSeedInventory(),
+  nextInventoryNumber: 12,
+  addInventoryEntry: () =>
+    set((s) => {
+      const id: InventoryEntryId = `INV-${s.nextInventoryNumber}`;
+      const entry: InventoryEntry = {
+        id,
+        active: true,
+        colorName: "New Color",
+        color: NEW_ENTRY_COLOR,
+        material: modeDefault(s.inventoryEntries, "material", MATERIAL_OPTIONS),
+        finish: modeDefault(s.inventoryEntries, "finish", FINISH_OPTIONS),
+        brand: modeDefault(s.inventoryEntries, "brand", BRAND_OPTIONS),
+        available: 0,
+        shortcut: "",
+        notes: "",
+      };
+      return {
+        inventoryEntries: [entry, ...s.inventoryEntries],
+        nextInventoryNumber: s.nextInventoryNumber + 1,
+      };
+    }),
+  updateInventoryEntry: (id, patch) =>
+    set((s) => ({
+      inventoryEntries: s.inventoryEntries.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+    })),
+  removeInventoryEntries: (ids) =>
+    set((s) => {
+      const doomed = new Set(ids);
+      return {
+        inventoryEntries: s.inventoryEntries.filter((e) => !doomed.has(e.id)),
+        inventorySelectedIds: {},
+      };
+    }),
+
+  inventorySelectedIds: {},
+  toggleInventorySelected: (id) =>
+    set((s) => {
+      const next = { ...s.inventorySelectedIds };
+      if (next[id]) delete next[id];
+      else next[id] = true;
+      return { inventorySelectedIds: next };
+    }),
+  setAllInventorySelected: (ids, selected) =>
+    set(() => {
+      if (!selected) return { inventorySelectedIds: {} };
+      const next: Record<InventoryEntryId, true> = {};
+      for (const id of ids) next[id] = true;
+      return { inventorySelectedIds: next };
+    }),
+
+  inventorySortColumn: null,
+  inventorySortDirection: "asc",
+  setInventorySort: (column) =>
+    set((s) =>
+      s.inventorySortColumn === column
+        ? { inventorySortDirection: s.inventorySortDirection === "asc" ? "desc" : "asc" }
+        : { inventorySortColumn: column, inventorySortDirection: "asc" },
+    ),
 }));

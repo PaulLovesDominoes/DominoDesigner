@@ -1,0 +1,38 @@
+.screen {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.newButton,
+.deleteButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--color-chrome-2);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.newButton:hover,
+.deleteButton:hover:not(:disabled) {
+  background: var(--color-border);
+}
+
+.deleteButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}

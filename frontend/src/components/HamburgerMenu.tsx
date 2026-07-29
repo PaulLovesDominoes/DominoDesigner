@@ -5,7 +5,7 @@ import styles from "./HamburgerMenu.module.css";
 // Menu entries. Add a screen by adding an item here and registering the
 // component in SCREENS (App.tsx).
 const MENU_ITEMS: { id: ScreenId; label: string }[] = [
-  { id: "settings", label: "Settings" },
+  { id: "dominoInventory", label: "Domino Inventory" },
   { id: "designer", label: "Designer" },
 ];
 
