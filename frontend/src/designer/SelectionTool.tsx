@@ -8,6 +8,7 @@ import {
   applyDDObjectBounds,
   getDDObjectBounds,
   isDDObjectSelectable,
+  isDominoEditable,
 } from "../object-types/registry";
 import type { DDObject } from "../object-types/registry";
 import type { DDObjectBounds, DDObjectId } from "../object-types/base";
@@ -135,6 +136,7 @@ export default function SelectionTool() {
   const activeTool = useStore((s) => s.activeTool);
   const editing = useStore((s) => s.editingDDObjectId !== null);
   const selectDDObject = useStore((s) => s.selectDDObject);
+  const enterDominoEditing = useStore((s) => s.enterDominoEditing);
   const rootBounds = useStore(
     useShallow((s) => getDDObjectBounds(s.ddObjects[s.rootId])),
   );
@@ -289,6 +291,7 @@ export default function SelectionTool() {
           key={id}
           ddObjectId={id}
           onSelect={selectDDObject}
+          onEnterDominoEditing={enterDominoEditing}
           dragging={dragging}
           setCursor={setCursor}
         />
@@ -311,9 +314,9 @@ export default function SelectionTool() {
           >
             <planeGeometry args={[1, 1]} />
             <meshBasicMaterial
-              color="#c9ccd1"
+              color="#bcd6ff"
               transparent
-              opacity={0.18}
+              opacity={0.2}
               depthTest={false}
               depthWrite={false}
             />
@@ -326,7 +329,7 @@ export default function SelectionTool() {
             scale={[selectedBounds.width, selectedBounds.height, 1]}
             renderOrder={BORDER_ORDER}
           >
-            <lineBasicMaterial color="#aeb6c2" transparent depthTest={false} />
+            <lineBasicMaterial color="#3246f9" transparent depthTest={false} />
           </lineSegments>
 
           {/* Corner + edge resize handles. */}
@@ -346,7 +349,7 @@ export default function SelectionTool() {
                 }}
               >
                 <planeGeometry args={[handleSize, handleSize]} />
-                <meshBasicMaterial color="#e8ebf0" depthTest={false} depthWrite={false} />
+                <meshBasicMaterial color="#4283fb" depthTest={false} depthWrite={false} />
               </mesh>
             );
           })}
@@ -375,11 +378,13 @@ export default function SelectionTool() {
 function PickPlane({
   ddObjectId,
   onSelect,
+  onEnterDominoEditing,
   dragging,
   setCursor,
 }: {
   ddObjectId: DDObjectId;
   onSelect: (id: DDObjectId) => void;
+  onEnterDominoEditing: (id: DDObjectId) => void;
   dragging: boolean;
   setCursor: (c: string) => void;
 }) {
@@ -395,6 +400,11 @@ function PickPlane({
         if (e.button !== 0) return;
         e.stopPropagation();
         onSelect(ddObjectId);
+      }}
+      onDoubleClick={(e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        if (isDominoEditable(ddObject)) onEnterDominoEditing(ddObjectId);
       }}
       onPointerOver={() => {
         if (!dragging) setCursor("pointer");

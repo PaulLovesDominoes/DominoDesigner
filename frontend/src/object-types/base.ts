@@ -82,6 +82,14 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
    */
   selectable?: boolean;
   /**
+   * Whether instances of this type expose a domino-editing mode (double-click on
+   * the canvas or in the object hierarchy to select/arrange their dominoes).
+   * Defaults to false. Most domino-producing types will eventually set this
+   * true — false is simply the correct default until a type has actually
+   * finished implementing domino editing.
+   */
+  dominoEditable?: boolean;
+  /**
    * Optional: realise a target footprint on this instance — the write path for
    * cursor-based move and resize, the manipulation analogue of
    * `createFromRegion`. Returns the store patch that makes the instance occupy

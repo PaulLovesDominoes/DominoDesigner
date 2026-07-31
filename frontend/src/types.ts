@@ -1,6 +1,9 @@
 export type ScreenId = "dominoInventory" | "designer";
 
-export type ToolId = "select" | "field";
+// "editDominoes" has no toolbar entry — it's entered only via double-click on a
+// domino-editable DDObject (see registry.ts's isDominoEditable), never chosen
+// from the toolbar's TOOLS list.
+export type ToolId = "select" | "field" | "editDominoes";
 
 /**
  * Imperative bridge to the three.js camera, registered from inside the R3F

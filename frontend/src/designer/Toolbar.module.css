@@ -1,13 +1,14 @@
 .bar {
-  height: var(--toolbar-height);
-  flex: 0 0 auto;
+  /* Nested inside TitleBar's own .bar now, which already supplies the row's
+     height/background/border — this just needs to stretch to meet the Help
+     button (see TitleBar.module.css's .toolbarSection). */
+  flex: 1;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 0 8px;
-  background: var(--color-chrome);
-  border-bottom: 1px solid var(--color-border);
 }
 
 .group {

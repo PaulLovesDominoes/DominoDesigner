@@ -14,16 +14,19 @@ export default function HelpPanel() {
   const helpOpen = useStore((s) => s.helpOpen);
   const closeHelp = useStore((s) => s.closeHelp);
   const screen = useStore((s) => s.screen);
+  // Pins the panel to a specific topic (e.g. domino editing's Help button) in
+  // place of the screen's default. See store.ts's openHelpTopic.
+  const helpTopicOverride = useStore((s) => s.helpTopicOverride);
 
   const [topicStack, setTopicStack] = useState<string[]>([HOME_TOPIC]);
   const wasOpen = useRef(false);
 
   useEffect(() => {
     if (helpOpen && !wasOpen.current) {
-      setTopicStack([topicForScreen(screen)]);
+      setTopicStack([helpTopicOverride ?? topicForScreen(screen)]);
     }
     wasOpen.current = helpOpen;
-  }, [helpOpen, screen]);
+  }, [helpOpen, screen, helpTopicOverride]);
 
   if (!helpOpen) return null;
 

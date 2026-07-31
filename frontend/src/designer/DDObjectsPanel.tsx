@@ -6,7 +6,7 @@ import {
 } from "@remixicon/react";
 
 import { useStore } from "../store";
-import { getDDObjectIcon, isDDObjectSelectable } from "../object-types/registry";
+import { getDDObjectIcon, isDDObjectSelectable, isDominoEditable } from "../object-types/registry";
 import type { DDObjectId } from "../object-types/base";
 import DDObjectMenu from "./DDObjectMenu";
 import styles from "./DDObjectsPanel.module.css";
@@ -28,6 +28,7 @@ function ObjectRow({ ddObjectId, depth }: RowProps) {
   const ddObject = useStore((s) => s.ddObjects[ddObjectId]);
   const selected = useStore((s) => s.selectedDDObjectId === ddObjectId);
   const selectDDObject = useStore((s) => s.selectDDObject);
+  const enterDominoEditing = useStore((s) => s.enterDominoEditing);
   const [expanded, setExpanded] = useState(true);
   // Anchor rect of the "more" button while its menu is open; null = closed.
   const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
@@ -52,12 +53,22 @@ function ObjectRow({ ddObjectId, depth }: RowProps) {
     if (selectable) selectDDObject(ddObjectId);
   };
 
+  // Double-click a domino-editable row to jump straight into domino editing
+  // mode, mirroring the canvas's PickPlane double-click (SelectionTool.tsx).
+  // Only reachable while the sidebar is enabled, i.e. before entering the mode
+  // — the sidebar is disabled for its whole duration (Sidebar.tsx).
+  const onRowDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    if (isDominoEditable(ddObject)) enterDominoEditing(ddObjectId);
+  };
+
   return (
     <>
       <div
         className={`${styles.row} ${selected ? styles.selected : ""}`}
         style={{ paddingLeft: depth * INDENT }}
         onClick={onRowClick}
+        onDoubleClick={onRowDoubleClick}
       >
         {hasChildren ? (
           <button

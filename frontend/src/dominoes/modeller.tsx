@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { DOMINO_SIZE, type Position } from "../dimensions";
 import type { DDObjectId } from "../object-types/base";
 import { useDominoDataStore } from "./store";
+import { useDominoSelectionStore } from "./selectionStore";
 
 /**
  * The shared drawing half of the domino system. Every element type that owns
@@ -30,18 +31,32 @@ const dominoEdges = new THREE.EdgesGeometry(
   new THREE.BoxGeometry(DOMINO_SIZE.thickness, DOMINO_SIZE.width, DOMINO_SIZE.length),
 );
 
-// A single black line material shared by every field's outline, patched to place
-// each instance from its aOffset/aScale attributes in the vertex shader (three
-// has no instanced-line transform of its own). Stateless, so sharing is safe.
+// A single line material shared by every field's outline, patched to place each
+// instance from its aOffset/aScale attributes (three has no instanced-line
+// transform of its own) and to color it per-instance via aOutlineColor —
+// domino editing mode outlines a selected domino in white, everything else
+// stays black (see DominoModeller's copy effect). Stateless, so sharing across
+// every field in the app is safe: the color/offset/scale all come from
+// per-instance attributes on each field's own geometry, never from a uniform
+// on this shared material.
 const outlineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
 outlineMaterial.onBeforeCompile = (shader) => {
   shader.vertexShader = shader.vertexShader
     .replace(
       "#include <common>",
-      "#include <common>\nattribute vec3 aOffset;\nattribute float aScale;",
+      "#include <common>\nattribute vec3 aOffset;\nattribute float aScale;\nattribute vec3 aOutlineColor;\nvarying vec3 vOutlineColor;",
     )
     // Replaces the stock `vec3 transformed = vec3( position );`.
-    .replace("#include <begin_vertex>", "vec3 transformed = position * aScale + aOffset;");
+    .replace(
+      "#include <begin_vertex>",
+      "vec3 transformed = position * aScale + aOffset;\nvOutlineColor = aOutlineColor;",
+    );
+  shader.fragmentShader = shader.fragmentShader
+    .replace("#include <common>", "#include <common>\nvarying vec3 vOutlineColor;")
+    .replace(
+      "#include <color_fragment>",
+      "#include <color_fragment>\ndiffuseColor.rgb = vOutlineColor;",
+    );
 };
 
 // Reused across the copy loop so a field of 10,000 dominoes allocates nothing.
@@ -62,6 +77,11 @@ function buildOutlineGeometry(capacity: number) {
   g.setAttribute("position", dominoEdges.getAttribute("position").clone());
   g.setAttribute("aOffset", new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3));
   g.setAttribute("aScale", new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+  // Zero-initializes to black, so "unselected stays black" needs no extra code.
+  g.setAttribute(
+    "aOutlineColor",
+    new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3),
+  );
   return g;
 }
 
@@ -83,6 +103,10 @@ export function DominoModeller({
 
   const data = useDominoDataStore((s) => s.dominoes.get(ddObjectId));
   const version = useDominoDataStore((s) => s.versions[ddObjectId]);
+  // Selection changes independently of DominoData itself (domino editing mode's
+  // click/drag/arrow-key gestures never touch positions/colors/hidden), so this
+  // needs its own version subscription to trigger the copy effect below.
+  const selectionVersion = useDominoSelectionStore((s) => s.versions[ddObjectId]);
 
   const capacity = data?.capacity ?? 0;
 
@@ -100,9 +124,13 @@ export function DominoModeller({
     if (!mesh) return;
     const d = useDominoDataStore.getState().get(ddObjectId);
     if (!d) return;
+    const selection = useDominoSelectionStore.getState().get(ddObjectId);
 
     const aOffset = outlineGeometry.getAttribute("aOffset") as THREE.InstancedBufferAttribute;
     const aScale = outlineGeometry.getAttribute("aScale") as THREE.InstancedBufferAttribute;
+    const aOutlineColor = outlineGeometry.getAttribute(
+      "aOutlineColor",
+    ) as THREE.InstancedBufferAttribute;
 
     for (let i = 0; i < d.count; i++) {
       const x = d.positions[3 * i];
@@ -130,6 +158,9 @@ export function DominoModeller({
         d.colors[3 * i + 2] / 255,
       );
       mesh.setColorAt(i, scratchColor);
+
+      const isSelected = selection?.selected.has(i) ?? false;
+      aOutlineColor.setXYZ(i, isSelected ? 1 : 0, isSelected ? 1 : 0, isSelected ? 1 : 0);
     }
 
     mesh.count = d.count;
@@ -142,10 +173,11 @@ export function DominoModeller({
 
     aOffset.needsUpdate = true;
     aScale.needsUpdate = true;
+    aOutlineColor.needsUpdate = true;
     outlineGeometry.instanceCount = d.count;
 
     invalidate(); // frameloop="demand"
-  }, [ddObjectId, version, invalidate, outlineGeometry]);
+  }, [ddObjectId, version, selectionVersion, invalidate, outlineGeometry]);
 
   if (capacity === 0) return null;
 
@@ -153,7 +185,14 @@ export function DominoModeller({
     <group position={[position.x, position.y, 0]}>
       {/* An InstancedMesh's count is fixed at construction, so a resized field
           needs a fresh one — hence keying on capacity. */}
-      <instancedMesh key={`fill-${capacity}`} ref={meshRef} args={[undefined, undefined, capacity]}>
+      <instancedMesh
+        key={`fill-${capacity}`}
+        ref={meshRef}
+        args={[undefined, undefined, capacity]}
+        // Lets DominoEditTool identify which field an intersected instance
+        // belongs to via e.intersections (its raycast hits the whole scene).
+        userData={{ ddObjectId }}
+      >
         <boxGeometry args={[DOMINO_SIZE.thickness, DOMINO_SIZE.width, DOMINO_SIZE.length]} />
         <meshBasicMaterial />
       </instancedMesh>

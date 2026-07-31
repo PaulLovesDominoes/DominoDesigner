@@ -1,0 +1,85 @@
+import { create } from "zustand";
+
+import { useStore } from "../store";
+import type { DDObjectId } from "../object-types/base";
+
+/**
+ * Per-parent domino selection state for domino editing mode. Kept in its own
+ * small store, separate from both the main copy-on-write store and the bulk
+ * per-domino columns in dominoes/store.ts, since this is UI/gesture state that
+ * a whole selection-defining gesture replaces wholesale (see DominoEditTool.tsx)
+ * rather than something mutated column-by-column.
+ *
+ * anchor/active/baseSelection are domino *indices* and physical positions, never
+ * grid row/column — the dominoes subsystem knows nothing about grids (see
+ * object-model.ts's header comment), so keeping selection spatial means it needs
+ * no rework when a future domino-producing type isn't a grid at all.
+ */
+export interface DominoSelectionEntry {
+  /** The live, displayed set — what actually gets a white outline. */
+  selected: Set<number>;
+  /** Preserved while Shift+Arrow grows/shrinks a rectangle on top of it. */
+  baseSelection: Set<number>;
+  /** Domino index — the rectangle's fixed corner for Shift+Arrow. */
+  anchor: number;
+  /** Domino index — the rectangle's corner Shift+Arrow moves. */
+  active: number;
+}
+
+interface DominoSelectionStore {
+  /** parent element id -> its domino selection. */
+  entries: Map<DDObjectId, DominoSelectionEntry>;
+  /** parent element id -> a counter bumped on any change to its selection. */
+  versions: Record<DDObjectId, number>;
+  get: (parentId: DDObjectId) => DominoSelectionEntry | undefined;
+  /** Replace a parent's selection wholesale and signal. */
+  replace: (parentId: DDObjectId, entry: DominoSelectionEntry) => void;
+  /** Discard a parent's selection (e.g. on exiting domino editing mode) and signal. */
+  clear: (parentId: DDObjectId) => void;
+}
+
+export const useDominoSelectionStore = create<DominoSelectionStore>((set, get) => ({
+  entries: new Map(),
+  versions: {},
+
+  get: (parentId) => get().entries.get(parentId),
+
+  replace: (parentId, entry) =>
+    set((s) => {
+      s.entries.set(parentId, entry);
+      return { versions: { ...s.versions, [parentId]: (s.versions[parentId] ?? 0) + 1 } };
+    }),
+
+  clear: (parentId) =>
+    set((s) => {
+      if (!s.entries.has(parentId)) return {};
+      s.entries.delete(parentId);
+      return { versions: { ...s.versions, [parentId]: (s.versions[parentId] ?? 0) + 1 } };
+    }),
+}));
+
+/**
+ * Start freeing a parent's domino selection when its DDObject leaves the
+ * hierarchy. Call once at startup, from main.tsx; returns zustand's unsubscribe.
+ * Mirrors dominoes/store.ts's initDominoData — see its comment for why this is an
+ * explicit init call rather than a module-load side effect (the same import
+ * cycle applies here: registry -> fieldElement's object-model -> this store ->
+ * main store -> registry, harmless only because nothing reads across it while
+ * modules are initialising).
+ */
+export function initDominoSelectionPruning() {
+  return useStore.subscribe((state, prev) => {
+    if (state.ddObjects === prev.ddObjects) return;
+    const { entries, versions } = useDominoSelectionStore.getState();
+    let pruned = false;
+    const nextVersions = { ...versions };
+    for (const parentId of entries.keys()) {
+      if (!state.ddObjects[parentId]) {
+        entries.delete(parentId);
+        delete nextVersions[parentId];
+        pruned = true;
+      }
+    }
+    if (pruned) useDominoSelectionStore.setState({ versions: nextVersions });
+  });
+}

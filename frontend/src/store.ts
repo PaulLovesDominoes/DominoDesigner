@@ -3,11 +3,13 @@ import { create } from "zustand";
 import type { CameraApi, ScreenId, ToolId } from "./types";
 import {
   createDDObject,
+  isDominoEditable,
   type DDObject,
   type DDObjectType,
 } from "./object-types/registry";
 import type { DDObjectId } from "./object-types/base";
 import type { BuildPlaneDDObject } from "./object-types/buildPlane/object-model";
+import { useDominoSelectionStore } from "./dominoes/selectionStore";
 import {
   createSeedInventory,
   modeDefault,
@@ -84,6 +86,8 @@ interface RemovalResult {
     editingSnapshot?: null;
     creatingDDObjectId?: null;
     selectedDDObjectId?: null;
+    dominoEditingId?: null;
+    activeTool?: ToolId;
   };
   subtree: DDObject[];
   parentId: DDObjectId;
@@ -109,6 +113,7 @@ function applyRemoveDDObject(
   rootId: DDObjectId,
   editingDDObjectId: DDObjectId | null,
   selectedDDObjectId: DDObjectId | null,
+  dominoEditingId: DDObjectId | null,
   id: DDObjectId,
 ): RemovalResult | undefined {
   if (id === rootId || !ddObjects[id]) return undefined;
@@ -139,6 +144,12 @@ function applyRemoveDDObject(
 
   const editingDeleted = editingDDObjectId !== null && doomedSet.has(editingDDObjectId);
   const selectionDeleted = selectedDDObjectId !== null && doomedSet.has(selectedDDObjectId);
+  // Defensive only: deleting the DDObject whose dominoes are being edited isn't
+  // reachable through normal UI (the sidebar's delete menu is disabled for the
+  // whole duration of domino editing mode, see Sidebar.tsx), but this keeps
+  // dominoEditingId from ever pointing at a gone DDObject if some future path
+  // removes one without going through that disabled UI.
+  const dominoEditingDeleted = dominoEditingId !== null && doomedSet.has(dominoEditingId);
 
   return {
     patch: {
@@ -149,6 +160,10 @@ function applyRemoveDDObject(
         creatingDDObjectId: null,
       }),
       ...(selectionDeleted && { selectedDDObjectId: null }),
+      ...(dominoEditingDeleted && {
+        dominoEditingId: null,
+        activeTool: "select" as ToolId,
+      }),
     },
     subtree,
     parentId,
@@ -198,8 +213,14 @@ interface AppState {
   helpOpen: boolean;
   toggleHelp: () => void;
   closeHelp: () => void;
+  // Pins the next help-panel open to a specific topic id instead of the
+  // screen's default (see help/registry.ts's topicForScreen). Cleared whenever
+  // the panel closes, so a later generic help-open isn't left pinned.
+  helpTopicOverride: string | null;
+  openHelpTopic: (id: string) => void;
 
-  // Currently selected designer tool (single-select).
+  // Currently selected designer tool (single-select). "editDominoes" has no
+  // toolbar entry — see enterDominoEditing.
   activeTool: ToolId;
   setTool: (tool: ToolId) => void;
 
@@ -208,6 +229,17 @@ interface AppState {
   // which is the drawing tool. The root BuildPlane is never selectable.
   selectedDDObjectId: DDObjectId | null;
   selectDDObject: (id: DDObjectId | null) => void;
+
+  // Which DDObject's dominoes are being edited on the canvas (null = not in
+  // domino editing mode). The mode is fully modal — activeTool becomes
+  // "editDominoes", which is enough on its own to disarm SelectionTool,
+  // CreateByRegionTool and DesignerCanvas's onPointerMissed (none of them match
+  // "select" or an elementType-bearing tool anymore); Toolbar/Sidebar disable
+  // the rest of the UI by reading activeTool directly. exitDominoEditing is the
+  // only action that leaves the mode (wired to ModeHintBar's Done/Cancel).
+  dominoEditingId: DDObjectId | null;
+  enterDominoEditing: (id: DDObjectId) => void;
+  exitDominoEditing: () => void;
 
   // The build's DDObject hierarchy, indexed by DDObject id. `rootId` is the
   // BuildPlane; each DDObject with children lists their ids in `children`.
@@ -298,14 +330,41 @@ export const useStore = create<AppState>()((set, get) => ({
   closeMenu: () => set({ menuOpen: false }),
 
   helpOpen: false,
-  toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
-  closeHelp: () => set({ helpOpen: false }),
+  toggleHelp: () =>
+    set((s) => {
+      const helpOpen = !s.helpOpen;
+      return { helpOpen, ...(helpOpen ? {} : { helpTopicOverride: null }) };
+    }),
+  closeHelp: () => set({ helpOpen: false, helpTopicOverride: null }),
+  helpTopicOverride: null,
+  openHelpTopic: (id) => set({ helpOpen: true, helpTopicOverride: id }),
 
   activeTool: "select",
   setTool: (activeTool) => set({ activeTool }),
 
   selectedDDObjectId: null,
   selectDDObject: (selectedDDObjectId) => set({ selectedDDObjectId }),
+
+  dominoEditingId: null,
+  enterDominoEditing: (id) =>
+    set((s) => {
+      const ddObject = s.ddObjects[id];
+      if (!ddObject || !isDominoEditable(ddObject)) return {};
+      return {
+        dominoEditingId: id,
+        selectedDDObjectId: id,
+        activeTool: "editDominoes" as ToolId,
+      };
+    }),
+  exitDominoEditing: () =>
+    set((s) => {
+      if (s.dominoEditingId) useDominoSelectionStore.getState().clear(s.dominoEditingId);
+      return {
+        dominoEditingId: null,
+        selectedDDObjectId: s.dominoEditingId,
+        activeTool: "select" as ToolId,
+      };
+    }),
 
   ...createInitialDDObjects(),
   createElement: (type, patch) =>
@@ -346,6 +405,7 @@ export const useStore = create<AppState>()((set, get) => ({
         s.rootId,
         s.editingDDObjectId,
         s.selectedDDObjectId,
+        s.dominoEditingId,
         id,
       );
       // The build plane is the hierarchy's root; there is nowhere to put its
@@ -379,6 +439,7 @@ export const useStore = create<AppState>()((set, get) => ({
           s.rootId,
           s.editingDDObjectId,
           s.selectedDDObjectId,
+          s.dominoEditingId,
           op.ddObject.id,
         );
         if (!result) {
@@ -428,6 +489,7 @@ export const useStore = create<AppState>()((set, get) => ({
           s.rootId,
           s.editingDDObjectId,
           s.selectedDDObjectId,
+          s.dominoEditingId,
           op.subtree[0].id,
         );
         if (!result) {
@@ -516,6 +578,7 @@ export const useStore = create<AppState>()((set, get) => ({
           s.rootId,
           s.editingDDObjectId,
           s.selectedDDObjectId,
+          s.dominoEditingId,
           creatingId,
         );
         return {

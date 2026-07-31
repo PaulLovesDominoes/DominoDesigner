@@ -9,3 +9,10 @@
   background: var(--color-chrome);
   border-right: 1px solid var(--color-border);
 }
+
+/* Domino editing mode is fully modal: the whole hierarchy (selection, the
+   ⋯ menu's Properties/Delete) is locked out until Done/Cancel. */
+.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}

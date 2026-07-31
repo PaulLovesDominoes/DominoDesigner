@@ -6,6 +6,7 @@ import Scene from "./Scene";
 import CameraRig from "./CameraRig";
 import CreateByRegionTool from "./CreateByRegionTool";
 import SelectionTool from "./SelectionTool";
+import DominoEditTool from "./DominoEditTool";
 import { useStore } from "../store";
 
 /**
@@ -38,6 +39,7 @@ export default function DesignerCanvas() {
 
       <CreateByRegionTool />
       <SelectionTool />
+      <DominoEditTool />
 
       <OrbitControls
         makeDefault

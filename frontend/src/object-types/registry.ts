@@ -74,6 +74,14 @@ export const isDDObjectSelectable = (ddObject: DDObject): boolean =>
   DD_OBJECT_TYPES[ddObject.type].selectable !== false;
 
 /**
+ * Whether this DDObject exposes a domino-editing mode (double-click to
+ * select/arrange its dominoes). A type opts in with `dominoEditable: true`
+ * (fieldElement does); defaults to false.
+ */
+export const isDominoEditable = (ddObject: DDObject): boolean =>
+  DD_OBJECT_TYPES[ddObject.type].dominoEditable === true;
+
+/**
  * The store patch that makes `ddObject` occupy `bounds` (cursor move/resize), or
  * undefined if its type declares no `setBounds`, or if `bounds` was too
  * small/invalid. Takes the instance, and casts to undo the registry's type

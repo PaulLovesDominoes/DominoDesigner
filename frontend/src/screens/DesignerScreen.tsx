@@ -3,7 +3,6 @@ import { useEffect } from "react";
 import DesignerCanvas from "../designer/DesignerCanvas";
 import ModeHintBar from "../designer/ModeHintBar";
 import Sidebar from "../designer/Sidebar";
-import Toolbar from "../designer/Toolbar";
 import { useStore } from "../store";
 import styles from "./DesignerScreen.module.css";
 
@@ -16,13 +15,18 @@ export default function DesignerScreen() {
   const placing = useStore((s) => s.activeTool === "field") && !editing;
 
   // Undo/redo shortcuts. Scoped to this screen (rather than App.tsx) because
-  // undo/redo is designer-only — the toolbar buttons only render here too —
-  // so mounting/unmounting with the screen gets that scoping for free. Gated
-  // on the dialog being closed, matching the !editing convention SelectionTool
-  // and CreateByRegionTool already use for their own keydown handlers.
+  // undo/redo is designer-only — the toolbar's Undo/Redo buttons are designer-
+  // only too (Toolbar.tsx's own screen gate) — so mounting/unmounting with the
+  // screen gets that scoping for free. Gated on the dialog being closed,
+  // matching the !editing convention SelectionTool and CreateByRegionTool
+  // already use for their own keydown handlers.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (useStore.getState().editingDDObjectId !== null) return;
+      const s = useStore.getState();
+      // Domino editing mode is fully modal — undo/redo is disabled the same way
+      // the toolbar's buttons are (see Toolbar.tsx), so a stray Ctrl+Z can't
+      // remove the very DDObject whose dominoes are being edited.
+      if (s.editingDDObjectId !== null || s.activeTool === "editDominoes") return;
       if (!(e.ctrlKey || e.metaKey)) return;
       const key = e.key.toLowerCase();
       if (key === "z" && !e.shiftKey) {
@@ -41,7 +45,6 @@ export default function DesignerScreen() {
     <div className={styles.screen}>
       <Sidebar />
       <div className={styles.main}>
-        <Toolbar />
         <ModeHintBar />
         <div
           className={[

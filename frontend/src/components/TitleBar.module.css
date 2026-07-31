@@ -11,6 +11,23 @@
   z-index: 20;
 }
 
+/* Same width as Sidebar.module.css's .sidebar, so .toolbarSection starts
+   exactly above the canvas area regardless of the logo's own width. */
+.brand {
+  flex: 0 0 var(--sidebar-width);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbarSection {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
 .menuButton {
   display: inline-flex;
   align-items: center;

@@ -188,6 +188,7 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
 
   editor: FieldElementEditor,
   modeller: FieldElementModeller,
+  dominoEditable: true,
 
   // The field's physical footprint. Needs no generated dominoes, so a field is
   // framable the instant it exists.

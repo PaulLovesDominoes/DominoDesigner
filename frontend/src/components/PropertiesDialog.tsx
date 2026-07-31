@@ -63,7 +63,13 @@ function Dialog({ ddObjectId }: { ddObjectId: DDObjectId }) {
     const root = getComputedStyle(document.documentElement);
     const px = (name: string) => parseFloat(root.getPropertyValue(name)) || 0;
     const left = px("--sidebar-width");
-    const top = px("--titlebar-height") + px("--toolbar-height");
+    // The toolbar now lives in the title bar (its own fixed height is already
+    // covered by --titlebar-height); what's below it is ModeHintBar, whose
+    // height is intrinsic/content-driven rather than a CSS var, so it's
+    // measured directly via the id it renders (ModeHintBar.tsx).
+    const modeHintHeight =
+      document.getElementById("mode-hint-bar")?.getBoundingClientRect().height ?? 0;
+    const top = px("--titlebar-height") + modeHintHeight;
 
     setPosition({
       x: Math.max(0, left + (window.innerWidth - left - width) / 2),

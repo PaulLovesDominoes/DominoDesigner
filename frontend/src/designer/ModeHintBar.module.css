@@ -1,9 +1,15 @@
 .bar {
+  /* Fixed rather than padding-driven: .textBtn's border+padding makes the
+     Done/Cancel/Help variant intrinsically taller than a plain-text variant,
+     which grew/shrank the canvas as content changed underneath it — the exact
+     thing this bar exists to prevent. A fixed height with align-items:center
+     keeps every variant (buttons or not) the same size. */
+  height: 40px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 14px;
+  padding: 0 14px;
   background: var(--color-chrome);
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text-dim);
@@ -17,4 +23,22 @@
   color: var(--color-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
+}
+
+.textBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  margin-left: 4px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.textBtn:hover {
+  background: var(--color-chrome-2);
+  border-color: var(--color-accent);
 }

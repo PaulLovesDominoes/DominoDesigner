@@ -102,3 +102,55 @@ export function extent(data: DominoData): Extent | null {
   if (minX === Infinity) return null;
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
+
+/** A cardinal direction on the build plane, used by domino-editing arrow-key navigation. */
+export type Direction = "+x" | "-x" | "+y" | "-y";
+
+// Sub-millimetre slop so a domino at (nearly) the same coordinate as the
+// reference isn't treated as strictly "beyond" it by floating point noise.
+const DIRECTION_EPSILON = 1e-6;
+
+/**
+ * The visible domino nearest `fromIndex` strictly in `direction` (parent-relative
+ * mm), or undefined if none exists. Nearest on the primary axis, ties broken by
+ * nearest on the other. For today's row/column field this is exactly "the
+ * adjacent cell in that direction" — but it makes no grid assumption, reading
+ * only positions, so a future non-grid layout (a spiral, concentric rings) gets
+ * reasonable arrow-key stepping for free instead of needing its own navigation
+ * logic.
+ */
+export function nearestInDirection(
+  data: DominoData,
+  fromIndex: number,
+  direction: Direction,
+): number | undefined {
+  const axis = direction === "+x" || direction === "-x" ? 0 : 1;
+  const sign = direction === "+x" || direction === "+y" ? 1 : -1;
+  const perpAxis = axis === 0 ? 1 : 0;
+
+  const refPrimary = data.positions[3 * fromIndex + axis];
+  const refPerp = data.positions[3 * fromIndex + perpAxis];
+
+  let bestIndex: number | undefined;
+  let bestPrimaryDelta = Infinity;
+  let bestPerpDelta = Infinity;
+
+  for (let i = 0; i < data.count; i++) {
+    if (i === fromIndex || data.hidden[i]) continue;
+    const primary = data.positions[3 * i + axis];
+    const primaryDelta = (primary - refPrimary) * sign;
+    if (primaryDelta <= DIRECTION_EPSILON) continue;
+
+    const perpDelta = Math.abs(data.positions[3 * i + perpAxis] - refPerp);
+    if (
+      primaryDelta < bestPrimaryDelta - DIRECTION_EPSILON ||
+      (Math.abs(primaryDelta - bestPrimaryDelta) <= DIRECTION_EPSILON && perpDelta < bestPerpDelta)
+    ) {
+      bestIndex = i;
+      bestPrimaryDelta = primaryDelta;
+      bestPerpDelta = perpDelta;
+    }
+  }
+
+  return bestIndex;
+}
