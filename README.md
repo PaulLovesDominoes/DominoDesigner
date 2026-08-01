@@ -11,9 +11,8 @@ and a Designer screen with a working pan/zoom 2D canvas, an extensible object mo
 build's contents, and live property editing.
 
 Future plans:
-- Domino inventory & colors
 - Domino-by-domino editing
-  .  Individual selection, region selection, setting colors, deleting dominoes
+  .  Region selection, moving, and deleting individual dominoes
   .  All with undo/redo
 
 ## Conventions
@@ -64,18 +63,31 @@ frontend (`npm run build`) after changing frontend code.
 ## What v1 does
 
 - **Title bar** with a logo placeholder, a hamburger menu that switches between the
-  **Designer** and **Settings** screens, and a help panel.
+  **Designer** and **Domino Inventory** screens, a toolbar (Select / New element / Undo / Redo /
+  Zoom), and a help panel.
 - **Designer** — a 2D three.js canvas (1 unit = 1 mm) showing the build plane, with
-  mouse-wheel zoom and right-drag pan. A toolbar with Select/Field tools and Zoom In / Zoom
-  Out / Reset Zoom buttons. The build's contents are a hierarchy of **DDObjects** rooted at
-  the build plane, shown in a left sidebar as a live tree (type icon + name) that updates as
-  objects are created. 
-- **Field** tool - allows dragging a rectangle on the plane to 
+  mouse-wheel zoom and right-drag pan. The build's contents are a hierarchy of **DDObjects**
+  rooted at the build plane, shown in a left sidebar as a live tree (type icon + name) that
+  updates as objects are created.
+- **Field** tool - allows dragging a rectangle on the plane to
   place a domino field there; each field draws its dominoes as one instanced mesh with
   line-segment edge outlines. A row's **⋯** menu opens **Properties** for any object —
   including the build plane's own size and color — in a modeless dialog that previews edits
   live on the canvas, with Save/Cancel.
-- **Undo/Redo** - Currently scoped to the element level (not yet for individual domino editing)
-- **Settings** — currently empty. The build-plane size it once held now lives on the
-  build-plane object itself, edited through its properties. Nothing is persisted; every load
-  starts a fresh default project.
+- **Domino Inventory** screen — a catalog of the domino colors available to build with (color,
+  material, finish, brand, shortcut, stock count), each toggleable active/inactive.
+- **Domino editing mode** — double-click a field (on the canvas or in the sidebar) to select
+  individual dominoes within it (click / Ctrl+click / drag a box / arrow keys) and set their
+  color from the inventory, shown as a grid of swatches in place of the object hierarchy while
+  the mode is active. Two ways to color a selection:
+  - **Select dominoes, then pick a color** — click a swatch, or type its shortcut (e.g. "B2");
+    matching swatches highlight live as you type, and a unique match applies immediately.
+  - **Pick a color first, then select dominoes** — double-click a swatch to lock it (shown with
+    a lock badge); every domino you select afterward, by any method, is colored to it
+    immediately, including whatever was already selected at the moment you locked it. Escape
+    unlocks (and clears the current selection); so does exiting the mode.
+- **Undo/Redo** covers both DDObject-level edits (create/delete/move/resize/properties) and
+  domino color changes, on one shared history — undoing a color change works even after
+  leaving domino editing mode, and editing or deleting an inventory color's RGB immediately
+  updates every domino painted with it.
+- Nothing is persisted; every load starts a fresh default project.

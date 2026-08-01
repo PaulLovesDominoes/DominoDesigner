@@ -36,38 +36,38 @@ export interface DominoData {
   positions: Float32Array;
   /** ORIENTATION per domino */
   orientations: Uint8Array;
-  /** stride 3: r,g,b 0..255 per domino */
-  colors: Uint8Array;
+  /**
+   * A domino's assigned color, as the *numericId* of a domino-inventory
+   * entry (InventoryEntry.numericId) — a live reference, not a baked-in RGB
+   * copy, so editing an inventory color's RGB or deleting it is immediately
+   * reflected wherever it's painted (see colorLookupStore.ts, which
+   * resolves this to actual pixels at draw time). 0 is a sentinel meaning
+   * "unpainted" (rendered as DEFAULT_DOMINO_COLOR) — never a real id, since
+   * inventory ids start at 1.
+   */
+  colorIds: Uint32Array;
   /** 1 = hidden/deleted, 0 = visible */
   hidden: Uint8Array;
 }
 
 /**
- * The colour every domino starts out as. Per-domino colouring is a later
- * feature — this version renders them all this colour — but the column is
- * per-domino already, so nothing has to change when it lands.
+ * The colour an unpainted domino (colorIds[i] === 0, or a colorId whose
+ * inventory entry has since been deleted) renders as.
  */
-export const DEFAULT_DOMINO_COLOR = [0x33, 0x33, 0x33] as const;
+export const DEFAULT_DOMINO_COLOR: readonly [number, number, number] = [0xBB, 0xBB, 0xBB];
 
 /**
- * Allocate space for `count` dominoes: origin position, STANDING (0), the
- * default colour, visible. Deliberately imposes NO layout — the parent element
- * writes the positions afterward.
+ * Allocate space for `count` dominoes: origin position, STANDING (0),
+ * unpainted (colorId 0), visible. Deliberately imposes NO layout — the
+ * parent element writes the positions afterward.
  */
 export function generateDominoes(count: number): DominoData {
-  const colors = new Uint8Array(count * 3);
-  for (let i = 0; i < colors.length; i += 3) {
-    colors[i] = DEFAULT_DOMINO_COLOR[0];
-    colors[i + 1] = DEFAULT_DOMINO_COLOR[1];
-    colors[i + 2] = DEFAULT_DOMINO_COLOR[2];
-  }
-
   return {
     capacity: count,
     count,
     positions: new Float32Array(count * 3),
     orientations: new Uint8Array(count),
-    colors,
+    colorIds: new Uint32Array(count), // zero-initialized = unpainted
     hidden: new Uint8Array(count),
   };
 }

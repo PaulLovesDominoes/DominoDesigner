@@ -19,14 +19,15 @@ export default function DesignerScreen() {
   // only too (Toolbar.tsx's own screen gate) — so mounting/unmounting with the
   // screen gets that scoping for free. Gated on the dialog being closed,
   // matching the !editing convention SelectionTool and CreateByRegionTool
-  // already use for their own keydown handlers.
+  // already use for their own keydown handlers. Deliberately *not* gated on
+  // domino editing mode — domino color changes are undoable now and expected
+  // to be undone while still painting; if an undo/redo ever does remove the
+  // DDObject currently being domino-edited, applyRemoveDDObject's
+  // dominoEditingDeleted check already exits the mode gracefully.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const s = useStore.getState();
-      // Domino editing mode is fully modal — undo/redo is disabled the same way
-      // the toolbar's buttons are (see Toolbar.tsx), so a stray Ctrl+Z can't
-      // remove the very DDObject whose dominoes are being edited.
-      if (s.editingDDObjectId !== null || s.activeTool === "editDominoes") return;
+      if (s.editingDDObjectId !== null) return;
       if (!(e.ctrlKey || e.metaKey)) return;
       const key = e.key.toLowerCase();
       if (key === "z" && !e.shiftKey) {

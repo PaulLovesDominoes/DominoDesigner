@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { useStore } from "../store";
+import { useStore, isDDObjectInUndoHistory } from "../store";
 import type { DDObjectId } from "../object-types/base";
 import type { DominoData } from "./object-model";
 
@@ -44,8 +44,12 @@ export const useDominoDataStore = create<DominoDataStore>((set, get) => ({
 }));
 
 /**
- * Start freeing a parent's dominoes when its DDObject leaves the hierarchy. Call
- * once at startup, from main.tsx; returns zustand's unsubscribe.
+ * Start freeing a parent's dominoes once its DDObject is truly gone — absent
+ * from ddObjects *and* unreachable via any undo/redo (isDDObjectInUndoHistory,
+ * store.ts). Not the instant it leaves ddObjects: a delete is undoable, and if
+ * its dominoes were freed immediately, undoing the delete would bring the
+ * DDObject back with no memory of its dominoes' colors — they'd already be
+ * gone. Call once at startup, from main.tsx; returns zustand's unsubscribe.
  *
  * Deliberately an explicit init rather than a module-load side effect. There is
  * an import cycle here — registry → fieldElement's object-model → this store →
@@ -58,12 +62,24 @@ export const useDominoDataStore = create<DominoDataStore>((set, get) => ({
  */
 export function initDominoData() {
   return useStore.subscribe((state, prev) => {
-    if (state.ddObjects === prev.ddObjects) return;
+    // Also re-check on undoStack/redoStack changes, not just ddObjects — a
+    // deleted DDObject's dominoes must stay alive for as long as its "delete"
+    // operation is still undoable (see isDDObjectInUndoHistory), and that
+    // reachability can change (a delete aging off the history cap, or being
+    // discarded when the redo stack is cleared) without ddObjects itself
+    // changing on that particular update.
+    if (
+      state.ddObjects === prev.ddObjects &&
+      state.undoStack === prev.undoStack &&
+      state.redoStack === prev.redoStack
+    ) {
+      return;
+    }
     const { dominoes, versions } = useDominoDataStore.getState();
     let pruned = false;
     const nextVersions = { ...versions };
     for (const parentId of dominoes.keys()) {
-      if (!state.ddObjects[parentId]) {
+      if (!state.ddObjects[parentId] && !isDDObjectInUndoHistory(parentId)) {
         dominoes.delete(parentId);
         delete nextVersions[parentId];
         pruned = true;

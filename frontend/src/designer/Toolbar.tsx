@@ -25,7 +25,15 @@ export default function Toolbar() {
   const activeTool = useStore((s) => s.activeTool);
   const setTool = useStore((s) => s.setTool);
   const cameraApi = useStore((s) => s.cameraApi);
-  const canUndo = useStore((s) => s.undoStack.length > 0);
+  // Clamped to dominoEditingUndoFloor while in domino editing mode — undo
+  // can't reach back into whatever was on the stack before the mode was
+  // entered (store.ts's undo() enforces the same clamp; this just keeps the
+  // button's enabled state honest about it).
+  const canUndo = useStore(
+    (s) =>
+      s.undoStack.length > 0 &&
+      (s.dominoEditingUndoFloor === null || s.undoStack.length > s.dominoEditingUndoFloor),
+  );
   const canRedo = useStore((s) => s.redoStack.length > 0);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
@@ -59,13 +67,15 @@ export default function Toolbar() {
           right (everything else) rather than centering this cluster. */}
       <div className={styles.clusterGroup}>
         {/* Undo/redo: real disabled state (unlike the zoom buttons, which
-            no-op via optional chaining instead). */}
+            no-op via optional chaining instead). Not gated on domino editing
+            mode — domino color changes are undoable now and expected to be
+            undone while still painting. */}
         <div className={styles.group}>
           <button
             className={styles.iconBtn}
             title="Undo"
             aria-label="Undo"
-            disabled={editingDominoes || !canUndo}
+            disabled={!canUndo}
             onClick={undo}
           >
             <RiArrowGoBackLine size={20} />
@@ -74,7 +84,7 @@ export default function Toolbar() {
             className={styles.iconBtn}
             title="Redo"
             aria-label="Redo"
-            disabled={editingDominoes || !canRedo}
+            disabled={!canRedo}
             onClick={redo}
           >
             <RiArrowGoForwardLine size={20} />

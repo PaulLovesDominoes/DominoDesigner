@@ -6,6 +6,8 @@ import { DOMINO_SIZE, type Position } from "../dimensions";
 import type { DDObjectId } from "../object-types/base";
 import { useDominoDataStore } from "./store";
 import { useDominoSelectionStore } from "./selectionStore";
+import { useColorLookupStore } from "../domino-inventory/colorLookupStore";
+import { DEFAULT_DOMINO_COLOR } from "./object-model";
 
 /**
  * The shared drawing half of the domino system. Every element type that owns
@@ -107,6 +109,10 @@ export function DominoModeller({
   // click/drag/arrow-key gestures never touch positions/colors/hidden), so this
   // needs its own version subscription to trigger the copy effect below.
   const selectionVersion = useDominoSelectionStore((s) => s.versions[ddObjectId]);
+  // Resolves a domino's colorId to actual RGB; changes reference whenever the
+  // inventory does (colorLookupStore.ts), so editing or deleting an
+  // inventory color redraws every domino painted with it.
+  const rgbById = useColorLookupStore((s) => s.rgbById);
 
   const capacity = data?.capacity ?? 0;
 
@@ -152,11 +158,19 @@ export function DominoModeller({
         aOffset.setXYZ(i, x, y, z);
       }
       mesh.setMatrixAt(i, scratchMatrix);
-      scratchColor.setRGB(
-        d.colors[3 * i] / 255,
-        d.colors[3 * i + 1] / 255,
-        d.colors[3 * i + 2] / 255,
-      );
+      // colorIds[i] is a live reference into the inventory (0 = unpainted);
+      // rgbById[...] is undefined for both the sentinel and a since-deleted
+      // entry, so both cases share the same DEFAULT_DOMINO_COLOR fallback.
+      const rgb = rgbById[d.colorIds[i]] ?? DEFAULT_DOMINO_COLOR;
+      // rgbById's bytes are sRGB (parsed straight from "#rrggbb" — see
+      // color.ts), but Color.setRGB's default colorSpace is three's linear
+      // working space, not sRGB. Passing SRGBColorSpace explicitly is what
+      // makes setColorAt's output match the same hex rendered as CSS (e.g.
+      // the inventory swatches) — omitting it silently treats the sRGB
+      // bytes as already-linear, so the renderer's linear-to-sRGB output
+      // conversion gamma-brightens them a second time (dark colors wash out
+      // hardest, since sRGB encoding lifts near-zero values the most).
+      scratchColor.setRGB(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, THREE.SRGBColorSpace);
       mesh.setColorAt(i, scratchColor);
 
       const isSelected = selection?.selected.has(i) ?? false;
@@ -177,7 +191,7 @@ export function DominoModeller({
     outlineGeometry.instanceCount = d.count;
 
     invalidate(); // frameloop="demand"
-  }, [ddObjectId, version, selectionVersion, invalidate, outlineGeometry]);
+  }, [ddObjectId, version, selectionVersion, rgbById, invalidate, outlineGeometry]);
 
   if (capacity === 0) return null;
 

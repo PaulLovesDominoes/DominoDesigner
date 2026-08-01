@@ -40,6 +40,7 @@ export default function ModeHintBar() {
   );
   const exitDominoEditing = useStore((s) => s.exitDominoEditing);
   const openHelpTopic = useStore((s) => s.openHelpTopic);
+  const dominoColorLockedId = useStore((s) => s.dominoColorLockedId);
   // The root BuildPlane always exists and always has a children array — this
   // is "are there any DDObjects yet" for the Select-mode idle hint below.
   const hasElements = useStore((s) => {
@@ -53,11 +54,18 @@ export default function ModeHintBar() {
     // defaultName is the registry's only human-readable type label
     // (getDDObjectDefaultName), doubling as one here.
     const typeLabel = getDDObjectDefaultName(dominoEditingObject.type);
+    // Locking a color swaps the sentence but keeps the same escape hatches —
+    // "ESC to exit" here means exit the lock, not the mode; Done/Cancel stay
+    // the only way to leave domino editing mode entirely.
     content = (
       <>
-        <span>
-          Editing dominoes in "{typeLabel}" "{dominoEditingObject.name}".
-        </span>
+        {dominoColorLockedId ? (
+          <span>Select dominoes to change to the locked color, ESC to exit.</span>
+        ) : (
+          <span>
+            Editing dominoes in "{typeLabel}" "{dominoEditingObject.name}".
+          </span>
+        )}
         <button className={styles.textBtn} onClick={exitDominoEditing}>
           Done
         </button>

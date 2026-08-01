@@ -4,6 +4,7 @@ import { DOMINO_SIZE } from "../../dimensions";
 import { generateDominoes, type DominoData } from "../../dominoes/object-model";
 import { DominoModeller } from "../../dominoes/modeller";
 import { useDominoDataStore } from "../../dominoes/store";
+import { restoreDominoColors } from "../../dominoes/colorMemory";
 import type { DDObjectModellerProps } from "../base";
 import { pitchX, pitchY, type FieldElementDDObject } from "./object-model";
 
@@ -61,8 +62,13 @@ export default function FieldElementModeller({
   // dominoes. Per-domino edits don't exist yet, so a full rebuild is free of
   // consequences; that changes when the op/undo stack lands.
   useEffect(() => {
-    put(id, layoutField({ rows, dominoes_per_row, row_spacing, domino_spacing }));
-  }, [put, id, rows, dominoes_per_row, row_spacing, domino_spacing]);
+    const data = layoutField({ rows, dominoes_per_row, row_spacing, domino_spacing });
+    // Restores colorIds for any cell this field has painted before (surviving
+    // a screen-switch remount, a resize, or an undo/redo of either) — see
+    // dominoes/colorMemory.ts. A no-op the first time a field is ever laid out.
+    restoreDominoColors(ddObject, data);
+    put(id, data);
+  }, [put, id, ddObject, rows, dominoes_per_row, row_spacing, domino_spacing]);
 
   return <DominoModeller ddObjectId={id} position={ddObject.position} />;
 }

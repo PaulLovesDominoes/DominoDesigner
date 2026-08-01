@@ -135,6 +135,16 @@ function hitDominoIndex(
   return hits.length > 0 ? hits[0].instanceId : undefined;
 }
 
+/**
+ * Recolors the current selection to whatever's locked, if anything. Called
+ * after every gesture that changes which dominoes are selected (but not
+ * after clearing a selection — nothing to color then).
+ */
+function applyLockedColorIfAny() {
+  const lockedId = useStore.getState().dominoColorLockedId;
+  if (lockedId) useStore.getState().applyColorToSelectedDominoes(lockedId);
+}
+
 interface GestureState {
   startWorld: { x: number; y: number };
   startIndex: number | undefined;
@@ -183,6 +193,10 @@ export default function DominoEditTool() {
 
   const gestureRef = useRef<GestureState | null>(null);
   const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
+  // Auto-clears the shortcut buffer after a pause in typing — reset on every
+  // keystroke, cleared (and the timer with it) whenever the buffer resolves
+  // or gets abandoned some other way (Escape, Space, a new pointer gesture).
+  const shortcutTimerRef = useRef<number | undefined>(undefined);
 
   // Unit-square edge geometry shared by the mode outline and the drag
   // rectangle border, scaled per-use — mirrors SelectionTool.tsx's unitEdges.
@@ -240,6 +254,7 @@ export default function DominoEditTool() {
         anchor: target,
         active: target,
       });
+      applyLockedColorIfAny();
     };
 
     const runShiftArrow = (direction: Direction) => {
@@ -255,6 +270,7 @@ export default function DominoEditTool() {
         anchor: entry.anchor,
         active: nextActive,
       });
+      applyLockedColorIfAny();
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -262,29 +278,87 @@ export default function DominoEditTool() {
       const typing =
         !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
       if (typing) return;
+      // Ctrl/Cmd+key is a keyboard-shortcut namespace (undo/redo, etc.), not
+      // typing — let it fall through untouched, or Ctrl+Z would get read as
+      // shortcut-typing "Z" instead of reaching DesignerScreen's undo handler.
+      if (e.ctrlKey || e.metaKey) return;
 
       if (e.key === "Escape") {
-        // Cancels a drag if one is in flight, else clears the selection if
-        // non-empty, else does nothing — Escape never exits the mode; only
-        // ModeHintBar's Done/Cancel can.
+        // Cancels a drag if one is in flight; otherwise clears the domino
+        // selection, the color lock, and any in-progress shortcut buffer all
+        // at once — Escape never exits the mode itself; only ModeHintBar's
+        // Done/Cancel can.
         if (gestureRef.current?.dragging) {
           cancelDrag();
           return;
         }
         const entry = useDominoSelectionStore.getState().get(dominoEditingId);
         if (entry && entry.selected.size > 0) useDominoSelectionStore.getState().clear(dominoEditingId);
+        const st = useStore.getState();
+        if (st.dominoColorLockedId) st.toggleDominoColorLock(st.dominoColorLockedId);
+        if (st.dominoColorShortcut) st.setDominoColorShortcut("");
+        window.clearTimeout(shortcutTimerRef.current);
         return;
       }
 
       const direction = DIRECTION_KEYS[e.key];
-      if (!direction) return;
-      e.preventDefault();
-      if (e.shiftKey) runShiftArrow(direction);
-      else runPlainArrow(direction);
+      if (direction) {
+        e.preventDefault();
+        if (e.shiftKey) runShiftArrow(direction);
+        else runPlainArrow(direction);
+        return;
+      }
+
+      if (e.key === " ") {
+        // Applies the *exact* match for the current buffer, if one exists —
+        // disambiguates e.g. "B" from "B1"/"B2" when both are valid prefixes.
+        const st = useStore.getState();
+        if (st.dominoColorShortcut) {
+          const exact = st.inventoryEntries.find(
+            (en) => en.active && en.shortcut.toUpperCase() === st.dominoColorShortcut,
+          );
+          if (exact) st.applyColorToSelectedDominoes(exact.id);
+          st.setDominoColorShortcut("");
+          window.clearTimeout(shortcutTimerRef.current);
+        }
+        e.preventDefault();
+        return;
+      }
+
+      if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
+        const st = useStore.getState();
+        const matchesFor = (buffer: string) =>
+          st.inventoryEntries.filter((en) => en.active && en.shortcut.toUpperCase().startsWith(buffer));
+
+        let next = (st.dominoColorShortcut + e.key).toUpperCase();
+        let matches = matchesFor(next);
+        if (matches.length === 0) {
+          // No shortcut extends the old buffer with this key — start over
+          // from just the new character rather than getting stuck.
+          next = e.key.toUpperCase();
+          matches = matchesFor(next);
+        }
+
+        st.setDominoColorShortcut(next);
+        window.clearTimeout(shortcutTimerRef.current);
+        shortcutTimerRef.current = window.setTimeout(
+          () => useStore.getState().setDominoColorShortcut(""),
+          1200,
+        );
+
+        if (matches.length === 1) {
+          st.applyColorToSelectedDominoes(matches[0].id);
+          st.setDominoColorShortcut("");
+          window.clearTimeout(shortcutTimerRef.current);
+        }
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.clearTimeout(shortcutTimerRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dominoEditingId]);
 
@@ -293,6 +367,9 @@ export default function DominoEditTool() {
   const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    // A new pointer gesture abandons any in-progress shortcut typing.
+    if (useStore.getState().dominoColorShortcut) useStore.getState().setDominoColorShortcut("");
+    window.clearTimeout(shortcutTimerRef.current);
     gestureRef.current = {
       startWorld: { x: e.point.x, y: e.point.y },
       startIndex: hitDominoIndex(scene, raycaster, dominoEditingId),
@@ -348,6 +425,7 @@ export default function DominoEditTool() {
           active = nearestToPoint(data, enclosed, endLocal.x, endLocal.y);
         }
         selectionStore.replace(dominoEditingId, { selected, baseSelection, anchor, active });
+        applyLockedColorIfAny();
       } else if (g.startIndex === undefined) {
         // Click on empty space.
         if (!g.ctrl) selectionStore.clear(dominoEditingId);
@@ -368,6 +446,7 @@ export default function DominoEditTool() {
           anchor,
           active,
         });
+        applyLockedColorIfAny();
       } else {
         // Plain click: replace the whole selection with just this domino.
         selectionStore.replace(dominoEditingId, {
@@ -376,6 +455,7 @@ export default function DominoEditTool() {
           anchor: g.startIndex,
           active: g.startIndex,
         });
+        applyLockedColorIfAny();
       }
     }
 

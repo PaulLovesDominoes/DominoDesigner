@@ -191,7 +191,9 @@ establishes a stacking context — keep it that way, or the lift silently stops 
 ### three.js / R3F boundary
 
 `designer/DesignerCanvas.tsx` is the R3F `<Canvas>`: orthographic, top-down,
-`frameloop="demand"` (so changes made outside the render loop need `invalidate()` to repaint).
+`frameloop="demand"` (so changes made outside the render loop need `invalidate()` to repaint). It
+is also `flat` (`NoToneMapping`) — see *Domino data*'s domino-color paragraph below for why exact
+color fidelity requires it.
 
 `designer/Scene.tsx` is the **registry-driven scene walker**: it recurses from
 `rootId` through `children` and draws each DDObject with the `modeller` its type declares
@@ -221,11 +223,81 @@ nothing about grids, rows or spacing. The parent element decides where its domin
 subsystem stores them (`object-model.ts`/`store.ts`) and draws them (`modeller.tsx`).
 
 `object-model.ts` defines `DominoData`, a **Structure of Arrays**: one flat typed array per
-attribute (`positions` stride 3, `orientations`, `colors` stride 3, `hidden`), plus
+attribute (`positions` stride 3, `orientations`, `colorIds` stride 1, `hidden`), plus
 `count`/`capacity`. That shape exists because it is what an `InstancedMesh` consumes and because
 tens of thousands of dominoes must cost no per-object allocation. `generateDominoes(count)`
 allocates and defaults them; `extent(data)` derives a footprint from the dominoes themselves,
 which is how an element's `bounds()` stays honest without duplicating layout maths.
+
+**A domino's color is a live reference, not a copy.** `colorIds[i]` holds the `numericId` of a
+domino-inventory `InventoryEntry` (`0` = unpainted). Nothing resolves that to actual RGB until
+draw time, via `domino-inventory/colorLookupStore.ts`'s `rgbById` table — a plain array indexed
+by `numericId`, rebuilt once whenever `inventoryEntries` changes (not per field, not per domino),
+so `dominoes/modeller.tsx`'s copy effect never parses hex in its hot path, just indexes into it.
+Three things fall out of this for free, with no extra code beyond the lookup table itself:
+editing an inventory color's RGB immediately updates every domino painted with it; an undo/redo
+entry recording "domino 4812 was color id 7" never drifts even if id 7's RGB changes later
+(unlike a baked-in RGB snapshot would); and deleting an in-use inventory color immediately falls
+back to `DEFAULT_DOMINO_COLOR` for every domino that referenced it, since `rgbById[deletedId]`
+is simply `undefined` after the table rebuilds — the same fallback path the `0` sentinel already
+uses, so no separate pruning subsystem was needed. `InventoryEntry` carries both `id`
+("INV-{n}", for display/debugging/future persistence) and `numericId` (the same `{n}`, minted
+together so they can't drift) specifically so nothing performance-sensitive ever parses the
+string form.
+
+**A painted domino must display the exact hex color it was assigned**, matching its inventory
+swatch pixel-for-pixel — this took two coordinated fixes, both required together:
+`dominoes/modeller.tsx`'s copy effect passes `THREE.SRGBColorSpace` explicitly to
+`Color.setRGB(r, g, b, colorSpace)` when converting `rgbById`'s bytes (parsed straight off a
+`"#rrggbb"` string by `color.ts`'s `hexToRgbBytes`, so they're sRGB) — omitting the colorSpace
+argument makes three treat them as already being in its linear working space, so the renderer's
+output conversion gamma-brightens them a second time, washing out dark colors hardest; and
+`DesignerCanvas.tsx`'s `<Canvas>` is `flat` (`NoToneMapping`), because R3F's default
+`ACESFilmicToneMapping` — built for physically-lit HDR scenes — still visibly shifts saturated
+hues (most noticeably reds/oranges) even once the colorSpace fix is in place. This scene is
+flat-shaded and unlit by design (no lights anywhere, `meshBasicMaterial` on every domino), so
+tone mapping has no physical scene to compensate for and only introduces color error. Both are
+load-bearing: dropping either one reintroduces a visible mismatch between a domino and its
+inventory color.
+
+**A domino's `colorIds` entry survives a regenerate**, via `dominoes/colorMemory.ts`'s
+`restoreDominoColors`, called once per regenerate (screen-switch remount, resize, undo/redo of
+either — anything that makes a domino-producing type's modeller rebuild its `DominoData` from
+scratch). Without it, every regenerate would silently wipe every domino back to unpainted, since
+`generateDominoes()` always zero-fills `colorIds`. The mechanism is registry-driven, not
+`fieldElement`-specific: a type opts in by declaring `dominoCellId(ddObject, flatIndex)`
+(`object-types/base.ts`) — a **stable identifier for the domino at `flatIndex` that must not
+depend on the parent's current physical size**. This is the load-bearing contract: a domino with
+cell id `X` must refer to the same logical domino (e.g. the same `(row, col)`) no matter how many
+rows/columns the parent currently has, or memory recorded at one size becomes meaningless — or
+worse, silently wrong — when looked up at another size. `fieldElement` encodes `(row, col)`
+directly (`row * 1_000_000 + col`); only the *decode* from `flatIndex` to `(row, col)` depends on
+the field's current `dominoes_per_row`, never the id's own meaning. A future spiral/rings type
+must uphold the same contract for whatever coordinate scheme it uses — `restoreDominoColors`
+itself never interprets a cell id, only uses it as an opaque `Map` key, so any stable scheme
+works. `colorMemory.ts`'s store is keyed by `DDObjectId` and holds, per parent, a `colorByCell`
+map plus the last `ddObject` snapshot seen (needed to decode the *previous* regenerate's flat
+indices before they're overwritten). Cells that merely fall outside the currently-live range
+(a shrink) are never deleted from `colorByCell` — which is also why a shrink followed by a later
+grow, even in a wholly separate gesture or session, restores the old colors rather than
+defaulting new cells to unpainted: nothing here scopes memory to a single "operation," by design.
+
+`colorByCell` has a second writer besides `restoreDominoColors`'s regenerate-time absorb/restore:
+`syncDominoColorMemory`, called from the three places that mutate a live `colorIds` array
+directly without going through a regenerate — `applyColorToSelectedDominoes` (the initial paint)
+and the `"dominoColors"` cases of `undo()`/`redo()` (`store.ts`). This exists because
+`restoreDominoColors`'s absorb step only ever *adds* entries (it records a cell's color when
+absorbing it off the live array only if that color is nonzero, so a live color of `0` is treated
+as "nothing to absorb," never as "clear this cell") — so on its own it could never learn that a
+previously-painted cell had been explicitly reverted to unpainted by an undo. Without
+`syncDominoColorMemory`, that stale nonzero entry survives in `colorByCell` until some later
+regenerate reads it and repaints the cell, resurrecting a color the user had explicitly undone —
+concretely: paint a field, undo the paint (colors correctly disappear, since that only touches
+the live array), then delete the field and undo the delete (a regenerate, since the DDObject
+remounts) — the field would come back wrongly recolored. `syncDominoColorMemory` closes this by
+writing (or, for a revert to `0`, deleting) each affected cell's entry immediately, keeping
+`colorByCell` a live mirror of "current colorId per painted cell," not just a lazily-absorbed
+snapshot from the last regenerate.
 
 Load-bearing conventions:
 
@@ -242,30 +314,100 @@ Load-bearing conventions:
 - `initDominoData()` must be called once at startup (it is, from `main.tsx`). It frees an
   element's dominoes when the element is deleted, by watching the DDObject store. It is an
   explicit call rather than a module-load side effect because subscribing at load would read
-  the main store mid-construction through the module cycle.
+  the main store mid-construction through the module cycle. `initDominoColorMemoryPruning()`
+  (`colorMemory.ts`) is the same pattern for a parent's cross-regenerate color memory, called
+  alongside it. **Neither prunes the instant a DDObject leaves `ddObjects`** — a delete is
+  undoable, so both defer via `store.ts`'s `isDDObjectInUndoHistory(id)`, which scans
+  `undoStack`/`redoStack` for any operation still referencing `id` (a `delete` whose subtree
+  includes it, chiefly). Pruning immediately would mean undoing a delete brings the DDObject
+  back with its dominoes already garbage collected — no positions, no colors, nothing to
+  restore. Both subscriptions re-check on `undoStack`/`redoStack` changes too, not just
+  `ddObjects`, since reachability can change on its own (a delete aging off the 100-entry
+  history cap, or being discarded when a later action clears the redo stack) without
+  `ddObjects` itself changing on that particular update. `dominoes/selectionStore.ts`'s
+  `initDominoSelectionPruning()` deliberately does **not** follow this pattern — it prunes
+  immediately, since which dominoes were *selected* isn't state a user expects back after
+  undoing a delete.
 
 The subsystem is split into a **parent half** (per element type, decides layout) and a **shared
 drawing half** (`dominoes/modeller.tsx`, one implementation for every type).
 `object-types/fieldElement/modeller.tsx` is the worked example of the parent half: it owns the
-grid maths, and when a layout parameter changes it regenerates the dominoes and `put()`s them
-into the store — then renders `<DominoModeller>` and draws nothing itself. Any future
-domino-producing type does the same: write the store, render `DominoModeller`.
+grid maths, and when a layout parameter changes it regenerates the dominoes, calls
+`restoreDominoColors` (above) to carry forward any existing colors, and `put()`s the result into
+the store — then renders `<DominoModeller>` and draws nothing itself. Any future domino-producing
+type does the same: compute a layout, restore colors, write the store, render `DominoModeller`,
+and declare its own `dominoCellId` to opt into the restore step at all.
 
 `dominoes/modeller.tsx`'s `DominoModeller` draws a parent's dominoes as two objects sharing one
 set of per-domino transforms: a **filled `InstancedMesh`** (one geometry/material/draw call,
-per-domino `instanceColor`) and a black **edge outline**. Note `InstancedMesh` does *not* read
-`DominoData` — it owns `instanceMatrix`/`instanceColor`, so `DominoModeller` copies the columns
-across (expanding x/y/z into a 4×4 matrix) and sets `needsUpdate`; its instance count is fixed
-at construction, hence the `key={capacity}` remount when a field is resized. The outline can't
-be an `InstancedMesh` (that renders triangles, not lines), so it is an **instanced
-`LineSegments`**: one base `EdgesGeometry` of a domino box, drawn once per domino via
-per-instance `aOffset`/`aScale` attributes placed by an `onBeforeCompile`-patched
-`LineBasicMaterial`. Same one-draw-call, no-per-object-allocation budget as the fill; the
-outline's attributes come only from positions/visibility, so a color change never touches them.
+per-domino `instanceColor`, resolved from `colorIds` through the color lookup table above) and an
+**edge outline**, white for a selected domino and black otherwise (domino editing mode's
+selection, see *Selection and direct manipulation* and *Domino color editing* below). Note
+`InstancedMesh` does *not* read `DominoData` — it owns `instanceMatrix`/`instanceColor`, so
+`DominoModeller` copies the columns across (expanding x/y/z into a 4×4 matrix) and sets
+`needsUpdate`; its instance count is fixed at construction, hence the `key={capacity}` remount
+when a field is resized. The outline can't be an `InstancedMesh` (that renders triangles, not
+lines), so it is an **instanced `LineSegments`**: one base `EdgesGeometry` of a domino box, drawn
+once per domino via per-instance `aOffset`/`aScale`/`aOutlineColor` attributes placed by an
+`onBeforeCompile`-patched `LineBasicMaterial` (one shared material for every field in the app —
+`aOutlineColor` is what lets each instance differ). Same one-draw-call, no-per-object-allocation
+budget as the fill.
 
-DDObject-level undo/redo exists now (see *Undo/redo*). Not built yet, and designed to land on
-this same `Operation` union when it does: a domino-level operation kind, and raycast picking
-(`intersection.instanceId` → domino index) to enable per-domino editing.
+Per-domino selection and color editing now exist (domino editing mode — see *Domino editing
+mode* and *Domino color editing* below), both riding the same `Operation` union DDObject-level
+undo/redo already used (see *Undo/redo*), exactly as anticipated when that union was designed.
+
+### Domino editing mode
+
+Double-click a domino-editable DDObject (on the canvas via `SelectionTool.tsx`'s `PickPlane`, or
+its row in the sidebar's `DDObjectsPanel.tsx`) to enter it — `store.ts`'s `enterDominoEditing`
+sets `dominoEditingId` and switches `activeTool` to `"editDominoes"`, a `ToolId` with **no
+toolbar entry** (entry is exclusively by double-click). That one value is deliberately enough on
+its own to disarm `SelectionTool`/`CreateByRegionTool`/`onPointerMissed` (none of them match
+`"select"` or an `elementType`-bearing tool anymore) and to swap `Sidebar.tsx`'s child from
+`DDObjectsPanel` to `DominoColorPanel` — no scattered `dominoEditingId` checks needed in those
+files. The mode is **fully modal**: Toolbar/undo-redo/the sidebar all disable via that same
+`activeTool` check, and only `ModeHintBar`'s Done/Cancel buttons (`exitDominoEditing`) leave it —
+Escape never does, even though it clears a lot of in-mode state (see below).
+
+`designer/DominoEditTool.tsx` is the canvas tool owning everything once inside the mode:
+per-domino selection (click / Ctrl+click / drag-rubberband / Ctrl+drag / arrow-keys /
+Shift+arrow-keys, stored in `dominoes/selectionStore.ts`'s `DominoSelectionEntry` — `selected`,
+plus `anchor`/`active`/`baseSelection` for Shift+Arrow's Excel-style rectangle
+grow/shrink/cross-the-anchor behavior) and, layered on top of that, color assignment (below).
+Domino hit-testing raycasts directly against the field's `InstancedMesh` via `hitDominoIndex`
+rather than through R3F's synthetic pointer-event system, because that system only considers
+objects with their own pointer-event props — and the mesh deliberately has none, so
+`SelectionTool`'s DDObject-level pick planes underneath it keep receiving clicks (see *Domino
+data* above).
+
+### Domino color editing
+
+While in domino editing mode, `Sidebar.tsx` shows `DominoColorPanel.tsx` — a grid of swatches,
+one per **active** domino-inventory entry — instead of the object hierarchy. Two ways to color
+the current selection, both immediate and both push exactly one undoable `"dominoColors"`
+operation (see *Domino data* above for why that's a live color-id reference, not baked-in RGB):
+
+- **Select dominoes, then choose a color** — click a swatch, or type its `shortcut` (matches
+  narrow live as you type; a unique match applies immediately; Space applies the *exact* match
+  when a longer one is also a valid prefix, e.g. disambiguating "B" from "B1"). Shortcut state
+  (`dominoColorShortcut`) and its ~1.2s inactivity auto-clear live in `DominoEditTool.tsx`'s
+  keyboard handler, reusing its existing typing-guard and Escape/pointer-gesture cleanup. That
+  handler returns early on any Ctrl/Cmd+key combo before reaching the shortcut-typing branch, so
+  Ctrl+Z/Ctrl+Y (undo/redo) reach `DesignerScreen.tsx`'s handler instead of being swallowed as a
+  one-letter shortcut buffer entry.
+- **Choose a color first, then select dominoes** — double-click a swatch to lock it
+  (`dominoColorLockedId`, badge via `RiLockFill`); every domino selected afterward, by any
+  method, is recolored to it immediately (`DominoEditTool.tsx`'s `applyLockedColorIfAny`, called
+  after every selection-setting gesture). Locking also colors whatever's already selected at
+  that moment, since a double-click's first `click` already applies the color before `dblclick`
+  fires the lock — not a special case, just how the browser sequences the two events. Clicking a
+  *different* swatch while one is locked unlocks it (then applies the new color as an ordinary
+  click); clicking the already-locked swatch is just a no-op re-apply. Escape clears the
+  selection, the lock, and any in-progress shortcut buffer all at once; so does exiting the mode.
+  Only one color locks at a time. `ModeHintBar` swaps its sentence while locked.
+
+Clicking a swatch with nothing selected is a documented no-op — nothing to apply to.
 
 ### Element placement and creation
 
@@ -348,11 +490,30 @@ Deliberate decisions a fresh session could otherwise reverse:
 ### Undo/redo
 
 `store.ts` holds a single unified `undoStack`/`redoStack` over a discriminated `Operation`
-union (`create` / `delete` / `transform` / `properties`) — one stack for every DDObject-level
-change, not a separate stack per subsystem. Two independent histories can't preserve true
-chronological ordering without effectively rebuilding one timeline anyway, so this stays one
-stack even though only DDObject-level operations exist today; a future domino-level operation
-kind is meant to join the same union rather than get a stack of its own.
+union (`create` / `delete` / `transform` / `properties` / `dominoColors`) — one stack for
+every DDObject-level (and now domino-color-level) change, not a separate stack per
+subsystem. Two independent histories can't preserve true chronological ordering without
+effectively rebuilding one timeline anyway, so this stays one stack.
+
+`isDDObjectInUndoHistory(id)` scans both stacks for any operation still referencing a
+DDObject id — used by `dominoes/store.ts` and `dominoes/colorMemory.ts` to defer freeing a
+deleted DDObject's dominoes/color memory until its `delete` operation is no longer
+reachable via undo or redo, so undoing a delete restores colors instead of resurrecting an
+object with its domino data already garbage collected. See those files' "Domino data"
+section entries for the full rationale.
+
+**Undo is clamped while in domino editing mode.** `enterDominoEditing` snapshots
+`undoStack.length` into `dominoEditingUndoFloor`; `undo()` refuses once `undoStack.length` would
+drop to or below that floor, so undo inside the mode can only reach back to the state the field
+was in when the mode was entered — never past it into whatever created the field or edited it
+beforehand. `exitDominoEditing` resets the floor to `null`, so undo outside the mode is
+unclamped again (and so is redo, always — only undo needs clamping, since redo only replays
+operations already popped in this same session). `Toolbar.tsx`'s Undo button disables at the
+clamp the same way it disables on an empty stack. This is deliberate scoping, not a side effect
+of anything structural: nothing stops a `"dominoColors"` op from being undone outside the mode
+(undoing a color change works whether or not domino editing mode is active — see *Domino data*'s
+`dominoColors` case), so without this floor, undo from inside the mode would silently walk back
+through unrelated DDObject-level history too.
 
 Every variant stores **whole-DDObject snapshots**, never per-field patches — `fieldElement`'s
 `normalizeSize` coupling (width/height ↔ counts via `fixed_size`) makes fields too
@@ -414,15 +575,17 @@ otherwise "correct" backwards:
   to write, so it was removed from `store.ts`; the DDObject hierarchy was always excluded on
   purpose, so every load still starts a fresh default project. Re-adding persistence means
   re-wrapping the store and choosing a `partialize`.
-- **Dominoes are all one colour for now.** `DominoData.colors` is already a per-domino
-  column, but nothing sets it — `generateDominoes` fills every domino with
-  `DEFAULT_DOMINO_COLOR` and there is no colour control on the field editor. Per-domino
-  colouring was deliberately deferred as too complex for this version; the data is shaped
-  for it, so landing it needs no migration. (Don't restate the hex here — read it from
-  `dominoes/object-model.ts`.)
-- **A field's dominoes are regenerated wholesale** whenever a layout parameter changes.
-  That is only safe because per-domino edits don't exist yet. Once they do, regenerate has
-  to become an operation and decide what it preserves.
+- **Per-domino colouring exists now** (domino editing mode's color panel — see *Domino color
+  editing*), assigned from the domino inventory rather than a free picker, referenced by id
+  rather than copied as RGB (see *Domino data*'s `colorIds`/`colorLookupStore.ts` note).
+- **A field's dominoes are still regenerated wholesale** whenever a layout parameter changes —
+  `generateDominoes` always zero-fills a fresh `DominoData` — but this no longer loses colors:
+  `restoreDominoColors` (*Domino data*) carries them forward, keyed by each domino's stable
+  `dominoCellId`, across a resize, a screen-switch remount, or an undo/redo of either. `hidden`
+  tombstones aren't preserved the same way yet (nothing sets `hidden` to 1 anywhere in this
+  codebase today — no per-domino delete feature exists), but the same registry-driven mechanism
+  would extend to it directly whenever that feature lands, since a domino's cell id is exactly
+  what such a feature would need too.
 - **A field is described twice over, and `fixed_size` picks which one wins.** Checked, the
   physical `width`/`height` are authoritative and the counts refit to them; unchecked, the
   counts are authoritative and the size grows to hold them exactly. `normalizeSize` in

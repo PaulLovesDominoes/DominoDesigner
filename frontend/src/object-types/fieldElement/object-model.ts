@@ -190,6 +190,18 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
   modeller: FieldElementModeller,
   dominoEditable: true,
 
+  // Row-major, matching layoutField's own index scheme exactly. The
+  // multiplier only needs to exceed any realistic dominoes_per_row — beyond
+  // that the encoding is opaque to dominoes/colorMemory.ts, which just uses
+  // it as a Map key. Stable per the dominoCellId contract (base.ts): only
+  // the decode from flatIndex to (row, col) depends on the field's current
+  // dominoes_per_row, never the id itself.
+  dominoCellId: (field, flatIndex) => {
+    const row = Math.floor(flatIndex / field.dominoes_per_row);
+    const col = flatIndex % field.dominoes_per_row;
+    return row * 1_000_000 + col;
+  },
+
   // The field's physical footprint. Needs no generated dominoes, so a field is
   // framable the instant it exists.
   bounds: (field) => ({

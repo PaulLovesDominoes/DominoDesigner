@@ -82,6 +82,21 @@ export const isDominoEditable = (ddObject: DDObject): boolean =>
   DD_OBJECT_TYPES[ddObject.type].dominoEditable === true;
 
 /**
+ * A stable cell-id function for this DDObject, or undefined if its type
+ * declares no `dominoCellId` (colors can't be preserved across a regenerate
+ * for that type). Bound to this specific instance so callers just pass a
+ * flat domino index. Cast as per getDDObjectBounds.
+ */
+export const getDominoCellId = (
+  ddObject: DDObject,
+): ((flatIndex: number) => number) | undefined => {
+  const fn = DD_OBJECT_TYPES[ddObject.type].dominoCellId as
+    | ((ddObject: DDObject, flatIndex: number) => number)
+    | undefined;
+  return fn ? (flatIndex: number) => fn(ddObject, flatIndex) : undefined;
+};
+
+/**
  * The store patch that makes `ddObject` occupy `bounds` (cursor move/resize), or
  * undefined if its type declares no `setBounds`, or if `bounds` was too
  * small/invalid. Takes the instance, and casts to undo the registry's type

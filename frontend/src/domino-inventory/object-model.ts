@@ -46,6 +46,14 @@ export type InventoryEntryId = `INV-${number}`;
 
 export interface InventoryEntry {
   id: InventoryEntryId;
+  /**
+   * The same number embedded in `id` ("INV-{n}"), carried alongside it so
+   * nothing performance-sensitive ever has to parse it back out — used
+   * directly as the array index in DominoData.colorIds and
+   * colorLookupStore.ts's rgbById table. Always minted together with `id`
+   * from the same source number, so the two can never drift.
+   */
+  numericId: number;
   active: boolean;
   colorName: string;
   /** "#rrggbb", lowercase — the same shape ColorField already speaks. */
@@ -130,6 +138,7 @@ const SEED_ROWS: Array<[name: string, hex: string, shortcut: string]> = [
 export function createSeedInventory(): InventoryEntry[] {
   return SEED_ROWS.map(([colorName, color, shortcut], i) => ({
     id: `INV-${i + 1}` as InventoryEntryId,
+    numericId: i + 1,
     active: true,
     colorName,
     color,

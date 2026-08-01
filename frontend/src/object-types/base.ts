@@ -90,6 +90,24 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
    */
   dominoEditable?: boolean;
   /**
+   * For domino-producing types only: a stable identifier for the domino at
+   * `flatIndex`, given the ddObject's CURRENT layout parameters. Used by
+   * dominoes/colorMemory.ts to preserve colors across a regenerate (resize,
+   * remount, undo) even though a flat index's meaning can shift whenever a
+   * type's own layout parameters change. **Stability contract**: the id
+   * returned for a given logical cell must not depend on the parent's
+   * current physical size — the same cell must always map to the same id
+   * regardless of how many dominoes the parent currently has, or memory
+   * recorded at one size becomes meaningless (or, worse, silently wrong)
+   * when looked up at another. fieldElement encodes `(row, col)` directly;
+   * only the *decode* from `flatIndex` to `(row, col)` depends on the
+   * current `dominoes_per_row`, never the id's own meaning. A future
+   * spiral/rings type must uphold the same contract for its own scheme.
+   * Types with no cell-id function simply don't get color preservation
+   * across a regenerate — today that's every type except fieldElement.
+   */
+  dominoCellId?(ddObject: T, flatIndex: number): number;
+  /**
    * Optional: realise a target footprint on this instance — the write path for
    * cursor-based move and resize, the manipulation analogue of
    * `createFromRegion`. Returns the store patch that makes the instance occupy

@@ -66,6 +66,12 @@ export const useDominoSelectionStore = create<DominoSelectionStore>((set, get) =
  * cycle applies here: registry -> fieldElement's object-model -> this store ->
  * main store -> registry, harmless only because nothing reads across it while
  * modules are initialising).
+ *
+ * Deliberately pruned immediately, unlike dominoes/store.ts's DominoData or
+ * colorMemory.ts's DominoColorMemory — those defer pruning until a delete is
+ * no longer undoable (isDDObjectInUndoHistory) so colors survive an undo.
+ * Which dominoes were *selected* isn't state a user expects back after
+ * undoing a delete, so there's nothing worth keeping alive here.
  */
 export function initDominoSelectionPruning() {
   return useStore.subscribe((state, prev) => {

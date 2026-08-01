@@ -19,6 +19,14 @@ export default function DesignerCanvas() {
     <Canvas
       orthographic
       frameloop="demand"
+      // This scene is flat-shaded and unlit (no lights, meshBasicMaterial
+      // everywhere) and colors must match their hex values exactly (e.g. the
+      // inventory swatches), so R3F's default ACESFilmicToneMapping — meant
+      // for physically-lit HDR scenes — is actively wrong here: its filmic
+      // rolloff desaturates and shifts saturated colors like orange even
+      // after the sRGB colorSpace fix in dominoes/modeller.tsx. `flat`
+      // switches the renderer to NoToneMapping.
+      flat
       camera={{ position: [0, 0, 100], near: 0.1, far: 2000, zoom: 0.4 }}
       style={{ position: "absolute", inset: 0 }}
       // A left-click that hits no mesh at all (the dark area outside the build
