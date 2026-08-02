@@ -94,15 +94,6 @@
   border-color: var(--color-accent);
 }
 
-/* Checkbox sits where the input would, so the row lines up with its siblings. */
-.checkbox {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--color-accent);
-  cursor: pointer;
-}
-
 /* Hex value reads as data, so it gets a monospace treatment. */
 .control input.hex {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

@@ -63,7 +63,8 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
   editor: ComponentType<DDObjectEditorProps<T>>;
   /**
    * Optional three.js scene-building for this type, drawn inside the designer's
-   * <Canvas>. Types with no visual representation yet (fieldElement) omit it.
+   * <Canvas>. Types with no visual representation omit it, and Scene.tsx skips
+   * them.
    */
   modeller?: ComponentType<DDObjectModellerProps<T>>;
   /**
@@ -99,10 +100,16 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
    * current physical size — the same cell must always map to the same id
    * regardless of how many dominoes the parent currently has, or memory
    * recorded at one size becomes meaningless (or, worse, silently wrong)
-   * when looked up at another. fieldElement encodes `(row, col)` directly;
-   * only the *decode* from `flatIndex` to `(row, col)` depends on the
-   * current `dominoes_per_row`, never the id's own meaning. A future
-   * spiral/rings type must uphold the same contract for its own scheme.
+   * when looked up at another. fieldElement encodes each cell's `(row, col)`
+   * *relative to its anchor* — the live 0-based row/col minus the persisted
+   * `originRow`/`originCol`, which count how many rows/columns currently sit
+   * before that anchor — precisely so that a resize from any edge doesn't
+   * change a pre-existing domino's id. Both go negative when those edges
+   * shrink past the anchor, hence the bias its encoding adds. The *decode*
+   * from `flatIndex` to the live `(row, col)` depends on the current
+   * `dominoes_per_row`; the anchor-relative meaning laid over it never does.
+   * A future spiral/rings type must uphold the same contract for its own
+   * scheme.
    * Types with no cell-id function simply don't get color preservation
    * across a regenerate — today that's every type except fieldElement.
    */

@@ -11,9 +11,10 @@ and a Designer screen with a working pan/zoom 2D canvas, an extensible object mo
 build's contents, and live property editing.
 
 Future plans:
-- Domino-by-domino editing
-  .  Region selection, moving, and deleting individual dominoes
-  .  All with undo/redo
+- More element types beyond the domino field (walls, towers, lines)
+- Moving and deleting individual dominoes, alongside the coloring that exists today
+- Mapping an image onto domino colors
+- Saving and loading a build
 
 ## Conventions
 
@@ -71,9 +72,14 @@ frontend (`npm run build`) after changing frontend code.
   updates as objects are created.
 - **Field** tool - allows dragging a rectangle on the plane to
   place a domino field there; each field draws its dominoes as one instanced mesh with
-  line-segment edge outlines. A row's **⋯** menu opens **Properties** for any object —
-  including the build plane's own size and color — in a modeless dialog that previews edits
-  live on the canvas, with Save/Cancel.
+  line-segment edge outlines. Select a field to move it or drag its handles to resize:
+  resizing adds and removes whole rows and columns around a fixed point rather than
+  stretching the dominoes, so the dominoes you already have — and the colors on them —
+  stay exactly where they are no matter which edge you drag. The outline can therefore
+  sit slightly proud of the outermost dominoes; that gap is where the next row or column
+  will appear. A row's **⋯** menu opens **Properties** for any object — including the
+  build plane's own size and color — in a modeless dialog that previews edits live on
+  the canvas, with Save/Cancel.
 - **Domino Inventory** screen — a catalog of the domino colors available to build with (color,
   material, finish, brand, shortcut, stock count), each toggleable active/inactive.
 - **Domino editing mode** — double-click a field (on the canvas or in the sidebar) to select

@@ -53,8 +53,9 @@ function collectSubtree(
 
 /**
  * One undoable action. Whole-DDObject snapshots throughout (never per-field
- * patches) — fieldElement's normalizeSize coupling makes fields too
- * interdependent to diff/reapply piecemeal. "dominoColors" is the first
+ * patches) — a fieldElement's counts, width/height, position, anchor and row/col
+ * origins are all derived from one another, and by different write paths, so a
+ * field is far too interdependent to diff/reapply piecemeal. "dominoColors" is the first
  * domino-level operation kind anticipated by that design: before/after are
  * the affected dominoes' previous/new inventory colorIds (0 = unassigned),
  * parallel to indices — typed arrays given how large a selection can get.

@@ -166,29 +166,6 @@ export function NumberField({
   );
 }
 
-export function CheckboxField({
-  label,
-  value,
-  onChange,
-}: FieldProps & { value: boolean; onChange: (value: boolean) => void }) {
-  const id = useId();
-
-  return (
-    <div className={styles.field}>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <div className={styles.control}>
-        <input
-          id={id}
-          className={styles.checkbox}
-          type="checkbox"
-          checked={value}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-      </div>
-    </div>
-  );
-}
-
 /**
  * A pull-down over a fixed set of string options. Like the other controls it
  * holds no draft: `value` is the currently-selected option, driven entirely by

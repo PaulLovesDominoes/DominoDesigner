@@ -15,29 +15,44 @@ import { pitchX, pitchY, type FieldElementDDObject } from "./object-model";
  * to hold dominoes, so each parent element type owns its own layout. This is the
  * template a new domino-producing type follows — compute a layout, put() it,
  * render <DominoModeller>. The pitches come from the object model, shared with
- * the size↔counts maths so a laid-out field always occupies exactly the span
- * normalizeField computed for it.
+ * the counts↔size maths so the grid laid out here and the span normalizeField
+ * computes for the same counts can never drift apart. They are not always the
+ * same rectangle, though: a handle-drag deliberately leaves the boundary a
+ * sub-pitch gap outside the outermost dominoes (see object-model.ts).
  */
 type FieldLayout = Pick<
   FieldElementDDObject,
-  "rows" | "dominoes_per_row" | "row_spacing" | "domino_spacing"
+  | "rows" | "dominoes_per_row" | "row_spacing" | "domino_spacing"
+  | "position" | "anchorX" | "anchorY" | "originRow" | "originCol"
 >;
 
 function layoutField(field: FieldLayout): DominoData {
-  const { rows, dominoes_per_row, row_spacing, domino_spacing } = field;
+  const {
+    rows, dominoes_per_row, row_spacing, domino_spacing,
+    anchorX, anchorY, originRow, originCol, position,
+  } = field;
   const data = generateDominoes(rows * dominoes_per_row);
 
   const px = pitchX(domino_spacing);
   const py = pitchY(row_spacing);
 
+  // Where the row 0 / col 0 domino goes. Anchored to anchorX/anchorY offset by
+  // originCol/originRow — how many columns/rows now sit before the anchor after
+  // bottom/left handle-drags — and NOT to `position`, which is only the
+  // boundary rectangle. That is exactly what keeps an existing domino still
+  // while the box is resized around it. Subtracting position.(xy) at the end
+  // converts that world offset into the parent-relative space DominoModeller's
+  // group expects. Same expression normalizeField uses for the grid origin.
+  const baseX = (anchorX - originCol * px + DOMINO_SIZE.thickness / 2) - position.x;
+  const baseY = (anchorY - originRow * py + DOMINO_SIZE.width / 2) - position.y;
+
   let i = 0;
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < dominoes_per_row; col++) {
-      // Positions are parent-relative; DominoModeller's group applies the field's
-      // own position. z stays 0 — unused this version. Orientation is left at the
+      // z stays 0 — unused this version. Orientation is left at the
       // generated default (STANDING).
-      data.positions[3 * i] = DOMINO_SIZE.thickness / 2 + col * px;
-      data.positions[3 * i + 1] = DOMINO_SIZE.width / 2 + row * py;
+      data.positions[3 * i] = baseX + col * px;
+      data.positions[3 * i + 1] = baseY + row * py;
       i++;
     }
   }
@@ -55,20 +70,32 @@ export default function FieldElementModeller({
 }: DDObjectModellerProps<FieldElementDDObject>) {
   const put = useDominoDataStore((s) => s.put);
 
-  const { id, rows, dominoes_per_row, row_spacing, domino_spacing } = ddObject;
+  const {
+    id, rows, dominoes_per_row, row_spacing, domino_spacing,
+    position, anchorX, anchorY, originRow, originCol,
+  } = ddObject;
 
-  // Regenerate the dominoes whenever a layout parameter changes. The field's
-  // position is deliberately not a dependency — it moves the group, not the
-  // dominoes. Per-domino edits don't exist yet, so a full rebuild is free of
-  // consequences; that changes when the op/undo stack lands.
+  // Regenerate the dominoes whenever the field changes. `ddObject` alone is the
+  // dependency that matters — every layout parameter is destructured from it,
+  // and the store hands back a fresh object identity on every write, so listing
+  // them individually would imply a precision this effect doesn't have.
+  //
+  // A pure move (position changes but anchorX/anchorY shift by the same delta,
+  // per setBounds' no-resize branch) recomputes to the same local positions, so
+  // it is a harmless no-op recompute rather than a case needing special
+  // handling.
   useEffect(() => {
-    const data = layoutField({ rows, dominoes_per_row, row_spacing, domino_spacing });
+    const data = layoutField({
+      rows, dominoes_per_row, row_spacing, domino_spacing,
+      position, anchorX, anchorY, originRow, originCol,
+    });
     // Restores colorIds for any cell this field has painted before (surviving
     // a screen-switch remount, a resize, or an undo/redo of either) — see
     // dominoes/colorMemory.ts. A no-op the first time a field is ever laid out.
     restoreDominoColors(ddObject, data);
     put(id, data);
-  }, [put, id, ddObject, rows, dominoes_per_row, row_spacing, domino_spacing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [put, id, ddObject]);
 
   return <DominoModeller ddObjectId={id} position={ddObject.position} />;
 }

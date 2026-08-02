@@ -40,6 +40,9 @@ These are load-bearing for correctness and are easy to get backwards:
 - Vertical objects (e.g. towers) grow **up into +Z**.
 - A `FieldElement`'s `position.y` is the build-plane Y coordinate; note it correlates to
   **-Z in three.js** screen terms, per the original design brief.
+- A `FieldElement`'s `position`/`width`/`height` is its **boundary rectangle**, not the
+  bounding box of its dominoes. The dominoes are laid out from `anchorX`/`anchorY` instead, so
+  the two can legitimately differ by up to one pitch — see *The field's anchor model*.
 - Dominoes are set up **standing**, so a domino's length runs vertically (+Z) and it presents
   only its narrow footprint when viewed from above.
 - Real-world measurements live in `src/dimensions.ts` (`DOMINO_SIZE`). Source rendering
@@ -120,7 +123,8 @@ for a default-valued instance, and optional `modeller`/`bounds` members. The sib
 - **`object-model.ts`** — the data `interface` (the type's shape in the store) *and* its
   `DDObjectTypeDefinition`: `icon`/`defaultName`, the `create()` factory, and the wiring of the
   type's `editor`/`modeller`/`bounds`/`createFromRegion`. Any pure geometry or normalisation
-  maths the type needs lives here too (e.g. `fieldElement`'s size↔counts `normalizeSize`).
+  maths the type needs lives here too (e.g. `fieldElement`'s counts→size `normalizeSize` and the
+  `fitCount`/`signedFitCount` pair that runs it the other way).
 - **`editor.tsx`** — the property editor: type-specific controls assembled from the shared
   inputs in `components/PropertyFields.tsx`, hosted by `PropertiesDialog.tsx` (see *Property
   editing*). Resolved through the registry; imported by nothing but its own definition module.
@@ -169,7 +173,7 @@ controls come from `getDDObjectEditor`, so adding a DDObject type never means ed
 
 The three pieces relate like this: a type's **`editor.tsx`** is a plain set of rows built from
 the reusable controls in **`components/PropertyFields.tsx`** (`TextField`, `NumberField`,
-`UnitNumberField`, `CheckboxField`, `ColorField`, `Steppers`) — it holds no dialog chrome and
+`UnitNumberField`, `ColorField`, `SelectField`, `Steppers`) — it holds no dialog chrome and
 never imports `PropertiesDialog`. **`PropertiesDialog.tsx`** looks the editor up through the
 registry (`getDDObjectEditor`) and hosts it, passing each editor an `update` callback wired to
 `updateDDObject`. So a new control shared across types is added to `PropertyFields.tsx`; a new
@@ -227,7 +231,9 @@ attribute (`positions` stride 3, `orientations`, `colorIds` stride 1, `hidden`),
 `count`/`capacity`. That shape exists because it is what an `InstancedMesh` consumes and because
 tens of thousands of dominoes must cost no per-object allocation. `generateDominoes(count)`
 allocates and defaults them; `extent(data)` derives a footprint from the dominoes themselves,
-which is how an element's `bounds()` stays honest without duplicating layout maths.
+which is how an element type *can* report a footprint without duplicating layout maths — though
+no type does today, and `fieldElement`'s `bounds()` deliberately reports something else (its
+boundary rectangle, which is not the dominoes' bounding box — see *The field's anchor model*).
 
 **A domino's color is a live reference, not a copy.** `colorIds[i]` holds the `numericId` of a
 domino-inventory `InventoryEntry` (`0` = unpainted). Nothing resolves that to actual RGB until
@@ -271,8 +277,11 @@ depend on the parent's current physical size**. This is the load-bearing contrac
 cell id `X` must refer to the same logical domino (e.g. the same `(row, col)`) no matter how many
 rows/columns the parent currently has, or memory recorded at one size becomes meaningless — or
 worse, silently wrong — when looked up at another size. `fieldElement` encodes `(row, col)`
-directly (`row * 1_000_000 + col`); only the *decode* from `flatIndex` to `(row, col)` depends on
-the field's current `dominoes_per_row`, never the id's own meaning. A future spiral/rings type
+*relative to its anchor* — `(row - originRow + CELL_ID_BIAS) * CELL_ID_MULT + (col - originCol +
+CELL_ID_BIAS)`, the bias being there because `originRow`/`originCol` go negative once those edges
+shrink past the anchor (see *The field's anchor model*). Only the *decode* from `flatIndex` to the
+live `(row, col)` depends on the field's current `dominoes_per_row`; the anchor-relative meaning
+laid over it never does, which is what makes an id survive a resize. A future spiral/rings type
 must uphold the same contract for whatever coordinate scheme it uses — `restoreDominoColors`
 itself never interprets a cell id, only uses it as an opaque `Map` key, so any stable scheme
 works. `colorMemory.ts`'s store is keyed by `DDObjectId` and holds, per parent, a `colorByCell`
@@ -436,7 +445,9 @@ only the registry — which makes it the pattern to copy alongside `Scene.tsx` a
   region was too small/invalid, and the tool discards it exactly like a cancelled drag. This
   mapping has to be per-type because each type's model shapes position/size differently —
   `buildPlane` has no position at all, `fieldElement` splits it into `position` plus
-  `width`/`height`. There is deliberately **no richer create/update/finalize protocol**: the
+  `width`/`height`, and also seeds `anchorX`/`anchorY` from the region's corner with
+  `originRow`/`originCol` at zero (*The field's anchor model*). There is deliberately **no
+  richer create/update/finalize protocol**: the
   drag preview is already generic (a plain rectangle), and the DDObject isn't created until
   mouse-up, so nothing today needs a live type-specific preview mid-drag.
 - `designer/ModeHintBar.tsx` prompts the user. Adding a placement tool means adding an entry to
@@ -469,8 +480,11 @@ Two registry members drive it, alongside `bounds()`:
   manipulation analogue of `createFromRegion`, resolved via `applyDDObjectBounds`. Per-type for the
   same reason: each type maps a target rectangle onto its own position/size fields. `undefined`
   means the target is too small/invalid and the tool discards that drag frame. `fieldElement`'s
-  implementation rounds through the field's `displayUnit` and runs `normalizeField`, and a **resize
-  forces `fixed_size` on** so the drag sticks (a pure move leaves it alone).
+  implementation splits on whether width/height actually changed: a **pure move** shifts
+  `position` and `anchorX`/`anchorY` by the same delta and touches nothing else, while a
+  **resize** takes `position`/`width`/`height` verbatim from the drag rect and re-derives
+  `rows`/`dominoes_per_row`/`originRow`/`originCol` **absolutely from the anchor** — see *The
+  field's anchor model* below, which explains why "absolutely" is load-bearing.
 
 Deliberate decisions a fresh session could otherwise reverse:
 
@@ -515,9 +529,11 @@ of anything structural: nothing stops a `"dominoColors"` op from being undone ou
 `dominoColors` case), so without this floor, undo from inside the mode would silently walk back
 through unrelated DDObject-level history too.
 
-Every variant stores **whole-DDObject snapshots**, never per-field patches — `fieldElement`'s
-`normalizeSize` coupling (width/height ↔ counts via `fixed_size`) makes fields too
-interdependent to diff/reapply piecemeal, so undo/redo always restores (or removes/reinserts)
+Every variant stores **whole-DDObject snapshots**, never per-field patches — a `fieldElement`'s
+counts, `width`/`height`, `position`, `anchorX`/`anchorY` and `originRow`/`originCol` are all
+derived from one another, by different write paths (`normalizeSize` for the editor,
+`fitCountsThenSize` at creation, `setBounds` for a drag), which makes a field far too
+interdependent to diff/reapply piecemeal. So undo/redo always restores (or removes/reinserts)
 a complete object.
 
 The commit points are deliberately **not** where the data first changes — `updateDDObject`
@@ -586,23 +602,53 @@ otherwise "correct" backwards:
   codebase today — no per-domino delete feature exists), but the same registry-driven mechanism
   would extend to it directly whenever that feature lands, since a domino's cell id is exactly
   what such a feature would need too.
-- **A field is described twice over, and `fixed_size` picks which one wins.** Checked, the
-  physical `width`/`height` are authoritative and the counts refit to them; unchecked, the
-  counts are authoritative and the size grows to hold them exactly. `normalizeSize` in
-  `fieldElement/object-model.ts` is the **single** expression of that relationship —
-  `normalizeField` (the editor, `create()`) and `createFromRegion` (the placement tool) are
-  both thin callers of it over different shapes, so the two descriptions can never disagree.
-  It defaults **on**, because the expected next action after drawing a region is adjusting
-  spacing within it.
+- **The field's anchor model.** A field is described twice over — physically, and by domino
+  counts — and the two are reconciled by an *anchor*, not by a mode flag. There is no
+  `fixed_size` any more, and no display-unit fields (`displayWidth`/`displayHeight`/
+  `displayPosition`/`displayUnit`) either; both were removed because rounding sizes to
+  friendly units corrupted the counts derived from them. Four decisions here are load-bearing
+  and a fresh session would plausibly undo each one:
+
+  - **`anchorX`/`anchorY` pin the grid; `position`/`width`/`height` only describe the box.**
+    The anchor is the field's original creation corner and moves *only* under a whole-field
+    translate — never under a resize. `originRow`/`originCol` count how many rows/columns
+    currently sit *before* that anchor, and go negative once the bottom/left edges shrink past
+    it. The grid origin is therefore `anchor - origin * pitch`, computed identically in
+    `normalizeField` and in `modeller.tsx`'s `layoutField`. This is what lets a resize from
+    *any* edge add or remove rows and columns while every existing domino stays exactly where
+    it is — and, with `dominoCellId` keyed off the same anchor-relative coordinates, keeps
+    their colors attached through it.
+  - **`setBounds` must stay a pure function of `(bounds, anchor)`.** Deriving the counts
+    incrementally — from the field's own live `rows`/`originCol` as the previous frame left
+    them — is what made dominoes flash in and out during a drag: an asymmetric grow/shrink rule
+    applied to state the last frame already changed never settles, it oscillates. Recomputing
+    both counts absolutely from the anchor every frame is idempotent, and that is the whole
+    fix. Do not "optimise" it back into a delta.
+  - **The box is not the dominoes' bounding box.** After a handle-drag the boundary can sit up
+    to one pitch away from the outermost dominoes — that gap is the room the next row or column
+    will appear in, and it is deliberately visible. Do not re-snap the box to the grid mid-drag.
+    `normalizeField` is the *one* place the two are re-hugged, on an editor edit, which is why
+    it re-derives `position` rather than leaving it where it was.
+  - **Growth and shrink are asymmetric, and the near and far edges use different spacing
+    terms.** Growth only adds a domino once a full pitch of room exists; shrink drops one the
+    instant the boundary cuts into its body. Measuring outwards from the anchor the last domino
+    needs no trailing gap; measuring inwards from the near edge every domino needs a full pitch.
+    Both are documented at `signedFitCount` and its four call sites. `signedFitCount` delegates
+    its growth branch to `fitCount` rather than restating it, so a field *dragged* to a size and
+    a field *created* at that size always agree; only its shrink branch is its own, and that one
+    deliberately skips `GEOMETRY_EPS` where every other count applies it.
 - **The field's geometry maths lives in its `object-model.ts`**, not a separate module, so the
   per-type folder keeps its object-model/editor/modeller shape. `modeller.tsx` therefore
   imports values from `object-model.ts` while that module imports the modeller as a value — a
   cycle that is benign *only* because nothing reads across it during module initialisation.
-  **Never call `pitchX`/`pitchY`/`normalizeSize`/`normalizeField`/`createFromRegion` at
-  module scope.**
-- **`extent()` in `dominoes/object-model.ts` is currently uncalled.** A field's `bounds()` now
-  reports its physical size, which needs no generated dominoes and is always defined. `extent`
-  is kept as the generic footprint primitive other element types will want.
+  **Never call `pitchX`/`pitchY`/`fitCount`/`signedFitCount`/`normalizeSize`/
+  `fitCountsThenSize`/`normalizeField`/`createFromRegion`/`setBounds` at module scope.**
+- **`extent()` in `dominoes/object-model.ts` is currently uncalled.** A field's `bounds()`
+  reports its **boundary rectangle**, which needs no generated dominoes and is always defined.
+  The two are not interchangeable and are *expected* to differ after a resize, by the gap
+  described in *The field's anchor model* — so swapping `extent()` in would silently shrink a
+  field's selection overlay onto its dominoes and break the drag maths. `extent` is kept as
+  the generic footprint primitive other element types will want.
 - **`color` is a `"#rrggbb"` hex string** specifically because that is the shape color-picker
   controls consume directly — including the native `<input type="color">` that `ColorField`
   wraps, which is why no color-picker dependency was added.

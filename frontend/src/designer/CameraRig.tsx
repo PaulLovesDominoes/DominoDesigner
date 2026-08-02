@@ -83,7 +83,7 @@ export default function CameraRig() {
       frameDDObject: (id) => {
         const ddObject = useStore.getState().ddObjects[id];
         const b = ddObject && getDDObjectBounds(ddObject);
-        if (b) fitTo(b); // types without bounds (fieldElement) are a no-op
+        if (b) fitTo(b); // types that declare no bounds() are a no-op
       },
     };
 
