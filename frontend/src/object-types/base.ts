@@ -1,6 +1,9 @@
 import type { ComponentType } from "react";
 import type { RemixiconComponentType } from "@remixicon/react";
 
+import type { DominoColorClipboardItem } from "../dominoes/clipboardItem";
+import type { DominoSelectionEntry } from "../dominoes/selectionStore";
+
 /** System-generated unique id for a DDObject in the hierarchy, e.g. "DDO-1". */
 export type DDObjectId = string;
 
@@ -41,6 +44,16 @@ export interface DDObjectBounds {
   y: number;
   width: number;
   height: number;
+}
+
+/**
+ * A domino's place in its parent's own row/column-like ordering. See
+ * `dominoRowCol` below for what "row/column-like" means for a type that isn't
+ * literally a grid.
+ */
+export interface DominoRowCol {
+  row: number;
+  col: number;
 }
 
 /**
@@ -114,6 +127,65 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
    * across a regenerate — today that's every type except fieldElement.
    */
   dominoCellId?(ddObject: T, flatIndex: number): number;
+  /**
+   * For domino-producing types: where `flatIndex` sits in this instance's own
+   * row/column-like ordering, and (`dominoIndexAt`) the inverse. Together they
+   * are what lets a pattern of colors copied from one element be pasted onto a
+   * *different* kind of element — dominoes are organised into lines by their
+   * very nature, so nearly every element type is row/col-like under some
+   * reading: a field is literally rows and columns; concentric circles and
+   * spirals are polar (col = rings out from the centre, row = position around);
+   * a line is row 0, col 0..n; a wall is a short wide field.
+   *
+   * Contract:
+   * - **Inverses** over the live range:
+   *   `dominoIndexAt(dd, dominoRowCol(dd, i)) === i`.
+   * - **Structurally meaningful**: dominoes adjacent in the physical layout
+   *   differ by 1 in exactly one coordinate. That adjacency is the whole
+   *   transferable content of a pattern; a mapping that merely enumerated the
+   *   dominoes would satisfy the inverse law and still paste noise.
+   * - **Not required to be stable across resizes**, unlike `dominoCellId`,
+   *   which must survive one. The two answer different questions —
+   *   `dominoCellId` is an opaque persistent identity, this is live geometry —
+   *   so a type may implement the former in terms of the latter (fieldElement
+   *   does), but they must not be merged.
+   * - **No normalisation.** Values need no particular origin; paste works
+   *   relative to the copied pattern's own min corner.
+   * - For planar types, `row` should increase in the direction the user
+   *   perceives as **up** and `col` to the right, so paste's corner
+   *   correlation lands on the visual upper-left. Non-planar types define
+   *   their own convention and the correlation becomes structural rather than
+   *   visual — the correct generalisation, not a compromise.
+   *
+   * A type declaring neither simply gets no cross-element paste.
+   */
+  dominoRowCol?(ddObject: T, flatIndex: number): DominoRowCol;
+  /**
+   * The inverse of `dominoRowCol` — see its contract. Returns undefined when
+   * (row, col) falls outside this instance's dominoes, and *that return is the
+   * per-type control over paste's edge behavior*: a field rejects out-of-range
+   * so a stamped pattern is clipped at the boundary, whereas a concentric-circle
+   * type would wrap `row` all the way around the ring while still rejecting an
+   * out-of-range `col`.
+   */
+  dominoIndexAt?(ddObject: T, row: number, col: number): number | undefined;
+  /**
+   * Optional override of how copied domino colors land on this instance.
+   * Returns the flat indices to recolor and each one's colorId, or undefined
+   * when the paste means nothing here.
+   *
+   * Declaring this is rarely necessary: paste defaults to the generic
+   * row/col algorithm in dominoes/rowColPaste.ts, which works for any type
+   * declaring `dominoRowCol`/`dominoIndexAt` — nothing overrides it today.
+   * It exists so a type whose paste semantics genuinely differ from
+   * corner-correlation-plus-tiling isn't forced into them. Implementations
+   * must be pure; the caller applies the result as one undoable operation.
+   */
+  pasteDominoColors?(
+    ddObject: T,
+    item: DominoColorClipboardItem,
+    selection: DominoSelectionEntry,
+  ): Array<[index: number, colorId: number]> | undefined;
   /**
    * Optional: realise a target footprint on this instance — the write path for
    * cursor-based move and resize, the manipulation analogue of

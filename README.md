@@ -92,6 +92,13 @@ frontend (`npm run build`) after changing frontend code.
     a lock badge); every domino you select afterward, by any method, is colored to it
     immediately, including whatever was already selected at the moment you locked it. Escape
     unlocks (and clears the current selection); so does exiting the mode.
+- **Copying and pasting colors** — **Ctrl+C** copies the selected dominoes' colors, **Ctrl+X**
+  copies and clears them, **Ctrl+V** pastes onto the current selection. Paste lines the copied
+  pattern's upper-left corner up with the destination's: select one domino and the whole pattern
+  is stamped from there, or select a region and exactly that region is filled — the pattern
+  repeats if the region is larger, and is cut short if it's smaller. Both the shape you copy and
+  the shape you paste onto can be any shape, not just rectangles. What you copied survives
+  leaving domino editing mode, so a pattern can be carried from one field to another.
 - **Undo/Redo** covers both DDObject-level edits (create/delete/move/resize/properties) and
   domino color changes, on one shared history — undoing a color change works even after
   leaving domino editing mode, and editing or deleting an inventory color's RGB immediately

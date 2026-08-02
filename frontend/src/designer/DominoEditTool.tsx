@@ -10,6 +10,8 @@ import { DOMINO_SIZE } from "../dimensions";
 import { useDominoDataStore } from "../dominoes/store";
 import { nearestInDirection, type DominoData, type Direction } from "../dominoes/object-model";
 import { useDominoSelectionStore } from "../dominoes/selectionStore";
+import { makeDominoColorClipboardHandlers } from "../dominoes/clipboardHandlers";
+import { useCutCopyHandler, usePasteHandler } from "../clipboard/useClipboardHandlers";
 
 // Z layering, lowest first — same convention as SelectionTool.tsx. The catch
 // plane sits at the same height as other pick planes ("just above the build
@@ -202,6 +204,23 @@ export default function DominoEditTool() {
   // rectangle border, scaled per-use — mirrors SelectionTool.tsx's unitEdges.
   const unitEdges = useMemo(() => new EdgesGeometry(new PlaneGeometry(1, 1)), []);
   useEffect(() => () => unitEdges.dispose(), [unitEdges]);
+
+  // ── Clipboard: this component is the active cut/copy/paste context while the
+  // mode is on. The Ctrl+C/X/V keys themselves are handled once, app-wide, in
+  // DesignerScreen — registering here is the whole of this tool's involvement.
+  const selectionVersion = useDominoSelectionStore((s) =>
+    dominoEditingId ? s.versions[dominoEditingId] : undefined,
+  );
+  const clipboardHandlers = useMemo(
+    () => (dominoEditingId ? makeDominoColorClipboardHandlers() : null),
+    // selectionVersion is a deliberate dependency rather than a lint
+    // appeasement: re-registering on it is what makes the handlers' canCopy/
+    // canCut/canPaste reactive for any UI binding a button to them (see
+    // useClipboardCapabilities). The handlers read live state either way.
+    [dominoEditingId, selectionVersion],
+  );
+  useCutCopyHandler(clipboardHandlers?.cutCopy ?? null);
+  usePasteHandler(clipboardHandlers?.paste ?? null);
 
   const cancelDrag = () => {
     gestureRef.current = null;

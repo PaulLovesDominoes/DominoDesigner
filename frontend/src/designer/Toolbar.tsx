@@ -25,14 +25,14 @@ export default function Toolbar() {
   const activeTool = useStore((s) => s.activeTool);
   const setTool = useStore((s) => s.setTool);
   const cameraApi = useStore((s) => s.cameraApi);
-  // Clamped to dominoEditingUndoFloor while in domino editing mode — undo
+  // Clamped to dominoEditingUndoBarrier while in domino editing mode — undo
   // can't reach back into whatever was on the stack before the mode was
   // entered (store.ts's undo() enforces the same clamp; this just keeps the
   // button's enabled state honest about it).
   const canUndo = useStore(
     (s) =>
       s.undoStack.length > 0 &&
-      (s.dominoEditingUndoFloor === null || s.undoStack.length > s.dominoEditingUndoFloor),
+      s.undoStack[s.undoStack.length - 1] !== s.dominoEditingUndoBarrier,
   );
   const canRedo = useStore((s) => s.redoStack.length > 0);
   const undo = useStore((s) => s.undo);

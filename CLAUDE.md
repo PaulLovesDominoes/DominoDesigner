@@ -293,8 +293,11 @@ defaulting new cells to unpainted: nothing here scopes memory to a single "opera
 
 `colorByCell` has a second writer besides `restoreDominoColors`'s regenerate-time absorb/restore:
 `syncDominoColorMemory`, called from the three places that mutate a live `colorIds` array
-directly without going through a regenerate — `applyColorToSelectedDominoes` (the initial paint)
-and the `"dominoColors"` cases of `undo()`/`redo()` (`store.ts`). This exists because
+directly without going through a regenerate — `commitDominoColors` (`store.ts`'s shared write
+path, covering the swatch paint, cut, and paste alike) and the `"dominoColors"` cases of
+`undo()`/`redo()`. Routing every colour write through `commitDominoColors` is what keeps that
+list at three: a new way to change domino colours inherits the sync instead of having to
+remember it. This exists because
 `restoreDominoColors`'s absorb step only ever *adds* entries (it records a cell's color when
 absorbing it off the live array only if that color is nonzero, so a live color of `0` is treated
 as "nothing to absorb," never as "clear this cell") — so on its own it could never learn that a
@@ -403,8 +406,10 @@ operation (see *Domino data* above for why that's a live color-id reference, not
   (`dominoColorShortcut`) and its ~1.2s inactivity auto-clear live in `DominoEditTool.tsx`'s
   keyboard handler, reusing its existing typing-guard and Escape/pointer-gesture cleanup. That
   handler returns early on any Ctrl/Cmd+key combo before reaching the shortcut-typing branch, so
-  Ctrl+Z/Ctrl+Y (undo/redo) reach `DesignerScreen.tsx`'s handler instead of being swallowed as a
-  one-letter shortcut buffer entry.
+  Ctrl+Z/Ctrl+Y (undo/redo) and Ctrl+C/X/V (the clipboard) all reach `DesignerScreen.tsx`'s
+  handler instead of being swallowed as one-letter shortcut buffer entries. Keep that early
+  return unconditional: every Ctrl chord in this app is dispatched from that one place, which is
+  why adding the clipboard needed no change to this file's keyboard handling at all.
 - **Choose a color first, then select dominoes** — double-click a swatch to lock it
   (`dominoColorLockedId`, badge via `RiLockFill`); every domino selected afterward, by any
   method, is recolored to it immediately (`DominoEditTool.tsx`'s `applyLockedColorIfAny`, called
@@ -417,6 +422,83 @@ operation (see *Domino data* above for why that's a live color-id reference, not
   Only one color locks at a time. `ModeHintBar` swaps its sentence while locked.
 
 Clicking a swatch with nothing selected is a documented no-op — nothing to apply to.
+
+A third route exists alongside those two — **pasting** a copied pattern of colors (Ctrl+V) —
+but it belongs to the clipboard subsystem below rather than to the panel, and it is the only
+one of the three that can set many *different* colors in a single operation.
+
+### The clipboard
+
+`clipboard/` is a **generic subsystem, not a domino feature** — domino colors are merely its
+first client, and DDObject cut/paste is expected to be its second with no change to anything
+in that folder. Two seams do the work:
+
+- **Which context handles a command is a registration, not a registry.** `clipboard/store.ts`
+  holds one slot (`item: ClipboardItem | null`) plus a `cutCopyHandler`/`pasteHandler` pair
+  that the currently-active context installs on mount and clears on unmount, via
+  `useCutCopyHandler`/`usePasteHandler`. This is deliberately *not* the `DD_OBJECT_TYPES`
+  pattern: which handler is correct depends on live app state (which mode is active, what's
+  selected), not on a type name known at module load. The precedent it does follow is
+  `CameraRig.tsx` publishing its imperative `CameraApi` into the store. The cleanup's
+  **identity guard** (`if (getState().pasteHandler === handler)`) is load-bearing — React can
+  mount a replacement registrant before unmounting the old one, and an unguarded clear would
+  wipe the newer registration.
+- **One keyboard dispatcher, in `DesignerScreen.tsx`,** alongside the Ctrl+Z/Y handler that was
+  already there. Tools do not bind Ctrl+C/X/V themselves. This is why
+  `DominoEditTool.tsx`'s keydown handler still returns early on *every* Ctrl/Cmd chord and
+  needed no change when the clipboard landed; it is also what makes a future clipboard client
+  zero keyboard code.
+
+`copy()`/`cut()` write the slot **only when the handler returns an item**, so a copy with
+nothing to take can't blank a good clipboard. A `PasteHandler` declares what it accepts via
+`canPaste(item)`, so an item from another context is a silent no-op rather than an error, and
+`useClipboardCapabilities()` gives UI the reactive `canCut`/`canCopy`/`canPaste` triple to bind
+button enablement to. Those `can*` methods are imperative reads, so **enablement reactivity
+comes from handler identity**: a registrant re-registers a fresh handler object whenever its
+answers could have changed (its `useMemo` deps include the selection version). Don't add a
+capability-version counter — that's what this replaces.
+
+The domino-color clipboard **deliberately survives `exitDominoEditing`** (unlike
+`dominoColorLockedId`/`dominoColorShortcut`, cleared there), since the item snapshots its
+source DDObject and stays valid across a resize or even a delete. That's what makes
+field-to-field paste work.
+
+### Pasting patterns between element types
+
+Cut/copy is generic — indices and colorIds straight off the SoA columns, no per-type hook.
+**Paste is where types differ**, and it's resolved in two steps that must not be conflated with
+each other:
+
+1. **`dominoRowCol(ddObject, flatIndex)` / `dominoIndexAt(ddObject, row, col)`**
+   (`object-types/base.ts`) map a domino to its parent's own row/column-like ordering and back.
+   Nearly every planned element type is row/col-like under some reading — a field literally is;
+   concentric circles and spirals are polar (`col` = rings out from the centre, `row` = position
+   around); a line is `row 0, col 0..n` — which is why this, and **not** millimetre positions,
+   is the interchange format. A mm-space pattern would have to be quantised back onto the
+   destination's lattice anyway, and would look wrong doing it.
+2. **`dominoes/rowColPaste.ts` is one generic algorithm** over those hooks — corner correlation,
+   tiling, truncation, holes — used for *every* type pair. It touches source and destination
+   only through the two hooks, so a field pastes into a spiral and back with nothing in it
+   knowing either exists. `resolveDominoColorPaste` runs it unless the destination type declares
+   the optional `pasteDominoColors` override; nothing declares one today.
+
+Consequences worth not reversing:
+
+- **`dominoIndexAt` returning `undefined` is the per-type control over edge behavior.** A field
+  rejects out-of-range so a stamped pattern clips at the boundary; a ring type would instead
+  wrap `row` all the way around while still rejecting an out-of-range `col`. That is the
+  delegation — don't add a separate "edge mode" parameter.
+- **`dominoCellId` and `dominoRowCol` are different contracts and must not be merged**, even
+  though `fieldElement` computes both from one shared `rowColOf` decode. `dominoCellId` is an
+  opaque identity that must *survive a resize* (hence anchor-relative, hence the bias);
+  `dominoRowCol` describes the layout as it is *right now*. Collapsing them breaks color memory
+  in one direction or pattern geometry in the other.
+- The row/col mapping must be **structurally meaningful**, not merely a bijection: dominoes
+  adjacent in the physical layout differ by 1 in exactly one coordinate. A mapping that just
+  enumerated dominoes would satisfy the inverse law and paste noise.
+- For planar types `row` increases toward what the user sees as **up** — `fieldElement`'s row 0
+  is its *bottom* row, per `layoutField` — so paste's correlation corner is `(max row, min col)`,
+  the visual upper-left. Getting this backwards mirrors every paste vertically.
 
 ### Element placement and creation
 
@@ -516,14 +598,27 @@ reachable via undo or redo, so undoing a delete restores colors instead of resur
 object with its domino data already garbage collected. See those files' "Domino data"
 section entries for the full rationale.
 
-**Undo is clamped while in domino editing mode.** `enterDominoEditing` snapshots
-`undoStack.length` into `dominoEditingUndoFloor`; `undo()` refuses once `undoStack.length` would
-drop to or below that floor, so undo inside the mode can only reach back to the state the field
-was in when the mode was entered — never past it into whatever created the field or edited it
-beforehand. `exitDominoEditing` resets the floor to `null`, so undo outside the mode is
+**Undo is clamped while in domino editing mode.** `enterDominoEditing` stores the operation
+then on top of `undoStack` as `dominoEditingUndoBarrier`; `undo()` refuses once that same
+operation is back on top, so undo inside the mode can only reach back to the state the field was
+in when the mode was entered — never past it into whatever created the field or edited it
+beforehand. `exitDominoEditing` resets the barrier to `null`, so undo outside the mode is
 unclamped again (and so is redo, always — only undo needs clamping, since redo only replays
 operations already popped in this same session). `Toolbar.tsx`'s Undo button disables at the
-clamp the same way it disables on an empty stack. This is deliberate scoping, not a side effect
+clamp the same way it disables on an empty stack.
+
+**The barrier is the operation itself, deliberately — not an index or a stack depth.**
+`HISTORY_LIMIT` drops entries off the *front* of `undoStack`, which shifts every index but
+leaves object identity untouched. A depth-based barrier therefore has to be sled down on every
+push to compensate, and getting that wrong fails silently and only in long sessions: once the
+stack sits at the cap its length stops growing, so a depth captured there stays at or above the
+length forever and `undo()` refuses *every* edit made inside the mode (coloring, paste, cut) —
+while those same edits all undo fine the moment the mode is exited and the clamp is released.
+That was a real bug, and it is the reason this is a reference. Don't "simplify" it back to a
+number. If in-mode work is heavy enough to push the barrier off the front, the clamp lapses,
+which is correct: by then every surviving entry is in-mode work anyway.
+
+This is deliberate scoping, not a side effect
 of anything structural: nothing stops a `"dominoColors"` op from being undone outside the mode
 (undoing a color change works whether or not domino editing mode is active — see *Domino data*'s
 `dominoColors` case), so without this floor, undo from inside the mode would silently walk back

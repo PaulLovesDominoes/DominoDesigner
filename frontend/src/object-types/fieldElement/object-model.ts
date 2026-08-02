@@ -174,6 +174,23 @@ const CELL_ID_BIAS = 1_000_000;
 const CELL_ID_MULT = 2 * CELL_ID_BIAS + 1;
 
 /**
+ * A field's dominoes are laid out row-major from the grid origin — see
+ * layoutField in modeller.tsx, which writes them in exactly this order. The one
+ * place that decode lives, shared by the dominoRowCol hook and dominoCellId so
+ * the two cannot drift apart.
+ *
+ * Row 0 is the *bottom* row: layoutField places it lowest and steps +Y upward,
+ * and the camera looks straight down, so on screen a larger `row` is higher.
+ * That's what satisfies dominoRowCol's "row increases toward what the user sees
+ * as up" contract, and it makes the visual upper-left corner (max row, min col)
+ * rather than (0, 0).
+ */
+const rowColOf = (field: FieldElementDDObject, flatIndex: number) => ({
+  row: Math.floor(flatIndex / field.dominoes_per_row),
+  col: flatIndex % field.dominoes_per_row,
+});
+
+/**
  * Spacings a new field starts with, whether it comes from create() or is drawn
  * on the build plane.
  */
@@ -309,8 +326,7 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
   // Since originCol and originRow can be negative, a large CELL_ID_BIAS is added to ensure
   // that the domino ID itself is always positive.
   dominoCellId: (field, flatIndex) => {
-    const row = Math.floor(flatIndex / field.dominoes_per_row);
-    const col = flatIndex % field.dominoes_per_row;
+    const { row, col } = rowColOf(field, flatIndex);
 
     // the encoded values should equal zero when the row from the current layout
     // represents the original 0,0 position of the original layout.
@@ -318,6 +334,17 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
     const encCol = col - field.originCol + CELL_ID_BIAS;
     return encRow * CELL_ID_MULT + encCol;
   },
+
+  // The field's row/column-like mapping, used to carry a pattern of colors from
+  // one element to another (see base.ts's contract). Note this is deliberately
+  // NOT anchor-relative, unlike dominoCellId above: this describes the layout as
+  // it is right now, where that one has to survive a resize. They share only the
+  // rowColOf decode.
+  dominoRowCol: rowColOf,
+  dominoIndexAt: (field, row, col) =>
+    row >= 0 && row < field.rows && col >= 0 && col < field.dominoes_per_row
+      ? row * field.dominoes_per_row + col
+      : undefined,
 
   // The field's boundary rectangle — what CameraRig fits and frames to, what
   // SelectionTool draws its overlay/handles over and measures drags against,

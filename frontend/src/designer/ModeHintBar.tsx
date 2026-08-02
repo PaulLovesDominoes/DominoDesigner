@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { useStore } from "../store";
+import { useClipboardStore } from "../clipboard/store";
 import { getDDObjectDefaultName } from "../object-types/registry";
 import type { ToolId } from "../types";
 import styles from "./ModeHintBar.module.css";
@@ -41,6 +42,9 @@ export default function ModeHintBar() {
   const exitDominoEditing = useStore((s) => s.exitDominoEditing);
   const openHelpTopic = useStore((s) => s.openHelpTopic);
   const dominoColorLockedId = useStore((s) => s.dominoColorLockedId);
+  // The color clipboard is otherwise invisible, so say what's in it. Survives
+  // leaving domino editing mode, which is what makes field-to-field paste work.
+  const clipboardItem = useClipboardStore((s) => s.item);
   // The root BuildPlane always exists and always has a children array — this
   // is "are there any DDObjects yet" for the Select-mode idle hint below.
   const hasElements = useStore((s) => {
@@ -66,6 +70,7 @@ export default function ModeHintBar() {
             Editing dominoes in "{typeLabel}" "{dominoEditingObject.name}".
           </span>
         )}
+        {clipboardItem && <span>{clipboardItem.label} copied — Ctrl+V to paste.</span>}
         <button className={styles.textBtn} onClick={exitDominoEditing}>
           Done
         </button>

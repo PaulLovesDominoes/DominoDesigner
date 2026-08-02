@@ -11,7 +11,10 @@ import type { DDObjectId } from "./object-types/base";
 import type { BuildPlaneDDObject } from "./object-types/buildPlane/object-model";
 import { useDominoSelectionStore } from "./dominoes/selectionStore";
 import { useDominoDataStore } from "./dominoes/store";
+import type { DominoData } from "./dominoes/object-model";
 import { syncDominoColorMemory } from "./dominoes/colorMemory";
+import { resolveDominoColorPaste } from "./dominoes/rowColPaste";
+import type { DominoColorClipboardItem } from "./dominoes/clipboardItem";
 import {
   createSeedInventory,
   modeDefault,
@@ -82,6 +85,56 @@ const HISTORY_LIMIT = 100;
 /** Push a new operation and clear the redo stack, per standard undo/redo semantics. */
 function pushOperation(undoStack: Operation[], op: Operation) {
   return { undoStack: [...undoStack, op].slice(-HISTORY_LIMIT), redoStack: [] as Operation[] };
+}
+
+/**
+ * The one write path for a batch of domino color changes — shared by the color
+ * swatches, cut, and paste, all of which need the identical sequence: filter to
+ * the dominoes that actually change, mutate the colorIds column in place,
+ * signal, and keep the cross-regenerate color memory in step.
+ *
+ * Returns the operation to push, or null when nothing actually changed, so no
+ * empty undo step gets recorded (opening a color and re-applying the one a
+ * domino already has adds nothing to the history). It doesn't push itself —
+ * callers are inside `set` and do that.
+ *
+ * The syncDominoColorMemory call is not optional: skipping it lets a later
+ * regenerate resurrect a color that was just cut or overwritten. See that
+ * function's own doc comment for the full failure mode.
+ */
+function commitDominoColors(
+  parentId: DDObjectId,
+  ddObject: DDObject | undefined,
+  data: DominoData,
+  targets: Iterable<[index: number, colorId: number]>,
+): Operation | null {
+  const indices: number[] = [];
+  const before: number[] = [];
+  const after: number[] = [];
+  for (const [i, colorId] of targets) {
+    // i >= count: a selection left stale by a shrink. hidden: a tombstoned
+    // domino isn't drawn, so painting it would be invisible bookkeeping.
+    if (i >= data.count || data.hidden[i]) continue;
+    if (data.colorIds[i] === colorId) continue; // already this color
+    indices.push(i);
+    before.push(data.colorIds[i]);
+    after.push(colorId);
+  }
+  if (indices.length === 0) return null;
+
+  for (let k = 0; k < indices.length; k++) data.colorIds[indices[k]] = after[k];
+  useDominoDataStore.getState().bump(parentId);
+
+  const afterArray = Uint32Array.from(after);
+  if (ddObject) syncDominoColorMemory(ddObject, indices, afterArray);
+
+  return {
+    kind: "dominoColors",
+    parentId,
+    indices: Uint32Array.from(indices),
+    before: Uint32Array.from(before),
+    after: afterArray,
+  };
 }
 
 function operationReferencesId(op: Operation, id: DDObjectId): boolean {
@@ -293,12 +346,24 @@ interface AppState {
   enterDominoEditing: (id: DDObjectId) => void;
   exitDominoEditing: () => void;
 
-  // undoStack.length at the moment domino editing mode was entered (null when
-  // not in the mode). While set, undo() refuses to pop past it — undo inside
-  // the mode can only undo actions performed inside the mode, never reach
-  // back into whatever was on the stack before entry (e.g. the very "create"
-  // that made the field domino-editable in the first place).
-  dominoEditingUndoFloor: number | null;
+  // The operation that was on top of undoStack when domino editing mode was
+  // entered (null when not in the mode, or when the stack was empty). undo()
+  // refuses once that operation is back on top, so undo inside the mode can
+  // only reach back to the state the field was in at entry — never past it into
+  // whatever created the field or edited it beforehand.
+  //
+  // Deliberately the operation *itself* rather than an index or a stack depth:
+  // HISTORY_LIMIT drops entries off the front of undoStack, which shifts every
+  // index but leaves object identity alone. An index-based barrier has to be
+  // slid down on every push to compensate, and forgetting to breaks undo
+  // *silently and only in long sessions* — once the stack sits at the cap its
+  // length stops growing, so a depth captured there sits at or above the length
+  // forever and every in-mode edit refuses to undo. A reference can't drift.
+  //
+  // If in-mode work is heavy enough to push the barrier off the front, the
+  // clamp lapses — correctly, since by then every surviving entry is in-mode
+  // work anyway.
+  dominoEditingUndoBarrier: Operation | null;
 
   // The inventory color currently locked (null = none). While locked, every
   // newly-selected domino (by any means) is immediately recolored to it —
@@ -318,6 +383,21 @@ interface AppState {
   // changed. A no-op if nothing is selected or every selected domino
   // already has this color.
   applyColorToSelectedDominoes: (entryId: InventoryEntryId) => void;
+
+  // ---- Domino color clipboard ----
+  // The domino-editing half of the app clipboard (clipboard/store.ts owns the
+  // slot and the Cut/Copy/Paste commands; dominoes/clipboardHandlers.ts wraps
+  // these three as the handler pair it registers). They live here rather than
+  // in the clipboard subsystem because each needs the undo stack, ddObjects and
+  // dominoEditingId — exactly what applyColorToSelectedDominoes above needs.
+  //
+  // All three no-op outside domino editing mode or with an empty selection.
+  // Copy builds the buffer without recording undo; cut additionally clears the
+  // copied dominoes to unpainted as one undo step; paste applies the item and
+  // pushes one more.
+  copySelectedDominoColors: () => DominoColorClipboardItem | undefined;
+  cutSelectedDominoColors: () => DominoColorClipboardItem | undefined;
+  pasteDominoColorClipboard: (item: DominoColorClipboardItem) => void;
 
   // The build's DDObject hierarchy, indexed by DDObject id. `rootId` is the
   // BuildPlane; each DDObject with children lists their ids in `children`.
@@ -339,7 +419,7 @@ interface AppState {
   // rest of the store.
   undoStack: Operation[];
   redoStack: Operation[];
-  // Clamped by dominoEditingUndoFloor while in domino editing mode — see its
+  // Clamped by dominoEditingUndoBarrier while in domino editing mode — see its
   // own doc comment.
   undo: () => void;
   redo: () => void;
@@ -425,7 +505,7 @@ export const useStore = create<AppState>()((set, get) => ({
   selectDDObject: (selectedDDObjectId) => set({ selectedDDObjectId }),
 
   dominoEditingId: null,
-  dominoEditingUndoFloor: null,
+  dominoEditingUndoBarrier: null,
   enterDominoEditing: (id) =>
     set((s) => {
       const ddObject = s.ddObjects[id];
@@ -434,17 +514,23 @@ export const useStore = create<AppState>()((set, get) => ({
         dominoEditingId: id,
         selectedDDObjectId: id,
         activeTool: "editDominoes" as ToolId,
-        dominoEditingUndoFloor: s.undoStack.length,
+        // Undefined on an empty stack, normalised to null = no clamp needed.
+        dominoEditingUndoBarrier: s.undoStack[s.undoStack.length - 1] ?? null,
       };
     }),
   exitDominoEditing: () =>
     set((s) => {
       if (s.dominoEditingId) useDominoSelectionStore.getState().clear(s.dominoEditingId);
+      // Note the color clipboard is deliberately NOT cleared alongside the lock
+      // and shortcut buffer below: it holds a snapshot of its source element, so
+      // it stays valid after leaving the mode and lets a pattern copied in one
+      // field be pasted into another. Only the handlers unregister (that's
+      // DominoEditTool's doing), not the buffer.
       return {
         dominoEditingId: null,
         selectedDDObjectId: s.dominoEditingId,
         activeTool: "select" as ToolId,
-        dominoEditingUndoFloor: null,
+        dominoEditingUndoBarrier: null,
         dominoColorLockedId: null,
         dominoColorShortcut: "",
       };
@@ -467,31 +553,86 @@ export const useStore = create<AppState>()((set, get) => ({
     const data = useDominoDataStore.getState().get(parentId);
     if (!data) return;
 
-    const indices: number[] = [];
-    const before: number[] = [];
-    for (const i of selected) {
-      if (i >= data.count || data.colorIds[i] === targetId) continue; // already this color
-      indices.push(i);
-      before.push(data.colorIds[i]);
-    }
-    if (indices.length === 0) return; // nothing actually changed
-
-    for (const i of indices) data.colorIds[i] = targetId;
-    useDominoDataStore.getState().bump(parentId);
-
-    const after = Uint32Array.from(indices, () => targetId);
-    const ddObject = s.ddObjects[parentId];
-    if (ddObject) syncDominoColorMemory(ddObject, indices, after);
-
-    set((st) =>
-      pushOperation(st.undoStack, {
-        kind: "dominoColors",
-        parentId,
-        indices: Uint32Array.from(indices),
-        before: Uint32Array.from(before),
-        after,
-      }),
+    const op = commitDominoColors(
+      parentId,
+      s.ddObjects[parentId],
+      data,
+      [...selected].map((i) => [i, targetId] as [number, number]),
     );
+    if (op) set((st) => pushOperation(st.undoStack, op));
+  },
+
+  copySelectedDominoColors: () => {
+    const s = get();
+    const parentId = s.dominoEditingId;
+    if (!parentId) return undefined;
+    const ddObject = s.ddObjects[parentId];
+    if (!ddObject) return undefined;
+    const selected = useDominoSelectionStore.getState().get(parentId)?.selected;
+    if (!selected || selected.size === 0) return undefined;
+    const data = useDominoDataStore.getState().get(parentId);
+    if (!data) return undefined;
+
+    // Ascending so the buffer reads in layout order; hidden and stale indices
+    // are dropped here so no consumer has to re-check them.
+    const indices = [...selected]
+      .filter((i) => i < data.count && !data.hidden[i])
+      .sort((a, b) => a - b);
+    if (indices.length === 0) return undefined;
+
+    return {
+      type: "dominoColors",
+      label: `${indices.length} domino color${indices.length === 1 ? "" : "s"}`,
+      // Holding the reference is the snapshot — ddObjects are copy-on-write.
+      sourceDDObject: ddObject,
+      indices: Uint32Array.from(indices),
+      colorIds: Uint32Array.from(indices, (i) => data.colorIds[i]),
+    };
+  },
+
+  cutSelectedDominoColors: () => {
+    const s = get();
+    const item = s.copySelectedDominoColors();
+    if (!item) return undefined;
+    const parentId = s.dominoEditingId;
+    // dominoEditingId and the DominoData were both non-null for the copy above
+    // to have succeeded; re-read rather than assert.
+    const data = parentId ? useDominoDataStore.getState().get(parentId) : undefined;
+    if (!parentId || !data) return item;
+
+    // Cut is immediate rather than Excel's deferred-until-paste model: the
+    // colors clear now, and the buffer is already filled. Note the item is
+    // still returned when nothing actually changed (cutting an all-unpainted
+    // selection is a valid copy) — it just records no undo step.
+    const op = commitDominoColors(
+      parentId,
+      s.ddObjects[parentId],
+      data,
+      // 0 is the unpainted sentinel — a cut clears rather than deletes.
+      Array.from(item.indices, (i) => [i, 0] as [number, number]),
+    );
+    if (op) set((st) => pushOperation(st.undoStack, op));
+    return item;
+  },
+
+  pasteDominoColorClipboard: (item) => {
+    const s = get();
+    const parentId = s.dominoEditingId;
+    if (!parentId) return;
+    const ddObject = s.ddObjects[parentId];
+    if (!ddObject) return;
+    const selection = useDominoSelectionStore.getState().get(parentId);
+    if (!selection || selection.selected.size === 0) return;
+    const data = useDominoDataStore.getState().get(parentId);
+    if (!data) return;
+
+    // All the geometry — corner correlation, tiling, truncation, holes — lives
+    // in the row/col paste; this half only applies the result.
+    const targets = resolveDominoColorPaste(item, ddObject, selection, data.count);
+    if (!targets) return;
+
+    const op = commitDominoColors(parentId, ddObject, data, targets);
+    if (op) set((st) => pushOperation(st.undoStack, op));
   },
 
   ...createInitialDDObjects(),
@@ -556,8 +697,16 @@ export const useStore = create<AppState>()((set, get) => ({
   undo: () => {
     const s = get();
     // Clamped while in domino editing mode — never undo past whatever was
-    // already on the stack when the mode was entered.
-    if (s.dominoEditingUndoFloor !== null && s.undoStack.length <= s.dominoEditingUndoFloor) return;
+    // already on the stack when the mode was entered. Comparing the top of the
+    // stack against the barrier operation directly is what makes this immune to
+    // HISTORY_LIMIT shifting every index out from under it; see the barrier's
+    // own declaration.
+    if (
+      s.dominoEditingUndoBarrier !== null &&
+      s.undoStack[s.undoStack.length - 1] === s.dominoEditingUndoBarrier
+    ) {
+      return;
+    }
     const op = s.undoStack[s.undoStack.length - 1];
     if (!op) return;
     const undoStack = s.undoStack.slice(0, -1);

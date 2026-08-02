@@ -6,7 +6,10 @@ import type {
   DDObjectEditorProps,
   DDObjectId,
   DDObjectModellerProps,
+  DominoRowCol,
 } from "./base";
+import type { DominoColorClipboardItem } from "../dominoes/clipboardItem";
+import type { DominoSelectionEntry } from "../dominoes/selectionStore";
 import { buildPlaneDefinition, type BuildPlaneDDObject } from "./buildPlane/object-model";
 import { fieldElementDefinition, type FieldElementDDObject } from "./fieldElement/object-model";
 
@@ -94,6 +97,58 @@ export const getDominoCellId = (
     | ((ddObject: DDObject, flatIndex: number) => number)
     | undefined;
   return fn ? (flatIndex: number) => fn(ddObject, flatIndex) : undefined;
+};
+
+/**
+ * This DDObject's row/column-like mapping, or undefined if its type declares
+ * none (it takes no part in cross-element color paste). Bound to the instance,
+ * so callers just pass a flat domino index. Cast as per getDDObjectBounds.
+ */
+export const getDominoRowCol = (
+  ddObject: DDObject,
+): ((flatIndex: number) => DominoRowCol) | undefined => {
+  const fn = DD_OBJECT_TYPES[ddObject.type].dominoRowCol as
+    | ((ddObject: DDObject, flatIndex: number) => DominoRowCol)
+    | undefined;
+  return fn ? (flatIndex: number) => fn(ddObject, flatIndex) : undefined;
+};
+
+/**
+ * The inverse of getDominoRowCol for this DDObject — undefined outside its live
+ * dominoes. A type declaring one of the pair should declare both; see
+ * `dominoRowCol`'s contract in base.ts.
+ */
+export const getDominoIndexAt = (
+  ddObject: DDObject,
+): ((row: number, col: number) => number | undefined) | undefined => {
+  const fn = DD_OBJECT_TYPES[ddObject.type].dominoIndexAt as
+    | ((ddObject: DDObject, row: number, col: number) => number | undefined)
+    | undefined;
+  return fn ? (row: number, col: number) => fn(ddObject, row, col) : undefined;
+};
+
+/**
+ * This type's override of how copied domino colors land on it, or undefined —
+ * which is the normal case, meaning "use the generic row/col paste". Resolved
+ * by dominoes/rowColPaste.ts's resolveDominoColorPaste rather than called
+ * directly; nothing declares an override today.
+ */
+export const getPasteDominoColorsOverride = (
+  ddObject: DDObject,
+):
+  | ((
+      item: DominoColorClipboardItem,
+      selection: DominoSelectionEntry,
+    ) => Array<[index: number, colorId: number]> | undefined)
+  | undefined => {
+  const fn = DD_OBJECT_TYPES[ddObject.type].pasteDominoColors as
+    | ((
+        ddObject: DDObject,
+        item: DominoColorClipboardItem,
+        selection: DominoSelectionEntry,
+      ) => Array<[index: number, colorId: number]> | undefined)
+    | undefined;
+  return fn ? (item, selection) => fn(ddObject, item, selection) : undefined;
 };
 
 /**
