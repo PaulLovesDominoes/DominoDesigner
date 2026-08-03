@@ -106,7 +106,7 @@ the one `AppState`. Three exist today:
 |---|---|
 | `domino-inventory/appStoreSlice.ts` | the inventory catalog, its selection and its sort |
 | `history/appStoreSlice.ts` | `Operation`, the undo/redo stacks, the domino-editing undo barrier |
-| `dominoes/appStoreSlice.ts` | the colour lock/shortcut and the four domino-colour writes |
+| `dominoes/appStoreSlice.ts` | the colour lock/shortcut, the five domino-colour writes, and domino editing mode's cancel snapshot |
 
 What's left in `store.ts` is the state that isn't any one feature's: screen/menu/help, the
 DDObject hierarchy and its actions, domino editing mode, the properties dialog, and the camera
@@ -277,8 +277,16 @@ zoom buttons, and eventually DDObject lists) must go through that API rather tha
 camera directly. It fits the view to whatever footprint the root DDObject's `bounds()` reports
 (via `getDDObjectBounds`, shallow-subscribed so renames/recolors don't re-run the fit); if the
 root type declares no `bounds()` it warns once and leaves the camera at its defaults.
-`frameDDObject(id)` fits any DDObject that declares bounds — it is no longer a stub, though it
-is not yet wired to the selection model (nothing calls it on select).
+`frameDDObject(id)` fits any DDObject that declares bounds. Two callers, both domino editing
+mode's: `enterDominoEditing` (per-domino work at build-plane zoom is unusable) and `Toolbar`'s
+fit button, which frames the edited field instead of calling `resetZoom` while the mode is on —
+fitting the whole plane there would zoom out of the very thing the mode exists to work on, so
+in-mode it returns the view to exactly what entering produced. It is deliberately **not** wired
+to the selection model (nothing calls it on select). It is the only fit that
+applies `FRAME_FILL`, a margin so the framed object isn't flush with the canvas edge; the
+initial fit and `resetZoom` stay edge-to-edge, which is what keeps `controls.minZoom` a true
+"can't zoom out past the plane" floor. Nothing restores the prior view on leaving the mode —
+Reset Zoom is the way back out, by design.
 
 Note that drei's `<OrbitControls>` calls `invalidate()` on its own `change` event, so ordinary
 user pan/zoom repaints without CameraRig doing anything. Only imperative changes you make
@@ -359,10 +367,11 @@ defaulting new cells to unpainted: nothing here scopes memory to a single "opera
 `colorByCell` has a second writer besides `restoreDominoColors`'s regenerate-time absorb/restore:
 `syncDominoColorMemory`, called from the three places that mutate a live `colorIds` array
 directly without going through a regenerate — `commitDominoColors` (`dominoes/appStoreSlice.ts`'s shared write
-path, covering the swatch paint, cut, and paste alike) and the `"dominoColors"` cases of
-`undo()`/`redo()`. Routing every colour write through `commitDominoColors` is what keeps that
-list at three: a new way to change domino colours inherits the sync instead of having to
-remember it. This exists because
+path, covering the swatch paint, the Delete/Backspace clear, cut, and paste alike) and the
+`"dominoColors"` cases of `undo()`/`redo()`. Routing every colour write through
+`commitDominoColors` is what keeps that list at three even as the number of *writes* grows — the
+Delete/Backspace clear was added later and inherited the sync for free, which is exactly the
+property to preserve. This exists because
 `restoreDominoColors`'s absorb step only ever *adds* entries (it records a cell's color when
 absorbing it off the live array only if that color is nonzero, so a live color of `0` is treated
 as "nothing to absorb," never as "clear this cell") — so on its own it could never learn that a
@@ -443,15 +452,44 @@ toolbar entry** (entry is exclusively by double-click). That one value is delibe
 its own to disarm `SelectionTool`/`CreateByRegionTool`/`onPointerMissed` (none of them match
 `"select"` or an `elementType`-bearing tool anymore) and to swap `Sidebar.tsx`'s child from
 `DDObjectsPanel` to `DominoColorPanel` — no scattered `dominoEditingId` checks needed in those
-files. The mode is **fully modal**: Toolbar/undo-redo/the sidebar all disable via that same
-`activeTool` check, and only `ModeHintBar`'s Done/Cancel buttons (`exitDominoEditing`) leave it —
-Escape never does, even though it clears a lot of in-mode state (see below).
+files, and calls `cameraApi.frameDDObject(id)` to fit the field to the canvas (see *three.js /
+R3F boundary*) — the one imperative step, hence outside the `set`. The mode is **fully modal**:
+Toolbar/undo-redo/the sidebar all disable via that same `activeTool` check, and only
+`ModeHintBar`'s Done (`exitDominoEditing`) and Cancel (`cancelDominoEditing`, which discards —
+see *Undo/redo*) leave it — Escape never does, even though it clears a lot of in-mode state
+(see below).
 
 `designer/DominoEditTool.tsx` is the canvas tool owning everything once inside the mode:
 per-domino selection (click / Ctrl+click / drag-rubberband / Ctrl+drag / arrow-keys /
 Shift+arrow-keys, stored in `dominoes/selectionStore.ts`'s `DominoSelectionEntry` — `selected`,
 plus `anchor`/`active`/`baseSelection` for Shift+Arrow's Excel-style rectangle
 grow/shrink/cross-the-anchor behavior) and, layered on top of that, color assignment (below).
+Delete/Backspace clears the selection to unpainted via `clearSelectedDominoColors`.
+
+**Two rectangle predicates live side by side in that file and must not be merged.** A
+rubber-band drag uses `touchedIndices` (footprint *intersects* the box, so a box the user can
+see cutting a row takes that row); Shift+Arrow's `recomputeFromRect` uses `enclosedIndices`
+(full containment). The difference is not a preference: Shift+Arrow's rect comes from
+`rectFromIndices`, whose edges land flush on the anchor/active dominoes' own boundaries, so an
+intersection test there would let neighbours on the far side of a tight pitch bleed in.
+
+**A rubber-band drag previews live**, replacing the stored selection on every pointermove
+(`resolveDrag`, shared with the pointerup commit so the two can't disagree). Three consequences
+are load-bearing:
+
+- **`resolveDrag` must stay a pure function of the gesture, never of the stored selection** —
+  after the first frame the store holds this same drag's own preview, so Ctrl+drag's union
+  builds on `GestureState.before`, the entry captured at pointerdown. Holding that reference is
+  a sound snapshot only because every write path calls `replace` with a brand-new entry;
+  nothing mutates one in place.
+- **`applyLockedColorIfAny` runs at pointerup only.** Calling it per frame would paint, and push
+  an undo entry, on every frame of the drag.
+- **Escape mid-drag restores `before`** — a preview that wrote to the store has to be undone by
+  `cancelDrag`, which used to have nothing to put back.
+
+`sameIndices` skips the store write when a frame swept nothing new; the modeller's redraw is
+per-domino matrix/colour/attribute work, so that integer compare is orders cheaper than the
+frame it elides.
 Domino hit-testing raycasts directly against the field's `InstancedMesh` via `hitDominoIndex`
 rather than through R3F's synthetic pointer-event system, because that system only considers
 objects with their own pointer-event props — and the mesh deliberately has none, so
@@ -487,6 +525,18 @@ operation (see *Domino data* above for why that's a live color-id reference, not
   Only one color locks at a time. `ModeHintBar` swaps its sentence while locked.
 
 Clicking a swatch with nothing selected is a documented no-op — nothing to apply to.
+
+**Delete/Backspace** clears the selection back to unpainted (`clearSelectedDominoColors`),
+distinct from cut only in leaving the clipboard alone. It goes through `commitDominoColors` like
+every other colour write, so it is one undoable step, keeps `colorByCell` in sync, and records
+nothing when the selection is already unpainted — all inherited, none of it restated there.
+
+Each swatch's hover text is a `components/FloatingTip`, rendered once at the panel level rather
+than inside each button. It must not go back to being a CSS-only absolute tooltip: `Sidebar.tsx`
+sets `overflow-y: auto`, which per spec makes `overflow-x` compute to `auto` as well, so the
+sidebar clips on **both** axes and the tip is wider than the sidebar. `position: fixed` is the
+escape (the same one `DDObjectMenu` documents), and it works only because nothing between
+`#root` and `.sidebar` sets `transform`/`filter`/`will-change`/`contain` — don't add any.
 
 A third route exists alongside those two — **pasting** a copied pattern of colors (Ctrl+V) —
 but it belongs to the clipboard subsystem below rather than to the panel, and it is the only
@@ -689,6 +739,32 @@ of anything structural: nothing stops a `"dominoColors"` op from being undone ou
 `dominoColors` case), so without this floor, undo from inside the mode would silently walk back
 through unrelated DDObject-level history too.
 
+**The barrier has a second reader: `cancelDominoEditing`.** Where Done (`exitDominoEditing`)
+commits, Cancel discards, restoring the field to its state at entry. `ModeHintBar` prompts for
+confirmation first (via `components/ConfirmDialog.tsx`), and only when
+`hasOperationsSinceBarrier` says there is something to lose. Three parts, each load-bearing:
+
+- **The rollback is a snapshot restore, not a replay of the undo stack.** `restoreDominoColorSnapshot`
+  writes back the `colorIds` column captured by `captureDominoColorSnapshot` at entry.
+  **Do not "simplify" this into a loop calling `undo()` until it refuses at the barrier** — that
+  was the first implementation and it is quietly wrong: `HISTORY_LIMIT` drops entries off the
+  *front*, so past 100 in-mode edits the earliest ones no longer exist to be undone and Cancel
+  returns a *partly painted* field with nothing signalling the shortfall. A snapshot is immune to
+  the cap by construction. The snapshot deliberately covers only `colorIds`, the one thing the
+  mode can change; a future in-mode feature that moves, adds or deletes dominoes must widen it.
+- **The restore goes through `commitDominoColors`** like every other colour write, so it inherits
+  the `colorByCell` sync (see *Domino data*) — skipping it would let a later regenerate repaint
+  the very colors the cancel discarded. The operation it returns is dropped on the floor: a
+  cancelled session records no history, exactly as `cancelProperties` records none.
+- **The history is then truncated at the barrier** (`lastIndexOf`, which returns `-1` precisely
+  when the barrier has aged off the front — in which case every surviving entry is in-mode work
+  and the whole stack goes, the same reasoning that makes the clamp lapse safely). Truncating
+  without reverting is sound **only because in-mode operations are colour changes and nothing
+  else**, and that is what `enterDominoEditing`'s `redoStack: []` secures: undo is clamped at the
+  barrier but redo deliberately isn't, so a leftover pre-mode `redoStack` would let Ctrl+Y replay
+  pre-mode work into the mode, which Cancel would then drop from the stack without undoing it.
+  Clearing it at entry costs nothing — the first in-mode `pushOperation` clears it anyway.
+
 Every variant stores **whole-DDObject snapshots**, never per-field patches — a `fieldElement`'s
 counts, `width`/`height`, `position`, `anchorX`/`anchorY` and `originRow`/`originCol` are all
 derived from one another, by different write paths (`normalizeSize` for the editor,
@@ -734,8 +810,17 @@ list.
 
 `help/topics.ts` auto-discovers `help/content/*.md` via `import.meta.glob(..., eager: true)`,
 deriving each topic's id from the filename and its title from the first `#` heading. Adding a
-help topic means adding a markdown file — no registration needed. `help/registry.ts` optionally
-maps a screen to a topic id, falling back to `home`.
+help topic means adding a markdown file — no registration needed.
+
+**Which topic opens is resolved two ways, and both matter.** A caller can name one outright
+(`openHelpTopic(id)` → `helpTopicOverride`, which is what `ModeHintBar`'s in-mode Help button
+uses); otherwise — notably the title bar's Help button, which names nothing —
+`help/registry.ts`'s `topicForContext(screen, activeTool)` picks the contextual default. It
+consults `TOOL_TOPIC` before `SCREEN_TOPIC` because what the user is *doing* is more specific
+than where they are: keyed on screen alone, opening help inside domino editing mode landed on
+`home`, since `SCREEN_TOPIC` is empty. `activeTool` is only consulted on the designer screen —
+a `ToolId` means nothing elsewhere, and the store keeps the last one selected across a screen
+switch, so without that guard leaving the designer mid-tool would carry its help page along.
 
 ## Current state and direction
 
@@ -813,8 +898,17 @@ otherwise "correct" backwards:
   controls consume directly — including the native `<input type="color">` that `ColorField`
   wraps, which is why no color-picker dependency was added.
 - **Selection exists now** (`selectedDDObjectId`, see *Selection and direct manipulation*), but
-  `CameraApi.frameDDObject` is still not called on select — framing a selected object is left for
-  later. The row ⋯ menu continues to act on its own DDObject independently of what is selected.
+  `CameraApi.frameDDObject` is still not called on select — framing a *selected* object is left
+  for later. Its only caller is `enterDominoEditing`; a plain single click still doesn't move the
+  camera, deliberately, since selection happens constantly and a moving viewport would fight the
+  user. The row ⋯ menu continues to act on its own DDObject independently of what is selected.
+- **There is one generic modal, `components/ConfirmDialog.tsx`**, raised today only by
+  ModeHintBar's Cancel. It is owned by whoever raises it (local state, mounted inline) rather
+  than by the store — unlike `PropertiesDialog` there is no shared editing session behind it,
+  just a question and two callbacks. It is a *true* modal, in contrast to the properties dialog:
+  its scrim dims the canvas too, and it swallows every keydown in the capture phase so the
+  window-level handlers behind it (`DominoEditTool`'s Delete and colour shortcuts,
+  `DesignerScreen`'s Ctrl chords) can't keep editing the thing being asked about.
 
 ## Code style
 

@@ -1,10 +1,11 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { RiLockFill } from "@remixicon/react";
 
 import { useStore } from "../store";
 import { useDominoDataStore } from "../dominoes/store";
 import { useDominoSelectionStore } from "../dominoes/selectionStore";
 import { readableTextColor } from "../color";
+import FloatingTip from "../components/FloatingTip";
 import type { InventoryEntry, InventoryEntryId } from "../domino-inventory/object-model";
 import styles from "./DominoColorPanel.module.css";
 
@@ -58,6 +59,11 @@ export default function DominoColorPanel() {
     return activeEntries.find((e) => e.numericId === uniformColorId)?.id ?? null;
   }, [uniformColorId, activeEntries]);
 
+  // Which swatch is hovered, and where it sits on screen. The tip is rendered
+  // once outside the grid rather than inside each button, so it can escape the
+  // sidebar's clipping — see FloatingTip.
+  const [hovered, setHovered] = useState<{ entry: InventoryEntry; anchor: DOMRect } | null>(null);
+
   const shortcutCandidates: Set<InventoryEntryId> | null = dominoColorShortcut
     ? new Set(
         activeEntries
@@ -91,18 +97,28 @@ export default function DominoColorPanel() {
               style={{ background: entry.color, color: textColor }}
               onClick={() => onSwatchClick(entry)}
               onDoubleClick={() => toggleDominoColorLock(entry.id)}
+              onMouseEnter={(e) =>
+                setHovered({ entry, anchor: e.currentTarget.getBoundingClientRect() })
+              }
+              onMouseLeave={() => setHovered((h) => (h?.entry.id === entry.id ? null : h))}
+              onFocus={(e) => setHovered({ entry, anchor: e.currentTarget.getBoundingClientRect() })}
+              onBlur={() => setHovered((h) => (h?.entry.id === entry.id ? null : h))}
               aria-label={entry.colorName}
             >
               <span>{entry.shortcut}</span>
               {isLocked && <RiLockFill className={styles.lockBadge} />}
-              <span className={styles.tooltip}>
-                {entry.colorName} — {entry.material}, {entry.finish}, {entry.brand}
-              </span>
             </button>
             <div className={styles.label}>{entry.colorName}</div>
           </div>
         );
       })}
+
+      {hovered && (
+        <FloatingTip anchor={hovered.anchor}>
+          {hovered.entry.colorName} — {hovered.entry.material}, {hovered.entry.finish},{" "}
+          {hovered.entry.brand}
+        </FloatingTip>
+      )}
     </div>
   );
 }

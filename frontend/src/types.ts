@@ -17,6 +17,10 @@ export interface CameraApi {
   zoomTo: (zoom: number) => void;
   /** Fit the whole build plane in view and recenter at the origin. */
   resetZoom: () => void;
-  /** Pan/zoom so a given DDObject is comfortably framed. Stubbed in v1. */
+  /**
+   * Pan/zoom so a given DDObject fills the canvas, less a small margin. A no-op
+   * for types declaring no bounds(). Called on entering domino editing mode
+   * (store.ts's enterDominoEditing) — not on ordinary selection.
+   */
   frameDDObject: (id: string) => void;
 }

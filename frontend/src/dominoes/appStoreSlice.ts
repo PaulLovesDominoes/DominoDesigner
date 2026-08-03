@@ -14,7 +14,7 @@ import type { DominoColorClipboardItem } from "./clipboardItem";
 
 /**
  * Per-domino colour editing: the swatch/shortcut/lock state of domino editing
- * mode, and the four writes that change a domino's colour.
+ * mode, and the five writes that change a domino's colour.
  *
  * These are a slice of the app store rather than of this folder's own
  * `store.ts` because each one needs `undoStack`, `ddObjects` and
@@ -100,6 +100,27 @@ export interface DominoColorSlice {
   // changed. A no-op if nothing is selected or every selected domino
   // already has this color.
   applyColorToSelectedDominoes: (entryId: InventoryEntryId) => void;
+  // Clears every currently-selected domino back to unpainted (the 0 sentinel)
+  // as one undoable step — Delete/Backspace in domino editing mode. Distinct
+  // from cut, which does the same clear but also overwrites the clipboard.
+  clearSelectedDominoColors: () => void;
+
+  // ---- Domino editing mode's cancel snapshot ----
+  // The edited DDObject's whole colorIds column as of entering the mode, and the
+  // restore that puts it back (both no-ops outside the mode). This is what makes
+  // Cancel exact. Replaying the undo stack backwards cannot be: HISTORY_LIMIT
+  // drops entries off the front, so past that many in-mode edits the earliest
+  // ones are simply gone and the field would come back partly painted, with no
+  // indication anything was missed. A snapshot is immune to the cap by
+  // construction.
+  //
+  // Deliberately just this one column, because it is the only thing the mode can
+  // change today — a future in-mode feature that moves, adds or deletes dominoes
+  // must widen this to whatever else it touches, or Cancel silently stops being
+  // exact again.
+  dominoEditingColorSnapshot: Uint32Array | null;
+  captureDominoColorSnapshot: (parentId: DDObjectId) => void;
+  restoreDominoColorSnapshot: () => void;
 
   // ---- Domino color clipboard ----
   // The domino-editing half of the app clipboard (clipboard/store.ts owns the
@@ -146,6 +167,56 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
       [...selected].map((i) => [i, targetId] as [number, number]),
     );
     if (op) set((st) => pushOperation(st.undoStack, op));
+  },
+
+  clearSelectedDominoColors: () => {
+    const s = get();
+    const parentId = s.dominoEditingId;
+    if (!parentId) return;
+    const selected = useDominoSelectionStore.getState().get(parentId)?.selected;
+    if (!selected || selected.size === 0) return;
+    const data = useDominoDataStore.getState().get(parentId);
+    if (!data) return;
+
+    const op = commitDominoColors(
+      parentId,
+      s.ddObjects[parentId],
+      data,
+      // 0 is the unpainted sentinel, the same clear a cut performs — minus the
+      // clipboard write, which is the whole reason this isn't just Ctrl+X.
+      [...selected].map((i) => [i, 0] as [number, number]),
+    );
+    if (op) set((st) => pushOperation(st.undoStack, op));
+  },
+
+  dominoEditingColorSnapshot: null,
+  captureDominoColorSnapshot: (parentId) => {
+    const data = useDominoDataStore.getState().get(parentId);
+    // A plain copy of the live column: the SoA buffers are mutated in place, so
+    // holding the reference would snapshot nothing.
+    set({ dominoEditingColorSnapshot: data ? data.colorIds.slice() : null });
+  },
+  restoreDominoColorSnapshot: () => {
+    const s = get();
+    const parentId = s.dominoEditingId;
+    const snapshot = s.dominoEditingColorSnapshot;
+    if (!parentId || !snapshot) return;
+    const data = useDominoDataStore.getState().get(parentId);
+    if (!data) return;
+
+    // min(): the snapshot spans the capacity it was taken at. Nothing can resize
+    // the field from inside the mode today, but a mismatch here must clip rather
+    // than read past either buffer.
+    const n = Math.min(snapshot.length, data.count);
+    const targets: [number, number][] = [];
+    for (let i = 0; i < n; i++) targets.push([i, snapshot[i]]);
+
+    // Through commitDominoColors like every other colour write, so the restore
+    // inherits the colorByCell sync — without it a later regenerate would
+    // repaint the very colors this just discarded. The operation it returns is
+    // dropped: a cancelled session records no history, exactly as a cancelled
+    // properties dialog records none.
+    commitDominoColors(parentId, s.ddObjects[parentId], data, targets);
   },
 
   copySelectedDominoColors: () => {

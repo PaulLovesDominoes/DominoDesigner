@@ -41,6 +41,8 @@ export default function Toolbar() {
   // Done/Cancel/Help stay live. Zoom is left enabled — it's harmless (and
   // useful) while picking dominoes.
   const editingDominoes = useStore((s) => s.activeTool === "editDominoes");
+  // Which DDObject the fit button frames while the mode is on — see its button.
+  const dominoEditingId = useStore((s) => s.dominoEditingId);
 
   // Designer-only. Rendered from TitleBar (mounted on every screen), so it
   // has to gate itself rather than being conditionally mounted by a parent.
@@ -108,11 +110,20 @@ export default function Toolbar() {
           >
             <RiZoomOutLine size={20} />
           </button>
+          {/* Fits the whole build plane normally, but the field being edited
+              while domino editing mode is on: fitting the plane there would
+              zoom out of the very thing the mode exists to work on. So in the
+              mode this returns the view to exactly what entering it produced,
+              undoing any panning and zooming done since. */}
           <button
             className={styles.iconBtn}
-            title="Reset zoom"
-            aria-label="Reset zoom"
-            onClick={() => cameraApi?.resetZoom()}
+            title={dominoEditingId ? "Fit field" : "Reset zoom"}
+            aria-label={dominoEditingId ? "Fit field" : "Reset zoom"}
+            onClick={() =>
+              dominoEditingId
+                ? cameraApi?.frameDDObject(dominoEditingId)
+                : cameraApi?.resetZoom()
+            }
           >
             <RiFullscreenLine size={20} />
           </button>

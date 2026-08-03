@@ -1,22 +1,25 @@
 # Editing dominoes
 
 Double-click a domino field on the canvas, or in the object list, to start editing
-its individual dominoes. While editing, the field is outlined in white and the rest
-of the app is locked — the toolbar, undo/redo, and the object list are unavailable
-until you leave the mode.
+its individual dominoes. The view zooms in to fit the field to the canvas. While
+editing, the field is outlined in white and the rest of the app is locked — the
+toolbar, undo/redo, and the object list are unavailable until you leave the mode.
 
 Selected dominoes are outlined in white; everything else stays outlined in black.
 
 - **Click** a domino: select just that one.
 - **Ctrl+Click** a domino: add or remove it from the selection without disturbing
   the rest.
-- **Drag** a box: select every domino fully inside it, replacing the current
-  selection.
-- **Ctrl+Drag** a box: select every domino fully inside it, added to the current
-  selection.
+- **Drag** a box: select every domino the box touches, replacing the current
+  selection. A domino only has to be clipped by the box, not enclosed by it, so a
+  thin drag straight across a row takes the whole row. Dominoes light up as the box
+  sweeps over them, so you can see what you are about to take; press **Escape**
+  before releasing to call the whole drag off.
+- **Ctrl+Drag** a box: the same, added to the current selection.
 - **Arrow keys**: jump to the next domino in that direction.
 - **Shift+Arrow keys**: grow or shrink the selection one domino at a time in that
   direction.
+- **Delete** or **Backspace**: clear the selected dominoes back to unpainted.
 - **Escape**: cancel a drag in progress, or clear the current selection. It does
   not leave the mode.
 
@@ -37,7 +40,9 @@ domino inventory in place of the object list. There are two ways to use it:
 you were part-way through typing. Leaving the mode does the same.
 
 Each color change is a single undo step, and can be undone after you leave the mode.
-Clicking a swatch with nothing selected does nothing.
+Clicking a swatch with nothing selected does nothing. **Delete** or **Backspace**
+clears the selected dominoes back to unpainted — the same result as a cut, but
+without disturbing what you have copied.
 
 ## Copying and pasting colors
 
@@ -68,7 +73,23 @@ copy in one field, leave, open another field, and paste there. It survives even 
 you resize or delete the field you copied from. Each paste, and each cut, is a
 single undo step.
 
-Select **Done** or **Cancel** to leave domino editing and return to the normal
-Select tool.
+## Leaving domino editing
+
+Both buttons return you to the normal Select tool, but they do opposite things with
+your work:
+
+- **Done** keeps everything you changed. Each change stays on the undo stack, so you
+  can still undo it afterwards one step at a time.
+- **Cancel** throws away *everything* you did in this editing session — every color
+  applied, cut and paste — putting the field back exactly as it was when you
+  double-clicked into it, however many changes you made. You are asked to confirm
+  first, unless you haven't changed anything, in which case Cancel just leaves. Once
+  confirmed, discarded work cannot be brought back with Undo or Redo, but anything
+  you did *before* entering domino editing can still be undone as usual.
+
+Neither one moves the view back out; use the fit button in the toolbar once you have
+left the mode if you want the whole build plane again. *While* editing, that same
+button fits the field you are working on, so it puts the view back where entering
+the mode set it if you have panned or zoomed away.
 
 Moving and deleting individual dominoes isn't available yet.

@@ -1,8 +1,10 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { useStore } from "../store";
 import { useClipboardStore } from "../clipboard/store";
+import { hasOperationsSinceBarrier } from "../history/appStoreSlice";
 import { getDDObjectDefaultName } from "../object-types/registry";
+import ConfirmDialog from "../components/ConfirmDialog";
 import type { ToolId } from "../types";
 import styles from "./ModeHintBar.module.css";
 
@@ -40,6 +42,13 @@ export default function ModeHintBar() {
     s.dominoEditingId ? s.ddObjects[s.dominoEditingId] ?? null : null,
   );
   const exitDominoEditing = useStore((s) => s.exitDominoEditing);
+  const cancelDominoEditing = useStore((s) => s.cancelDominoEditing);
+  // Whether Cancel has anything to discard — the same barrier comparison undo()
+  // clamps on. A primitive, so no useShallow needed.
+  const hasEdits = useStore((s) =>
+    hasOperationsSinceBarrier(s.undoStack, s.dominoEditingUndoBarrier),
+  );
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   const openHelpTopic = useStore((s) => s.openHelpTopic);
   const dominoColorLockedId = useStore((s) => s.dominoColorLockedId);
   // The color clipboard is otherwise invisible, so say what's in it. Survives
@@ -71,18 +80,34 @@ export default function ModeHintBar() {
           </span>
         )}
         {clipboardItem && <span>{clipboardItem.label} copied — Ctrl+V to paste.</span>}
+        {/* Done commits; Cancel rolls the mode's edits back. Cancel only warns
+            when there is actually something to lose — with nothing recorded
+            since entry the two are indistinguishable to the user, and a prompt
+            asking about edits that don't exist would just be noise. */}
         <button className={styles.textBtn} onClick={exitDominoEditing}>
           Done
         </button>
-        {/* Cancel is identical to Done in this pass — no domino edits exist yet
-            to discard. Kept as a separate button so a future pass can diverge
-            them (Cancel discarding in-progress edits) without a UI change. */}
-        <button className={styles.textBtn} onClick={exitDominoEditing}>
+        <button
+          className={styles.textBtn}
+          onClick={() => (hasEdits ? setConfirmingCancel(true) : cancelDominoEditing())}
+        >
           Cancel
         </button>
         <button className={styles.textBtn} onClick={() => openHelpTopic("domino-editing")}>
           Help
         </button>
+        {confirmingCancel && (
+          <ConfirmDialog
+            message="Are you sure you wish to cancel your edits?"
+            confirmLabel="Yes, Cancel my edits"
+            cancelLabel="No, Continue editing"
+            onConfirm={() => {
+              setConfirmingCancel(false);
+              cancelDominoEditing();
+            }}
+            onCancel={() => setConfirmingCancel(false)}
+          />
+        )}
       </>
     );
   } else {

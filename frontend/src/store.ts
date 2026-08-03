@@ -105,15 +105,22 @@ export interface AppState extends InventorySlice, HistorySlice, DominoColorSlice
   // "editDominoes", which is enough on its own to disarm SelectionTool,
   // CreateByRegionTool and DesignerCanvas's onPointerMissed (none of them match
   // "select" or an elementType-bearing tool anymore); Toolbar/Sidebar disable
-  // the rest of the UI by reading activeTool directly. exitDominoEditing is the
-  // only action that leaves the mode (wired to ModeHintBar's Done/Cancel).
+  // the rest of the UI by reading activeTool directly. The two actions below are
+  // the only ways out, wired to ModeHintBar's Done and Cancel respectively.
   dominoEditingId: DDObjectId | null;
   enterDominoEditing: (id: DDObjectId) => void;
+  /** Keep the edits made in the mode; just leave. */
   exitDominoEditing: () => void;
+  /**
+   * Discard everything done inside the mode — rolling the undo stack back to
+   * the state at entry — and leave. The confirmation prompt is ModeHintBar's
+   * (it also decides whether there is anything to discard at all).
+   */
+  cancelDominoEditing: () => void;
 
   // enterDominoEditing/exitDominoEditing also maintain the undo clamp
   // (`dominoEditingUndoBarrier`, declared in history/appStoreSlice.ts alongside
-  // the undo() that enforces it).
+  // the undo() that enforces it); cancelDominoEditing drains back to it.
 
   // The domino colour lock, shortcut buffer and the four colour writes come
   // from DominoColorSlice (dominoes/appStoreSlice.ts).
@@ -182,18 +189,33 @@ export const useStore = create<AppState>()((set, get, api) => ({
   dominoEditingId: null,
   // dominoEditingUndoBarrier's initial value comes from HistorySlice; the two
   // actions below are its only writers.
-  enterDominoEditing: (id) =>
-    set((s) => {
-      const ddObject = s.ddObjects[id];
-      if (!ddObject || !isDominoEditable(ddObject)) return {};
-      return {
-        dominoEditingId: id,
-        selectedDDObjectId: id,
-        activeTool: "editDominoes" as ToolId,
-        // Undefined on an empty stack, normalised to null = no clamp needed.
-        dominoEditingUndoBarrier: s.undoStack[s.undoStack.length - 1] ?? null,
-      };
-    }),
+  enterDominoEditing: (id) => {
+    const s = get();
+    const ddObject = s.ddObjects[id];
+    if (!ddObject || !isDominoEditable(ddObject)) return;
+    // Everything Cancel has to put back, captured before anything can change it.
+    s.captureDominoColorSnapshot(id);
+    set({
+      dominoEditingId: id,
+      selectedDDObjectId: id,
+      activeTool: "editDominoes" as ToolId,
+      // Undefined on an empty stack, normalised to null = no clamp needed.
+      dominoEditingUndoBarrier: s.undoStack[s.undoStack.length - 1] ?? null,
+      // Closes the mode's history: undo is clamped at the barrier, but redo
+      // deliberately isn't, so a leftover pre-mode redoStack would let Ctrl+Y
+      // replay pre-mode work *into* the mode — which cancelDominoEditing would
+      // then discard from the stack without reverting. Dropping it here also
+      // costs nothing, since the first in-mode edit's pushOperation clears the
+      // redo stack anyway; this only brings that forward.
+      redoStack: [],
+    });
+    // Fit the field to the canvas: a mode whose whole purpose is per-domino
+    // work is unusable at build-plane zoom. Imperative, so it sits outside the
+    // set() rather than in an updater. Optional-chained because CameraRig
+    // registers the api from inside the <Canvas> — a call before that mounts is
+    // a harmless no-op.
+    s.cameraApi?.frameDDObject(id);
+  },
   exitDominoEditing: () =>
     set((s) => {
       if (s.dominoEditingId) useDominoSelectionStore.getState().clear(s.dominoEditingId);
@@ -209,8 +231,36 @@ export const useStore = create<AppState>()((set, get, api) => ({
         dominoEditingUndoBarrier: null,
         dominoColorLockedId: null,
         dominoColorShortcut: "",
+        dominoEditingColorSnapshot: null,
       };
     }),
+  cancelDominoEditing: () => {
+    // Put the colours back from the entry snapshot rather than replaying the
+    // undo stack backwards. Replaying cannot be exact: HISTORY_LIMIT drops
+    // entries off the front, so past that many in-mode edits the earliest ones
+    // no longer exist to be undone and the field comes back partly painted.
+    // See the snapshot's declaration in dominoes/appStoreSlice.ts.
+    get().restoreDominoColorSnapshot();
+
+    const s = get();
+    // Drop the in-mode entries from the history: they describe changes that no
+    // longer happened. Everything after the barrier is in-mode work — and
+    // lastIndexOf returns -1 exactly when the barrier has aged off the front,
+    // in which case every surviving entry is in-mode work and the whole stack
+    // goes, which is the same reasoning that makes the undo clamp lapse safely.
+    // Truncating is sound only because in-mode operations are colour changes and
+    // nothing else, which is what enterDominoEditing's redoStack reset secures.
+    const keep = s.dominoEditingUndoBarrier
+      ? s.undoStack.lastIndexOf(s.dominoEditingUndoBarrier) + 1
+      : 0;
+    set({
+      undoStack: s.undoStack.slice(0, keep),
+      // Nothing in here survived the cancel either — it can only hold in-mode
+      // operations, again per enterDominoEditing's reset.
+      redoStack: [],
+    });
+    get().exitDominoEditing();
+  },
 
   ...createInitialDDObjects(),
   createElement: (type, patch) =>

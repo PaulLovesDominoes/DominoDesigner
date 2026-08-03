@@ -53,24 +53,9 @@
   white-space: nowrap;
 }
 
-.tooltip {
-  display: none;
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--color-chrome-2);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
-  font-size: 11px;
-  font-weight: normal;
-  padding: 4px 6px;
-  border-radius: 4px;
-  white-space: nowrap;
-  z-index: 10;
-}
-
-.swatch:hover .tooltip,
-.swatch:focus-visible .tooltip {
-  display: block;
-}
+/*
+ * The swatch's hover text lives in components/FloatingTip, not here: an
+ * absolutely positioned tip is clipped by the sidebar's overflow on both axes,
+ * and this one is wider than the sidebar. .swatch keeps position: relative for
+ * .lockBadge's sake.
+ */

@@ -4,7 +4,7 @@ import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 
 import { useStore } from "../store";
-import { HOME_TOPIC, topicForScreen } from "../help/registry";
+import { HOME_TOPIC, topicForContext } from "../help/registry";
 import { HELP_TOPICS } from "../help/topics";
 import styles from "./HelpPanel.module.css";
 
@@ -14,8 +14,9 @@ export default function HelpPanel() {
   const helpOpen = useStore((s) => s.helpOpen);
   const closeHelp = useStore((s) => s.closeHelp);
   const screen = useStore((s) => s.screen);
+  const activeTool = useStore((s) => s.activeTool);
   // Pins the panel to a specific topic (e.g. domino editing's Help button) in
-  // place of the screen's default. See store.ts's openHelpTopic.
+  // place of the contextual default. See store.ts's openHelpTopic.
   const helpTopicOverride = useStore((s) => s.helpTopicOverride);
 
   const [topicStack, setTopicStack] = useState<string[]>([HOME_TOPIC]);
@@ -23,10 +24,13 @@ export default function HelpPanel() {
 
   useEffect(() => {
     if (helpOpen && !wasOpen.current) {
-      setTopicStack([helpTopicOverride ?? topicForScreen(screen)]);
+      // The contextual fallback covers the title bar's Help button, which names
+      // no topic — hence topicForContext reading the active tool as well as the
+      // screen, so opening help inside a mode lands on that mode's page.
+      setTopicStack([helpTopicOverride ?? topicForContext(screen, activeTool)]);
     }
     wasOpen.current = helpOpen;
-  }, [helpOpen, screen, helpTopicOverride]);
+  }, [helpOpen, screen, activeTool, helpTopicOverride]);
 
   if (!helpOpen) return null;
 

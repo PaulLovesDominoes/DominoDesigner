@@ -9,7 +9,10 @@ import type { DDObjectBounds, DDObjectId } from "../object-types/base";
 import { DOMINO_SIZE } from "../dimensions";
 import { useDominoDataStore } from "../dominoes/store";
 import { nearestInDirection, type DominoData, type Direction } from "../dominoes/object-model";
-import { useDominoSelectionStore } from "../dominoes/selectionStore";
+import {
+  useDominoSelectionStore,
+  type DominoSelectionEntry,
+} from "../dominoes/selectionStore";
 import { makeDominoColorClipboardHandlers } from "../dominoes/clipboardHandlers";
 import { useCutCopyHandler, usePasteHandler } from "../clipboard/useClipboardHandlers";
 
@@ -51,6 +54,31 @@ function enclosedIndices(data: DominoData, rect: Rect): number[] {
   return result;
 }
 
+/**
+ * Intersection test: every visible domino whose footprint overlaps `rect` at
+ * all, however slightly. This is what a rubber-band drag uses — a box the user
+ * can see cutting across a row is expected to take that row.
+ *
+ * Deliberately not a replacement for enclosedIndices above: Shift+Arrow's rect
+ * comes from rectFromIndices, whose edges land flush on the anchor/active
+ * dominoes' own boundaries, so an intersection test there would let neighbours
+ * on the far side of a tight pitch bleed in.
+ */
+function touchedIndices(data: DominoData, rect: Rect): number[] {
+  const hx = DOMINO_SIZE.thickness / 2;
+  const hy = DOMINO_SIZE.width / 2;
+  const result: number[] = [];
+  for (let i = 0; i < data.count; i++) {
+    if (data.hidden[i]) continue;
+    const x = data.positions[3 * i];
+    const y = data.positions[3 * i + 1];
+    if (x + hx >= rect.minX && x - hx <= rect.maxX && y + hy >= rect.minY && y - hy <= rect.maxY) {
+      result.push(i);
+    }
+  }
+  return result;
+}
+
 /** The tight rectangle spanning two dominoes' own footprints (each ± its half-extent). */
 function rectFromIndices(data: DominoData, i1: number, i2: number): Rect {
   const hx = DOMINO_SIZE.thickness / 2;
@@ -65,6 +93,19 @@ function rectFromIndices(data: DominoData, i1: number, i2: number): Rect {
     minY: Math.min(y1, y2) - hy,
     maxY: Math.max(y1, y2) + hy,
   };
+}
+
+/**
+ * Whether two ascending index lists are identical. `touchedIndices` builds them
+ * in order, so this is a plain elementwise compare — and it is what stops a
+ * rubber-band drag from redrawing every domino at pointer-event rate when the
+ * box moved but swept nothing new (the compare is integers only; the redraw it
+ * skips rewrites a matrix, a colour and two attributes per domino).
+ */
+function sameIndices(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 /** The index among `candidates` nearest physical point (cx, cy). */
@@ -152,6 +193,18 @@ interface GestureState {
   startIndex: number | undefined;
   ctrl: boolean;
   dragging: boolean;
+  /**
+   * The selection as it stood when the gesture began. A rubber-band drag now
+   * previews live, replacing the stored selection on every frame, so Ctrl+drag's
+   * union has to build on this snapshot rather than on the store — which after
+   * the first frame holds this very drag's own preview. It is also what Escape
+   * mid-drag puts back. Holding the reference is a sound snapshot because every
+   * write path calls `replace` with a brand-new entry; nothing mutates one in
+   * place.
+   */
+  before: DominoSelectionEntry | undefined;
+  /** Touched set last pushed, so a frame that swept nothing new skips the redraw. */
+  lastTouched: number[] | undefined;
 }
 
 const DIRECTION_KEYS: Record<string, Direction> = {
@@ -223,6 +276,14 @@ export default function DominoEditTool() {
   usePasteHandler(clipboardHandlers?.paste ?? null);
 
   const cancelDrag = () => {
+    const g = gestureRef.current;
+    // A drag previews its selection live, so backing out has to put the
+    // pre-gesture selection back — Escape mid-drag must leave no trace.
+    if (g?.dragging && dominoEditingId) {
+      const store = useDominoSelectionStore.getState();
+      if (g.before) store.replace(dominoEditingId, g.before);
+      else store.clear(dominoEditingId);
+    }
     gestureRef.current = null;
     setDragCurrent(null);
     invalidate();
@@ -320,6 +381,13 @@ export default function DominoEditTool() {
         return;
       }
 
+      if (e.key === "Delete" || e.key === "Backspace") {
+        // Backspace would otherwise navigate the page back.
+        e.preventDefault();
+        useStore.getState().clearSelectedDominoColors();
+        return;
+      }
+
       const direction = DIRECTION_KEYS[e.key];
       if (direction) {
         e.preventDefault();
@@ -394,7 +462,55 @@ export default function DominoEditTool() {
       startIndex: hitDominoIndex(scene, raycaster, dominoEditingId),
       ctrl: e.ctrlKey || e.metaKey,
       dragging: false,
+      before: useDominoSelectionStore.getState().get(dominoEditingId),
+      lastTouched: undefined,
     };
+  };
+
+  /**
+   * The selection a rubber-band drag ending at `endWorld` produces — run on
+   * every pointermove so the outlines preview live, and once more at pointerup.
+   * It is therefore a pure function of the gesture and never of the stored
+   * selection, which after the first frame holds this same drag's preview.
+   *
+   * Returns null when the box swept exactly the same dominoes as the previous
+   * frame, so an unchanged drag costs one integer compare instead of a full
+   * redraw. `force` skips that shortcut for the final resolve at pointerup.
+   */
+  const resolveDrag = (
+    data: DominoData,
+    g: GestureState,
+    endWorld: { x: number; y: number },
+    force: boolean,
+  ): DominoSelectionEntry | null => {
+    // Field-local coordinates — DominoData positions are parent-relative.
+    const startLocal = { x: g.startWorld.x - fieldBounds.x, y: g.startWorld.y - fieldBounds.y };
+    const endLocal = { x: endWorld.x - fieldBounds.x, y: endWorld.y - fieldBounds.y };
+    const rect: Rect = {
+      minX: Math.min(startLocal.x, endLocal.x),
+      maxX: Math.max(startLocal.x, endLocal.x),
+      minY: Math.min(startLocal.y, endLocal.y),
+      maxY: Math.max(startLocal.y, endLocal.y),
+    };
+    const touched = touchedIndices(data, rect);
+    if (!force && g.lastTouched && sameIndices(touched, g.lastTouched)) return null;
+    g.lastTouched = touched;
+
+    const baseSelection = g.ctrl ? new Set(g.before?.selected ?? []) : new Set<number>();
+    const selected = new Set(baseSelection);
+    for (const i of touched) selected.add(i);
+
+    // anchor/active track the drag's actual start/end points (not the
+    // rectangle's normalized corners), so Shift+Arrow always extends from
+    // wherever the gesture ended, whichever corner that geometrically was
+    // — mirrors Excel's click-drag-then-shift-arrow behavior.
+    let anchor = g.before?.anchor ?? 0;
+    let active = g.before?.active ?? 0;
+    if (touched.length > 0) {
+      anchor = nearestToPoint(data, touched, startLocal.x, startLocal.y);
+      active = nearestToPoint(data, touched, endLocal.x, endLocal.y);
+    }
+    return { selected, baseSelection, anchor, active };
   };
 
   const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
@@ -405,6 +521,14 @@ export default function DominoEditTool() {
     if (!g.dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD_MM) return;
     g.dragging = true;
     setDragCurrent({ x: e.point.x, y: e.point.y });
+
+    // Preview which dominoes the box has swept so far. Deliberately no
+    // applyLockedColorIfAny here: that would paint — and push an undo entry —
+    // on every frame of the drag. A locked color is applied once, at pointerup.
+    const data = useDominoDataStore.getState().get(dominoEditingId);
+    if (!data) return;
+    const entry = resolveDrag(data, g, { x: e.point.x, y: e.point.y }, false);
+    if (entry) useDominoSelectionStore.getState().replace(dominoEditingId, entry);
   };
 
   const onPointerUp = (e: ThreeEvent<PointerEvent>) => {
@@ -417,33 +541,10 @@ export default function DominoEditTool() {
 
     if (data) {
       if (g.dragging) {
-        // Rubber-band select: convert to field-local coordinates (DominoData
-        // positions are parent-relative) and take everything fully enclosed.
-        const startLocal = { x: g.startWorld.x - fieldBounds.x, y: g.startWorld.y - fieldBounds.y };
-        const endLocal = { x: e.point.x - fieldBounds.x, y: e.point.y - fieldBounds.y };
-        const rect: Rect = {
-          minX: Math.min(startLocal.x, endLocal.x),
-          maxX: Math.max(startLocal.x, endLocal.x),
-          minY: Math.min(startLocal.y, endLocal.y),
-          maxY: Math.max(startLocal.y, endLocal.y),
-        };
-        const enclosed = enclosedIndices(data, rect);
-        const prevEntry = selectionStore.get(dominoEditingId);
-        const baseSelection = g.ctrl ? new Set(prevEntry?.selected ?? []) : new Set<number>();
-        const selected = new Set(baseSelection);
-        for (const i of enclosed) selected.add(i);
-
-        // anchor/active track the drag's actual start/end points (not the
-        // rectangle's normalized corners), so Shift+Arrow always extends from
-        // wherever the gesture ended, whichever corner that geometrically was
-        // — mirrors Excel's click-drag-then-shift-arrow behavior.
-        let anchor = prevEntry?.anchor ?? 0;
-        let active = prevEntry?.active ?? 0;
-        if (enclosed.length > 0) {
-          anchor = nearestToPoint(data, enclosed, startLocal.x, startLocal.y);
-          active = nearestToPoint(data, enclosed, endLocal.x, endLocal.y);
-        }
-        selectionStore.replace(dominoEditingId, { selected, baseSelection, anchor, active });
+        // Same resolve the live preview has been running; forced, so the final
+        // state is committed even if this frame swept nothing new.
+        const entry = resolveDrag(data, g, { x: e.point.x, y: e.point.y }, true);
+        if (entry) selectionStore.replace(dominoEditingId, entry);
         applyLockedColorIfAny();
       } else if (g.startIndex === undefined) {
         // Click on empty space.

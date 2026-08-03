@@ -67,6 +67,23 @@ export function pushOperation(undoStack: Operation[], op: Operation) {
 }
 
 /**
+ * Whether `undoStack` holds any operation recorded since `barrier` was taken —
+ * i.e. any work done inside domino editing mode. Identity comparison, for the
+ * same reason the barrier is an Operation rather than an index (see its
+ * declaration below). A null barrier means the stack was empty at entry, so
+ * anything on it now is in-mode work.
+ *
+ * Two readers: undo()'s clamp, and ModeHintBar, which uses it to decide whether
+ * Cancel has anything to warn about discarding.
+ */
+export function hasOperationsSinceBarrier(
+  undoStack: Operation[],
+  barrier: Operation | null,
+): boolean {
+  return undoStack.length > 0 && undoStack[undoStack.length - 1] !== barrier;
+}
+
+/**
  * Whether `op` still names `id`. Pure, so it can be applied to either stack;
  * store.ts's isDDObjectInUndoHistory is the live-store query built on it.
  * Deliberately conservative: checks every operation kind that could reference
@@ -139,10 +156,11 @@ export const createHistorySlice: StateCreator<AppState, [], [], HistorySlice> = 
     // already on the stack when the mode was entered. Comparing the top of the
     // stack against the barrier operation directly is what makes this immune to
     // HISTORY_LIMIT shifting every index out from under it; see the barrier's
-    // own declaration.
+    // own declaration. Shares one definition with ModeHintBar's "is there
+    // anything for Cancel to discard" so the two can't drift apart.
     if (
       s.dominoEditingUndoBarrier !== null &&
-      s.undoStack[s.undoStack.length - 1] === s.dominoEditingUndoBarrier
+      !hasOperationsSinceBarrier(s.undoStack, s.dominoEditingUndoBarrier)
     ) {
       return;
     }

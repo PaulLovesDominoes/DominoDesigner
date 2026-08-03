@@ -16,6 +16,13 @@ interface OrbitLike {
   update: () => void;
 }
 
+// Fraction of the viewport a framed DDObject fills, leaving breathing room so
+// its boundary rectangle isn't flush with the canvas edge. Deliberately only
+// frameDDObject's: the initial build-plane fit and resetZoom stay edge-to-edge,
+// which is what keeps controls.minZoom a true "can't zoom out past the plane"
+// floor rather than a slightly-looser one.
+const FRAME_FILL = 0.92;
+
 /**
  * Lives inside the <Canvas>. It is the single point where React UI outside the
  * WebGL canvas reaches the three.js camera, registering an imperative
@@ -65,15 +72,15 @@ export default function CameraRig() {
       invalidate();
     };
 
-    const fitZoom = (b: DDObjectBounds) =>
-      Math.min(size.width / b.width, size.height / b.height);
+    const fitZoom = (b: DDObjectBounds, fill = 1) =>
+      Math.min(size.width / b.width, size.height / b.height) * fill;
 
-    const fitTo = (b: DDObjectBounds) => {
+    const fitTo = (b: DDObjectBounds, fill = 1) => {
       const cx = b.x + b.width / 2;
       const cy = b.y + b.height / 2;
       camera.position.set(cx, cy, camera.position.z || 100);
       controls.target.set(cx, cy, 0);
-      applyZoom(fitZoom(b));
+      applyZoom(fitZoom(b, fill));
     };
 
     const api: CameraApi = {
@@ -83,7 +90,7 @@ export default function CameraRig() {
       frameDDObject: (id) => {
         const ddObject = useStore.getState().ddObjects[id];
         const b = ddObject && getDDObjectBounds(ddObject);
-        if (b) fitTo(b); // types that declare no bounds() are a no-op
+        if (b) fitTo(b, FRAME_FILL); // types that declare no bounds() are a no-op
       },
     };
 

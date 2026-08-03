@@ -1,0 +1,28 @@
+/*
+ * Fixed rather than absolute: the sidebar scrolls (overflow-y: auto, which per
+ * spec makes overflow-x compute to auto too), so an absolutely positioned tip
+ * inside it is clipped on both axes. Same escape hatch DDObjectMenu uses, and
+ * it works for the same reason — nothing between #root and the sidebar sets
+ * transform/filter/will-change/contain, so the viewport stays the containing
+ * block. Don't add any of those to that chain.
+ *
+ * z-index 35 sits above the sidebar's own menus and their backdrops (25/30) so
+ * a tip can't hide behind one, and below the help backdrop (40) and the
+ * properties scrim (50) — both deliberately dim the sidebar, and a tip floating
+ * over the dimming would look detached.
+ */
+.tip {
+  position: fixed;
+  z-index: 35;
+  /* A tooltip must never eat the click it is describing. */
+  pointer-events: none;
+  background: var(--color-chrome-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 11px;
+  font-weight: normal;
+  padding: 4px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}

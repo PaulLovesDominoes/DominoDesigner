@@ -1,0 +1,70 @@
+/*
+ * Unlike PropertiesDialog's scrim, this one dims the canvas too: a confirmation
+ * is genuinely modal, and there is no live preview underneath worth keeping
+ * bright. DesignerScreen's canvasAreaRaised keys off editingDDObjectId, which
+ * is null whenever this is up, so nothing lifts above it.
+ *
+ * z-index 80/81 sits above every other layer in the app (the properties dialog
+ * tops out at 70) — a confirmation is the last thing opened and must be the
+ * frontmost thing shown.
+ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 80;
+}
+
+.dialog {
+  position: fixed;
+  z-index: 81;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  width: max(320px, 24vw);
+  max-width: calc(100vw - 24px);
+  background: var(--color-chrome-2);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.message {
+  padding: 20px;
+  color: var(--color-text);
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.button {
+  padding: 8px 18px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-chrome);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: var(--color-text-dim);
+}
+
+.primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.primary:hover {
+  border-color: var(--color-accent);
+  filter: brightness(1.08);
+}
