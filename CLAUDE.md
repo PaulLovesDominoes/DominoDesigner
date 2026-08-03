@@ -75,9 +75,9 @@ parallel convention.
 ### State: one zustand store (plus one deliberate exception)
 
 `frontend/src/store.ts` holds all app state — screen, menu/help flags, active tool, the
-DDObject hierarchy, the properties-dialog state, and the camera bridge. Components subscribe
-with selectors (`useStore((s) => s.foo)`); non-React code reads imperatively via
-`useStore.getState()`.
+DDObject hierarchy, the properties-dialog state, the camera bridge, and (via a slice, see
+below) the domino inventory. Components subscribe with selectors (`useStore((s) => s.foo)`);
+non-React code reads imperatively via `useStore.getState()`.
 
 Nothing is persisted; the store is a plain `create()` with no middleware. Every load starts a
 fresh default project.
@@ -91,6 +91,71 @@ one store would mean cloning a 100k-element buffer on every domino edit, and sna
 for the properties dialog's rollback. So the split is deliberate, and the boundary is:
 **this** store holds identity, layout parameters and UI state; **that** one holds per-domino
 columns. The dependency runs one way — `dominoes` imports `store.ts`, never the reverse.
+
+That bar — *a different mutation discipline* — is the whole test for earning a store of your
+own. Ordinary copy-on-write state that merely belongs to one feature does **not** qualify; it
+becomes a **slice** of the app store instead.
+
+#### Slices
+
+`store.ts` grew past a thousand lines holding every feature's state inline, so a feature's
+members live in an `appStoreSlice.ts` under that feature's own folder while remaining part of
+the one `AppState`. Three exist today:
+
+| Slice | Holds |
+|---|---|
+| `domino-inventory/appStoreSlice.ts` | the inventory catalog, its selection and its sort |
+| `history/appStoreSlice.ts` | `Operation`, the undo/redo stacks, the domino-editing undo barrier |
+| `dominoes/appStoreSlice.ts` | the colour lock/shortcut and the four domino-colour writes |
+
+What's left in `store.ts` is the state that isn't any one feature's: screen/menu/help, the
+DDObject hierarchy and its actions, domino editing mode, the properties dialog, and the camera
+bridge.
+
+The shape, and why each part is what it is:
+
+- A slice module exports its own interface plus a `StateCreator<AppState, [], [], ItsSlice>`.
+  The **first** type argument is the whole `AppState`, not the slice — that's what lets a
+  slice's `set`/`get` read every other slice's members with no plumbing, which is exactly what
+  keeps this from fragmenting into separate stores. The **last** narrows what the creator must
+  return, so a member dropped during a move is a compile error. The two `[]`s are middleware
+  mutator slots, empty because there is no middleware.
+- `store.ts` declares `AppState extends ItsSlice` and spreads `createItsSlice(set, get, api)`
+  into the initializer. `AppState` is exported for slices to type against. The type recursion
+  (`AppState` extends the slice; the slice's creator references `AppState`) is fine — it passes
+  through a generic parameter rather than an alias expansion.
+- **Naming: `appStoreSlice.ts`, in the feature's folder.** Deliberately not `slice.ts`, because
+  `dominoes/` and `clipboard/` already have a `store.ts` of their own — `appStoreSlice.ts` says
+  unambiguously "this feature's slice of the *app* store," as distinct from a store the feature
+  owns outright.
+- A slice imports `AppState` **type-only**. `domino-inventory`'s needs nothing else from
+  `store.ts` and is therefore fully acyclic; the other two reach `dominoes/store.ts` and
+  `dominoes/colorMemory.ts`, which import `useStore` back, so they sit in a cycle.
+
+**`store.ts` must remain the only importer of a slice's creator.** That cycle
+(`store.ts` → slice → `dominoes/*` → `store.ts`) is safe *only* while `store.ts` is the module
+that enters it. Entered at a slice instead, `store.ts`'s body runs while the slice module is
+still mid-evaluation and calls `createXxxSlice` before the `const` is initialized. It fails
+loudly at startup rather than silently, but it fails. Import a slice's *types* from anywhere;
+import its creator only from `store.ts`.
+
+Two things exist specifically to keep that cycle as small as it is:
+
+- **`ddObjectOps.ts`** holds the pure hierarchy operations (`applyRemoveDDObject`,
+  `applyInsertDDObjects`, `collectSubtree`, `ddObjectsEqual`) that both `store.ts`'s recording
+  actions and history's `undo`/`redo` need. Putting them in a neutral module is what lets
+  history avoid a value import from `store.ts` — and it also makes the raw/public split
+  structural: a module that cannot reach an action cannot accidentally record one (see
+  *Undo/redo*'s re-entrancy note).
+- **`isDDObjectInUndoHistory` stays in `store.ts`**, even though it is conceptually history's,
+  because it queries the *live store*. History exports the pure per-operation predicate
+  (`operationReferencesId`) it runs. Moving the query into the slice would add the one value
+  import the split is avoiding.
+
+Consumers are unaffected either way: `useStore((s) => s.inventoryEntries)` and
+`useStore.subscribe` work identically whether a member is declared inline or in a slice. Moving
+members into a slice is therefore a pure refactor with no call-site churn — which is the point,
+and why all three moves touched no component.
 
 **Any `useStore` selector that computes a fresh object/array (rather than reading a stored
 reference or a primitive) must be wrapped in `useShallow`** (from `zustand/shallow`), or
@@ -293,7 +358,7 @@ defaulting new cells to unpainted: nothing here scopes memory to a single "opera
 
 `colorByCell` has a second writer besides `restoreDominoColors`'s regenerate-time absorb/restore:
 `syncDominoColorMemory`, called from the three places that mutate a live `colorIds` array
-directly without going through a regenerate — `commitDominoColors` (`store.ts`'s shared write
+directly without going through a regenerate — `commitDominoColors` (`dominoes/appStoreSlice.ts`'s shared write
 path, covering the swatch paint, cut, and paste alike) and the `"dominoColors"` cases of
 `undo()`/`redo()`. Routing every colour write through `commitDominoColors` is what keeps that
 list at three: a new way to change domino colours inherits the sync instead of having to
@@ -585,9 +650,9 @@ Deliberate decisions a fresh session could otherwise reverse:
 
 ### Undo/redo
 
-`store.ts` holds a single unified `undoStack`/`redoStack` over a discriminated `Operation`
-union (`create` / `delete` / `transform` / `properties` / `dominoColors`) — one stack for
-every DDObject-level (and now domino-color-level) change, not a separate stack per
+`history/appStoreSlice.ts` holds a single unified `undoStack`/`redoStack` over a discriminated
+`Operation` union (`create` / `delete` / `transform` / `properties` / `dominoColors`) — one
+stack for every DDObject-level (and now domino-color-level) change, not a separate stack per
 subsystem. Two independent histories can't preserve true chronological ordering without
 effectively rebuilding one timeline anyway, so this stays one stack.
 

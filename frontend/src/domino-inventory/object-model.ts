@@ -134,7 +134,7 @@ const SEED_ROWS: Array<[name: string, hex: string, shortcut: string]> = [
   ["Green", "#029c0a", "G"],
 ];
 
-/** Fresh seed inventory: called once from store.ts's initial state. */
+/** Fresh seed inventory: called once from appStoreSlice.ts's initial state. */
 export function createSeedInventory(): InventoryEntry[] {
   return SEED_ROWS.map(([colorName, color, shortcut], i) => ({
     id: `INV-${i + 1}` as InventoryEntryId,
@@ -149,6 +149,21 @@ export function createSeedInventory(): InventoryEntry[] {
     shortcut,
     notes: "Initial default color",
   }));
+}
+
+/**
+ * The "INV-{n}" counter value that follows a set of entries: one past the
+ * highest numericId present, so a newly minted id can never collide with an
+ * existing row.
+ *
+ * Derived rather than stated alongside the seed data, because the two would
+ * drift the moment a seed row is added. Derived from the *entries* rather than
+ * from SEED_ROWS.length specifically so it still holds for an inventory that
+ * didn't come from the seed at all — a server-supplied catalog won't
+ * necessarily be numbered 1..N, or be contiguous.
+ */
+export function nextInventoryNumberFor(entries: readonly InventoryEntry[]): number {
+  return entries.reduce((max, entry) => Math.max(max, entry.numericId), 0) + 1;
 }
 
 // ---- Color-wheel sort ----
@@ -213,7 +228,7 @@ export function compareColor(a: string, b: string): number {
   return hueA !== hueB ? hueA - hueB : lightA - lightB;
 }
 
-/** New entries are named "New Color" (see addInventoryEntry in store.ts). */
+/** New entries are named "New Color" (see addInventoryEntry in appStoreSlice.ts). */
 const NEW_ENTRY_NAME_PREFIX = "New ";
 
 /** A not-yet-renamed new entry, pinned to the top of every sort. */

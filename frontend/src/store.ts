@@ -10,22 +10,21 @@ import {
 import type { DDObjectId } from "./object-types/base";
 import type { BuildPlaneDDObject } from "./object-types/buildPlane/object-model";
 import { useDominoSelectionStore } from "./dominoes/selectionStore";
-import { useDominoDataStore } from "./dominoes/store";
-import type { DominoData } from "./dominoes/object-model";
-import { syncDominoColorMemory } from "./dominoes/colorMemory";
-import { resolveDominoColorPaste } from "./dominoes/rowColPaste";
-import type { DominoColorClipboardItem } from "./dominoes/clipboardItem";
 import {
-  createSeedInventory,
-  modeDefault,
-  MATERIAL_OPTIONS,
-  FINISH_OPTIONS,
-  BRAND_OPTIONS,
-  NEW_ENTRY_COLOR,
-  type InventoryEntry,
-  type InventoryEntryId,
-  type InventorySortColumn,
-} from "./domino-inventory/object-model";
+  createDominoColorSlice,
+  type DominoColorSlice,
+} from "./dominoes/appStoreSlice";
+import {
+  createInventorySlice,
+  type InventorySlice,
+} from "./domino-inventory/appStoreSlice";
+import {
+  createHistorySlice,
+  operationReferencesId,
+  pushOperation,
+  type HistorySlice,
+} from "./history/appStoreSlice";
+import { applyRemoveDDObject, ddObjectsEqual } from "./ddObjectOps";
 
 /**
  * Seed a fresh project's DDObject hierarchy: a single root BuildPlane (DDO-1)
@@ -40,117 +39,6 @@ function createInitialDDObjects() {
   };
 }
 
-/** Ids of `id` and everything beneath it, for a recursive delete. */
-function collectSubtree(
-  ddObjects: Record<DDObjectId, DDObject>,
-  id: DDObjectId,
-  into: Set<DDObjectId> = new Set(),
-) {
-  into.add(id);
-  const ddObject = ddObjects[id];
-  if (ddObject && "children" in ddObject) {
-    for (const childId of ddObject.children) collectSubtree(ddObjects, childId, into);
-  }
-  return into;
-}
-
-/**
- * One undoable action. Whole-DDObject snapshots throughout (never per-field
- * patches) — a fieldElement's counts, width/height, position, anchor and row/col
- * origins are all derived from one another, and by different write paths, so a
- * field is far too interdependent to diff/reapply piecemeal. "dominoColors" is the first
- * domino-level operation kind anticipated by that design: before/after are
- * the affected dominoes' previous/new inventory colorIds (0 = unassigned),
- * parallel to indices — typed arrays given how large a selection can get.
- * Applying it reaches into useDominoDataStore rather than ddObjects, and
- * touches neither dominoEditingId nor the domino selection store, which is
- * what lets undo/redo work whether or not domino editing mode is active.
- */
-type Operation =
-  | { kind: "create"; ddObject: DDObject; parentId: DDObjectId }
-  | { kind: "delete"; subtree: DDObject[]; parentId: DDObjectId; index: number }
-  | { kind: "transform"; before: DDObject; after: DDObject }
-  | { kind: "properties"; before: DDObject; after: DDObject }
-  | {
-      kind: "dominoColors";
-      parentId: DDObjectId;
-      indices: Uint32Array;
-      before: Uint32Array;
-      after: Uint32Array;
-    };
-
-// Undo entries are capped so a long session can't grow the stack unbounded.
-const HISTORY_LIMIT = 100;
-
-/** Push a new operation and clear the redo stack, per standard undo/redo semantics. */
-function pushOperation(undoStack: Operation[], op: Operation) {
-  return { undoStack: [...undoStack, op].slice(-HISTORY_LIMIT), redoStack: [] as Operation[] };
-}
-
-/**
- * The one write path for a batch of domino color changes — shared by the color
- * swatches, cut, and paste, all of which need the identical sequence: filter to
- * the dominoes that actually change, mutate the colorIds column in place,
- * signal, and keep the cross-regenerate color memory in step.
- *
- * Returns the operation to push, or null when nothing actually changed, so no
- * empty undo step gets recorded (opening a color and re-applying the one a
- * domino already has adds nothing to the history). It doesn't push itself —
- * callers are inside `set` and do that.
- *
- * The syncDominoColorMemory call is not optional: skipping it lets a later
- * regenerate resurrect a color that was just cut or overwritten. See that
- * function's own doc comment for the full failure mode.
- */
-function commitDominoColors(
-  parentId: DDObjectId,
-  ddObject: DDObject | undefined,
-  data: DominoData,
-  targets: Iterable<[index: number, colorId: number]>,
-): Operation | null {
-  const indices: number[] = [];
-  const before: number[] = [];
-  const after: number[] = [];
-  for (const [i, colorId] of targets) {
-    // i >= count: a selection left stale by a shrink. hidden: a tombstoned
-    // domino isn't drawn, so painting it would be invisible bookkeeping.
-    if (i >= data.count || data.hidden[i]) continue;
-    if (data.colorIds[i] === colorId) continue; // already this color
-    indices.push(i);
-    before.push(data.colorIds[i]);
-    after.push(colorId);
-  }
-  if (indices.length === 0) return null;
-
-  for (let k = 0; k < indices.length; k++) data.colorIds[indices[k]] = after[k];
-  useDominoDataStore.getState().bump(parentId);
-
-  const afterArray = Uint32Array.from(after);
-  if (ddObject) syncDominoColorMemory(ddObject, indices, afterArray);
-
-  return {
-    kind: "dominoColors",
-    parentId,
-    indices: Uint32Array.from(indices),
-    before: Uint32Array.from(before),
-    after: afterArray,
-  };
-}
-
-function operationReferencesId(op: Operation, id: DDObjectId): boolean {
-  switch (op.kind) {
-    case "create":
-      return op.ddObject.id === id;
-    case "delete":
-      return op.subtree.some((d) => d.id === id);
-    case "transform":
-    case "properties":
-      return op.before.id === id || op.after.id === id;
-    case "dominoColors":
-      return op.parentId === id;
-  }
-}
-
 /**
  * Whether `id` is referenced by any operation still on the undo or redo
  * stack — i.e., whether some future undo/redo could still bring a deleted
@@ -161,10 +49,12 @@ function operationReferencesId(op: Operation, id: DDObjectId): boolean {
  * than the instant it leaves `ddObjects` — otherwise undoing a delete would
  * reinsert the DDObject but its dominoes would already have been garbage
  * collected, coming back all default-grey with no memory of their colors.
- * Deliberately conservative: checks every operation kind that could
- * reference `id`, even ones (transform/properties/dominoColors) that don't
- * themselves add or remove it from `ddObjects`, since a delete elsewhere on
- * the stack could still make it currently absent.
+ *
+ * Lives here rather than alongside the rest of history because it is a query
+ * against the *live store*, and keeping the one `useStore`-touching part of
+ * history in store.ts is what leaves history/appStoreSlice.ts with no value
+ * import from this module. The per-operation predicate it runs is history's,
+ * and is imported.
  */
 export function isDDObjectInUndoHistory(id: DDObjectId): boolean {
   const { undoStack, redoStack } = useStore.getState();
@@ -174,137 +64,12 @@ export function isDDObjectInUndoHistory(id: DDObjectId): boolean {
   );
 }
 
-// DDObjects are plain JSON-safe data, so whole-object equality is cheap. This
-// only ever runs at a commit point (dialog Save, drag pointer-up) — never per
-// keystroke/frame — so a no-op session (nothing actually changed) pushes nothing.
-function ddObjectsEqual(a: DDObject, b: DDObject): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-interface RemovalResult {
-  // Nested (rather than flattened with subtree/parentId/index alongside it) so
-  // call sites can spread `result.patch` straight into a store update without
-  // ever destructuring-to-discard the bookkeeping fields.
-  patch: {
-    ddObjects: Record<DDObjectId, DDObject>;
-    editingDDObjectId?: null;
-    editingSnapshot?: null;
-    creatingDDObjectId?: null;
-    selectedDDObjectId?: null;
-    dominoEditingId?: null;
-    activeTool?: ToolId;
-  };
-  subtree: DDObject[];
-  parentId: DDObjectId;
-  index: number;
-}
-
 /**
- * Pure computation of removing `id` and its subtree: the doomed DDObjects (so
- * undo can restore them), the parent `id` sat in and its index there (so undo
- * reinserts at the same spot instead of appending), and the resulting
- * ddObjects/editing/selection patch. Returns undefined if `id` is the root or
- * already gone.
- *
- * This is the raw half of removeDDObject, shared with undo/redo. Applying
- * history must never itself record a new operation — the public removeDDObject
- * action below calls this and additionally pushes a `delete` entry; undo/redo
- * call this directly and never push anything from it, which is what keeps
- * inverting a `create` (a raw removal) from being mistaken for a user-initiated
- * delete.
+ * The app store's state. Exported because slice modules type their own
+ * StateCreator against it — see domino-inventory/appStoreSlice.ts, which holds
+ * the inventory members that used to sit at the bottom of this interface.
  */
-function applyRemoveDDObject(
-  ddObjects: Record<DDObjectId, DDObject>,
-  rootId: DDObjectId,
-  editingDDObjectId: DDObjectId | null,
-  selectedDDObjectId: DDObjectId | null,
-  dominoEditingId: DDObjectId | null,
-  id: DDObjectId,
-): RemovalResult | undefined {
-  if (id === rootId || !ddObjects[id]) return undefined;
-
-  const doomedSet = collectSubtree(ddObjects, id);
-  const subtree = Array.from(doomedSet).map((did) => ddObjects[did]);
-
-  // The external parent is whichever surviving object lists `id` as a child.
-  let parentId: DDObjectId = rootId;
-  let index = 0;
-  for (const ddObject of Object.values(ddObjects)) {
-    if (doomedSet.has(ddObject.id)) continue;
-    if ("children" in ddObject && ddObject.children.includes(id)) {
-      parentId = ddObject.id;
-      index = ddObject.children.indexOf(id);
-      break;
-    }
-  }
-
-  const nextDDObjects: Record<DDObjectId, DDObject> = {};
-  for (const [key, ddObject] of Object.entries(ddObjects)) {
-    if (doomedSet.has(key)) continue;
-    nextDDObjects[key] =
-      "children" in ddObject && ddObject.children.includes(id)
-        ? { ...ddObject, children: ddObject.children.filter((c) => c !== id) }
-        : ddObject;
-  }
-
-  const editingDeleted = editingDDObjectId !== null && doomedSet.has(editingDDObjectId);
-  const selectionDeleted = selectedDDObjectId !== null && doomedSet.has(selectedDDObjectId);
-  // Defensive only: deleting the DDObject whose dominoes are being edited isn't
-  // reachable through normal UI (the sidebar's delete menu is disabled for the
-  // whole duration of domino editing mode, see Sidebar.tsx), but this keeps
-  // dominoEditingId from ever pointing at a gone DDObject if some future path
-  // removes one without going through that disabled UI.
-  const dominoEditingDeleted = dominoEditingId !== null && doomedSet.has(dominoEditingId);
-
-  return {
-    patch: {
-      ddObjects: nextDDObjects,
-      ...(editingDeleted && {
-        editingDDObjectId: null,
-        editingSnapshot: null,
-        creatingDDObjectId: null,
-      }),
-      ...(selectionDeleted && { selectedDDObjectId: null }),
-      ...(dominoEditingDeleted && {
-        dominoEditingId: null,
-        activeTool: "select" as ToolId,
-      }),
-    },
-    subtree,
-    parentId,
-    index,
-  };
-}
-
-/**
- * Inverse of applyRemoveDDObject: reinsert `objects` (subtree[0] is the one the
- * caller cares about) under `parentId`, at `index` if given or appended
- * otherwise. Create's redo always appends (createElement only ever appends);
- * delete's undo passes the original index so a deleted sibling reappears in the
- * middle of a list rather than jumping to the end.
- */
-function applyInsertDDObjects(
-  ddObjects: Record<DDObjectId, DDObject>,
-  objects: DDObject[],
-  parentId: DDObjectId,
-  index?: number,
-): Record<DDObjectId, DDObject> {
-  const parent = ddObjects[parentId];
-  if (!parent || !("children" in parent) || objects.length === 0) return ddObjects;
-
-  const children = [...parent.children];
-  if (index === undefined) children.push(objects[0].id);
-  else children.splice(index, 0, objects[0].id);
-
-  const next: Record<DDObjectId, DDObject> = {
-    ...ddObjects,
-    [parentId]: { ...parent, children },
-  };
-  for (const ddObject of objects) next[ddObject.id] = ddObject;
-  return next;
-}
-
-interface AppState {
+export interface AppState extends InventorySlice, HistorySlice, DominoColorSlice {
   // Which screen is showing.
   screen: ScreenId;
   setScreen: (screen: ScreenId) => void;
@@ -346,58 +111,12 @@ interface AppState {
   enterDominoEditing: (id: DDObjectId) => void;
   exitDominoEditing: () => void;
 
-  // The operation that was on top of undoStack when domino editing mode was
-  // entered (null when not in the mode, or when the stack was empty). undo()
-  // refuses once that operation is back on top, so undo inside the mode can
-  // only reach back to the state the field was in at entry — never past it into
-  // whatever created the field or edited it beforehand.
-  //
-  // Deliberately the operation *itself* rather than an index or a stack depth:
-  // HISTORY_LIMIT drops entries off the front of undoStack, which shifts every
-  // index but leaves object identity alone. An index-based barrier has to be
-  // slid down on every push to compensate, and forgetting to breaks undo
-  // *silently and only in long sessions* — once the stack sits at the cap its
-  // length stops growing, so a depth captured there sits at or above the length
-  // forever and every in-mode edit refuses to undo. A reference can't drift.
-  //
-  // If in-mode work is heavy enough to push the barrier off the front, the
-  // clamp lapses — correctly, since by then every surviving entry is in-mode
-  // work anyway.
-  dominoEditingUndoBarrier: Operation | null;
+  // enterDominoEditing/exitDominoEditing also maintain the undo clamp
+  // (`dominoEditingUndoBarrier`, declared in history/appStoreSlice.ts alongside
+  // the undo() that enforces it).
 
-  // The inventory color currently locked (null = none). While locked, every
-  // newly-selected domino (by any means) is immediately recolored to it —
-  // see DominoEditTool.tsx's applyLockedColorIfAny. Cleared on exiting
-  // domino editing mode.
-  dominoColorLockedId: InventoryEntryId | null;
-  toggleDominoColorLock: (entryId: InventoryEntryId) => void;
-  // The in-progress shortcut being typed to pick a color (see the domino
-  // inventory's own `shortcut` column) — e.g. "B" while narrowing toward
-  // "B1"/"B2". Cleared on a unique match, Space-disambiguation, Escape, a
-  // new pointer gesture, ~1.2s of inactivity, or exiting the mode.
-  dominoColorShortcut: string;
-  setDominoColorShortcut: (buffer: string) => void;
-  // Recolors every currently-selected domino (in the field currently being
-  // domino-edited) to `entryId`'s color and pushes one undoable
-  // "dominoColors" operation covering exactly the dominoes that actually
-  // changed. A no-op if nothing is selected or every selected domino
-  // already has this color.
-  applyColorToSelectedDominoes: (entryId: InventoryEntryId) => void;
-
-  // ---- Domino color clipboard ----
-  // The domino-editing half of the app clipboard (clipboard/store.ts owns the
-  // slot and the Cut/Copy/Paste commands; dominoes/clipboardHandlers.ts wraps
-  // these three as the handler pair it registers). They live here rather than
-  // in the clipboard subsystem because each needs the undo stack, ddObjects and
-  // dominoEditingId — exactly what applyColorToSelectedDominoes above needs.
-  //
-  // All three no-op outside domino editing mode or with an empty selection.
-  // Copy builds the buffer without recording undo; cut additionally clears the
-  // copied dominoes to unpainted as one undo step; paste applies the item and
-  // pushes one more.
-  copySelectedDominoColors: () => DominoColorClipboardItem | undefined;
-  cutSelectedDominoColors: () => DominoColorClipboardItem | undefined;
-  pasteDominoColorClipboard: (item: DominoColorClipboardItem) => void;
+  // The domino colour lock, shortcut buffer and the four colour writes come
+  // from DominoColorSlice (dominoes/appStoreSlice.ts).
 
   // The build's DDObject hierarchy, indexed by DDObject id. `rootId` is the
   // BuildPlane; each DDObject with children lists their ids in `children`.
@@ -414,21 +133,7 @@ interface AppState {
   // Delete a DDObject and its descendants. The root plane cannot be deleted.
   removeDDObject: (id: DDObjectId) => void;
 
-  // Unified undo/redo history over DDObject-level operations (create, delete,
-  // transform, properties) and domino color changes. Not persisted, like the
-  // rest of the store.
-  undoStack: Operation[];
-  redoStack: Operation[];
-  // Clamped by dominoEditingUndoBarrier while in domino editing mode — see its
-  // own doc comment.
-  undo: () => void;
-  redo: () => void;
-  // Records a completed canvas drag (move/resize) as one undo step. Called by
-  // SelectionTool at a successful drop; it only records (it never touches
-  // ddObjects itself, since the drag's live updateDDObject calls already left
-  // the final state in place), and no-ops if before/after are equal (a
-  // zero-distance drag).
-  recordTransform: (before: DDObject, after: DDObject) => void;
+  // undoStack/redoStack/undo/redo/recordTransform come from HistorySlice.
 
   // DDObject whose properties dialog is open (null = closed); one at a time.
   editingDDObjectId: DDObjectId | null;
@@ -448,39 +153,9 @@ interface AppState {
   // Imperative camera bridge, registered by CameraRig inside the <Canvas>.
   cameraApi: CameraApi | null;
   setCameraApi: (cameraApi: CameraApi | null) => void;
-
-  // ---- Domino Inventory (Domino Inventory screen) ----
-  // A flat catalog of domino *types*, distinct from the placed-domino SoA data
-  // in dominoes/store.ts. Small (dozens of rows), not performance-sensitive,
-  // so it's a plain array here rather than a Record<id, Entry> — unlike
-  // ddObjects, nothing here needs O(1) id-keyed lookup or parent/child
-  // bookkeeping. Ephemeral: reseeded fresh every load, like the rest of the store.
-  inventoryEntries: InventoryEntry[];
-  // Next counter value for minting "INV-#" ids.
-  nextInventoryNumber: number;
-  // Prepend a new entry at the top with the spec's defaults; dropdown fields
-  // default to the current mode across existing entries.
-  addInventoryEntry: () => void;
-  // The single write path for inline cell edits.
-  updateInventoryEntry: (id: InventoryEntryId, patch: Partial<InventoryEntry>) => void;
-  // Bulk delete (the trash-can button), called only after the confirm dialog.
-  removeInventoryEntries: (ids: readonly InventoryEntryId[]) => void;
-
-  // Row ids checked via the Select column, for bulk delete.
-  inventorySelectedIds: Record<InventoryEntryId, true>;
-  toggleInventorySelected: (id: InventoryEntryId) => void;
-  // Used by the Select column header's select-all/none checkbox.
-  setAllInventorySelected: (ids: readonly InventoryEntryId[], selected: boolean) => void;
-
-  // Single active sort key + direction; null column = unsorted (seed/insertion order).
-  inventorySortColumn: InventorySortColumn | null;
-  inventorySortDirection: "asc" | "desc";
-  // Clicking a header: same column reverses direction, a different column
-  // sorts by it ascending.
-  setInventorySort: (column: InventorySortColumn) => void;
 }
 
-export const useStore = create<AppState>()((set, get) => ({
+export const useStore = create<AppState>()((set, get, api) => ({
   screen: "designer",
   setScreen: (screen) => set({ screen }),
 
@@ -505,7 +180,8 @@ export const useStore = create<AppState>()((set, get) => ({
   selectDDObject: (selectedDDObjectId) => set({ selectedDDObjectId }),
 
   dominoEditingId: null,
-  dominoEditingUndoBarrier: null,
+  // dominoEditingUndoBarrier's initial value comes from HistorySlice; the two
+  // actions below are its only writers.
   enterDominoEditing: (id) =>
     set((s) => {
       const ddObject = s.ddObjects[id];
@@ -535,105 +211,6 @@ export const useStore = create<AppState>()((set, get) => ({
         dominoColorShortcut: "",
       };
     }),
-
-  dominoColorLockedId: null,
-  toggleDominoColorLock: (entryId) =>
-    set((s) => ({ dominoColorLockedId: s.dominoColorLockedId === entryId ? null : entryId })),
-  dominoColorShortcut: "",
-  setDominoColorShortcut: (buffer) => set({ dominoColorShortcut: buffer }),
-  applyColorToSelectedDominoes: (entryId) => {
-    const s = get();
-    const parentId = s.dominoEditingId;
-    if (!parentId) return;
-    const entry = s.inventoryEntries.find((e) => e.id === entryId);
-    if (!entry) return;
-    const targetId = entry.numericId;
-    const selected = useDominoSelectionStore.getState().get(parentId)?.selected;
-    if (!selected || selected.size === 0) return;
-    const data = useDominoDataStore.getState().get(parentId);
-    if (!data) return;
-
-    const op = commitDominoColors(
-      parentId,
-      s.ddObjects[parentId],
-      data,
-      [...selected].map((i) => [i, targetId] as [number, number]),
-    );
-    if (op) set((st) => pushOperation(st.undoStack, op));
-  },
-
-  copySelectedDominoColors: () => {
-    const s = get();
-    const parentId = s.dominoEditingId;
-    if (!parentId) return undefined;
-    const ddObject = s.ddObjects[parentId];
-    if (!ddObject) return undefined;
-    const selected = useDominoSelectionStore.getState().get(parentId)?.selected;
-    if (!selected || selected.size === 0) return undefined;
-    const data = useDominoDataStore.getState().get(parentId);
-    if (!data) return undefined;
-
-    // Ascending so the buffer reads in layout order; hidden and stale indices
-    // are dropped here so no consumer has to re-check them.
-    const indices = [...selected]
-      .filter((i) => i < data.count && !data.hidden[i])
-      .sort((a, b) => a - b);
-    if (indices.length === 0) return undefined;
-
-    return {
-      type: "dominoColors",
-      label: `${indices.length} domino color${indices.length === 1 ? "" : "s"}`,
-      // Holding the reference is the snapshot — ddObjects are copy-on-write.
-      sourceDDObject: ddObject,
-      indices: Uint32Array.from(indices),
-      colorIds: Uint32Array.from(indices, (i) => data.colorIds[i]),
-    };
-  },
-
-  cutSelectedDominoColors: () => {
-    const s = get();
-    const item = s.copySelectedDominoColors();
-    if (!item) return undefined;
-    const parentId = s.dominoEditingId;
-    // dominoEditingId and the DominoData were both non-null for the copy above
-    // to have succeeded; re-read rather than assert.
-    const data = parentId ? useDominoDataStore.getState().get(parentId) : undefined;
-    if (!parentId || !data) return item;
-
-    // Cut is immediate rather than Excel's deferred-until-paste model: the
-    // colors clear now, and the buffer is already filled. Note the item is
-    // still returned when nothing actually changed (cutting an all-unpainted
-    // selection is a valid copy) — it just records no undo step.
-    const op = commitDominoColors(
-      parentId,
-      s.ddObjects[parentId],
-      data,
-      // 0 is the unpainted sentinel — a cut clears rather than deletes.
-      Array.from(item.indices, (i) => [i, 0] as [number, number]),
-    );
-    if (op) set((st) => pushOperation(st.undoStack, op));
-    return item;
-  },
-
-  pasteDominoColorClipboard: (item) => {
-    const s = get();
-    const parentId = s.dominoEditingId;
-    if (!parentId) return;
-    const ddObject = s.ddObjects[parentId];
-    if (!ddObject) return;
-    const selection = useDominoSelectionStore.getState().get(parentId);
-    if (!selection || selection.selected.size === 0) return;
-    const data = useDominoDataStore.getState().get(parentId);
-    if (!data) return;
-
-    // All the geometry — corner correlation, tiling, truncation, holes — lives
-    // in the row/col paste; this half only applies the result.
-    const targets = resolveDominoColorPaste(item, ddObject, selection, data.count);
-    if (!targets) return;
-
-    const op = commitDominoColors(parentId, ddObject, data, targets);
-    if (op) set((st) => pushOperation(st.undoStack, op));
-  },
 
   ...createInitialDDObjects(),
   createElement: (type, patch) =>
@@ -692,148 +269,6 @@ export const useStore = create<AppState>()((set, get) => ({
       };
     }),
 
-  undoStack: [],
-  redoStack: [],
-  undo: () => {
-    const s = get();
-    // Clamped while in domino editing mode — never undo past whatever was
-    // already on the stack when the mode was entered. Comparing the top of the
-    // stack against the barrier operation directly is what makes this immune to
-    // HISTORY_LIMIT shifting every index out from under it; see the barrier's
-    // own declaration.
-    if (
-      s.dominoEditingUndoBarrier !== null &&
-      s.undoStack[s.undoStack.length - 1] === s.dominoEditingUndoBarrier
-    ) {
-      return;
-    }
-    const op = s.undoStack[s.undoStack.length - 1];
-    if (!op) return;
-    const undoStack = s.undoStack.slice(0, -1);
-    const redoStack = [...s.redoStack, op];
-
-    switch (op.kind) {
-      case "create": {
-        const result = applyRemoveDDObject(
-          s.ddObjects,
-          s.rootId,
-          s.editingDDObjectId,
-          s.selectedDDObjectId,
-          s.dominoEditingId,
-          op.ddObject.id,
-        );
-        if (!result) {
-          set({ undoStack, redoStack });
-          break;
-        }
-        set({ ...result.patch, undoStack, redoStack, selectedDDObjectId: null });
-        break;
-      }
-      case "delete": {
-        const ddObjects = applyInsertDDObjects(s.ddObjects, op.subtree, op.parentId, op.index);
-        set({
-          ddObjects,
-          undoStack,
-          redoStack,
-          selectedDDObjectId: op.subtree.length === 1 ? op.subtree[0].id : null,
-        });
-        break;
-      }
-      case "transform":
-      case "properties":
-        set({
-          ddObjects: { ...s.ddObjects, [op.before.id]: op.before },
-          undoStack,
-          redoStack,
-          selectedDDObjectId: op.before.id,
-        });
-        break;
-      case "dominoColors": {
-        const data = useDominoDataStore.getState().get(op.parentId);
-        if (data) {
-          for (let k = 0; k < op.indices.length; k++) {
-            const i = op.indices[k];
-            if (i < data.count) data.colorIds[i] = op.before[k];
-          }
-          useDominoDataStore.getState().bump(op.parentId);
-        }
-        // Keep colorByCell in sync with the reverted colors too — see
-        // syncDominoColorMemory's doc comment for why skipping this would
-        // let a later regenerate resurrect the colors this undo just
-        // removed.
-        const ddObject = s.ddObjects[op.parentId];
-        if (ddObject) syncDominoColorMemory(ddObject, op.indices, op.before);
-        // Deliberately doesn't touch ddObjects/selectedDDObjectId/
-        // dominoEditingId — colors live outside ddObjects, and undoing a
-        // color change must work whether or not domino editing mode is
-        // currently active.
-        set({ undoStack, redoStack });
-        break;
-      }
-    }
-  },
-  redo: () => {
-    const s = get();
-    const op = s.redoStack[s.redoStack.length - 1];
-    if (!op) return;
-    const redoStack = s.redoStack.slice(0, -1);
-    const undoStack = [...s.undoStack, op];
-
-    switch (op.kind) {
-      case "create": {
-        const ddObjects = applyInsertDDObjects(s.ddObjects, [op.ddObject], op.parentId);
-        set({ ddObjects, undoStack, redoStack, selectedDDObjectId: op.ddObject.id });
-        break;
-      }
-      case "delete": {
-        const result = applyRemoveDDObject(
-          s.ddObjects,
-          s.rootId,
-          s.editingDDObjectId,
-          s.selectedDDObjectId,
-          s.dominoEditingId,
-          op.subtree[0].id,
-        );
-        if (!result) {
-          set({ undoStack, redoStack });
-          break;
-        }
-        set({ ...result.patch, undoStack, redoStack, selectedDDObjectId: null });
-        break;
-      }
-      case "transform":
-      case "properties":
-        set({
-          ddObjects: { ...s.ddObjects, [op.after.id]: op.after },
-          undoStack,
-          redoStack,
-          selectedDDObjectId: op.after.id,
-        });
-        break;
-      case "dominoColors": {
-        const data = useDominoDataStore.getState().get(op.parentId);
-        if (data) {
-          for (let k = 0; k < op.indices.length; k++) {
-            const i = op.indices[k];
-            if (i < data.count) data.colorIds[i] = op.after[k];
-          }
-          useDominoDataStore.getState().bump(op.parentId);
-        }
-        // See the undo case's identical call — keeps colorByCell from
-        // going stale relative to the colors this redo just reapplied.
-        const ddObject = s.ddObjects[op.parentId];
-        if (ddObject) syncDominoColorMemory(ddObject, op.indices, op.after);
-        set({ undoStack, redoStack });
-        break;
-      }
-    }
-  },
-  recordTransform: (before, after) =>
-    set((s) =>
-      ddObjectsEqual(before, after)
-        ? {}
-        : pushOperation(s.undoStack, { kind: "transform", before, after }),
-    ),
 
   editingDDObjectId: null,
   editingSnapshot: null,
@@ -934,65 +369,11 @@ export const useStore = create<AppState>()((set, get) => ({
   cameraApi: null,
   setCameraApi: (cameraApi) => set({ cameraApi }),
 
-  inventoryEntries: createSeedInventory(),
-  nextInventoryNumber: 12,
-  addInventoryEntry: () =>
-    set((s) => {
-      const numericId = s.nextInventoryNumber;
-      const id: InventoryEntryId = `INV-${numericId}`;
-      const entry: InventoryEntry = {
-        id,
-        numericId,
-        active: true,
-        colorName: "New Color",
-        color: NEW_ENTRY_COLOR,
-        material: modeDefault(s.inventoryEntries, "material", MATERIAL_OPTIONS),
-        finish: modeDefault(s.inventoryEntries, "finish", FINISH_OPTIONS),
-        brand: modeDefault(s.inventoryEntries, "brand", BRAND_OPTIONS),
-        available: 0,
-        shortcut: "",
-        notes: "",
-      };
-      return {
-        inventoryEntries: [entry, ...s.inventoryEntries],
-        nextInventoryNumber: s.nextInventoryNumber + 1,
-      };
-    }),
-  updateInventoryEntry: (id, patch) =>
-    set((s) => ({
-      inventoryEntries: s.inventoryEntries.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-    })),
-  removeInventoryEntries: (ids) =>
-    set((s) => {
-      const doomed = new Set(ids);
-      return {
-        inventoryEntries: s.inventoryEntries.filter((e) => !doomed.has(e.id)),
-        inventorySelectedIds: {},
-      };
-    }),
-
-  inventorySelectedIds: {},
-  toggleInventorySelected: (id) =>
-    set((s) => {
-      const next = { ...s.inventorySelectedIds };
-      if (next[id]) delete next[id];
-      else next[id] = true;
-      return { inventorySelectedIds: next };
-    }),
-  setAllInventorySelected: (ids, selected) =>
-    set(() => {
-      if (!selected) return { inventorySelectedIds: {} };
-      const next: Record<InventoryEntryId, true> = {};
-      for (const id of ids) next[id] = true;
-      return { inventorySelectedIds: next };
-    }),
-
-  inventorySortColumn: null,
-  inventorySortDirection: "asc",
-  setInventorySort: (column) =>
-    set((s) =>
-      s.inventorySortColumn === column
-        ? { inventorySortDirection: s.inventorySortDirection === "asc" ? "desc" : "asc" }
-        : { inventorySortColumn: column, inventorySortDirection: "asc" },
-    ),
+  // Slices are spread in alongside the members still declared inline above.
+  // They receive the same (set, get, api) triple create() hands this
+  // initializer, so a slice's `set`/`get` see the whole AppState, not just
+  // their own members.
+  ...createInventorySlice(set, get, api),
+  ...createHistorySlice(set, get, api),
+  ...createDominoColorSlice(set, get, api),
 }));
