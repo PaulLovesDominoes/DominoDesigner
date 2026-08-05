@@ -20,7 +20,6 @@ const CREATION_TOOLS = TOOLS.filter((t) => t.elementType);
 export default function NewElementMenu() {
   const activeTool = useStore((s) => s.activeTool);
   const setTool = useStore((s) => s.setTool);
-  const editingDominoes = useStore((s) => s.activeTool === "editDominoes");
 
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -41,7 +40,6 @@ export default function NewElementMenu() {
         ref={buttonRef}
         className={active ? `${styles.newBtn} ${styles.active}` : styles.newBtn}
         onClick={() => setOpen((o) => !o)}
-        disabled={editingDominoes}
         title="New"
         aria-label="New"
         aria-haspopup="menu"

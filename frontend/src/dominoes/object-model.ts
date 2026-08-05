@@ -21,13 +21,13 @@ export const ORIENTATION = { STANDING: 0, SIDEWAYS: 1, FLAT: 2 } as const;
 /**
  * Per-domino columns for one parent element. Buffers are mutated in place; the
  * store bumps a version counter to signal consumers. Domino indices are stable
- * for the element's life (hidden tombstones, never swap-removed), which is what
- * a future op/undo stack will lean on.
+ * for the element's life — nothing ever compacts or swap-removes a buffer — which
+ * is what the operation/undo stack leans on when it names "domino 4812".
  */
 export interface DominoData {
   /** allocated domino slots */
   capacity: number;
-  /** dominoes in use (including hidden) */
+  /** dominoes in use */
   count: number;
   /**
    * stride 3: x,y,z per domino, parent-relative mm. z is unused this version
@@ -43,11 +43,10 @@ export interface DominoData {
    * reflected wherever it's painted (see colorLookupStore.ts, which
    * resolves this to actual pixels at draw time). 0 is a sentinel meaning
    * "unpainted" (rendered as DEFAULT_DOMINO_COLOR) — never a real id, since
-   * inventory ids start at 1.
+   * inventory ids start at 1. Values at or above HIDDEN_COLOR_FLAG carry the
+   * hidden bit over the id the domino returns to; see below.
    */
   colorIds: Uint32Array;
-  /** 1 = hidden/deleted, 0 = visible */
-  hidden: Uint8Array;
 }
 
 /**
@@ -57,9 +56,44 @@ export interface DominoData {
 export const DEFAULT_DOMINO_COLOR: readonly [number, number, number] = [0xBB, 0xBB, 0xBB];
 
 /**
+ * Hiding a domino is stored as a flag *over* its colorId rather than in a column
+ * of its own, so it inherits every mechanism a colorId already has for free:
+ * undo/redo, the mode's cancel snapshot, the clipboard, and colorMemory's
+ * survival across a regenerate all move colorIds around opaquely and needed no
+ * changes for hiding to work through them.
+ *
+ * Two consequences worth knowing before touching any of the predicates that
+ * read colorIds:
+ *
+ * - **Painting unhides, with no code to make it so.** Every write path stores a
+ *   raw inventory numericId, or 0 to unpaint — all far below the flag — so
+ *   assigning any color to a hidden domino clears the hidden bit as a side
+ *   effect. A hidden domino's low bits are therefore frozen: they are the color
+ *   it returns to, and nothing but unhiding can reveal them.
+ * - **"Visible dominoes of color X" is plain equality**, needing no masking:
+ *   a hidden value can never equal a small numericId or 0.
+ *
+ * Use arithmetic, never `|`/`&`. JS bitwise operators coerce to *signed* int32.
+ * This flag sits safely below 2^31 so `|` would happen to work today, but a
+ * wider flag would silently produce a negative, wrap on the way into the
+ * Uint32Array, and then compare false against the unsigned value read back —
+ * breaking commitDominoColors' "already this color" early-out. `+`/`-` has no
+ * such cliff.
+ */
+export const HIDDEN_COLOR_FLAG = 0x40000000;
+
+export const isHiddenColorId = (colorId: number) => colorId >= HIDDEN_COLOR_FLAG;
+
+export const withHiddenColorId = (colorId: number) =>
+  isHiddenColorId(colorId) ? colorId : colorId + HIDDEN_COLOR_FLAG;
+
+export const withoutHiddenColorId = (colorId: number) =>
+  isHiddenColorId(colorId) ? colorId - HIDDEN_COLOR_FLAG : colorId;
+
+/**
  * Allocate space for `count` dominoes: origin position, STANDING (0),
- * unpainted (colorId 0), visible. Deliberately imposes NO layout — the
- * parent element writes the positions afterward.
+ * unpainted (colorId 0). Deliberately imposes NO layout — the parent element
+ * writes the positions afterward.
  */
 export function generateDominoes(count: number): DominoData {
   return {
@@ -68,7 +102,6 @@ export function generateDominoes(count: number): DominoData {
     positions: new Float32Array(count * 3),
     orientations: new Uint8Array(count),
     colorIds: new Uint32Array(count), // zero-initialized = unpainted
-    hidden: new Uint8Array(count),
   };
 }
 
@@ -81,9 +114,9 @@ export interface Extent {
 }
 
 /**
- * Bounding box of the visible dominoes' positions (parent-relative), or null if
- * there are none. Generic across parent element types — it reads the data, not
- * any grid parameters — so any element can derive a footprint from its dominoes.
+ * Bounding box of the dominoes' positions (parent-relative), or null if there
+ * are none. Generic across parent element types — it reads the data, not any
+ * grid parameters — so any element can derive a footprint from its dominoes.
  */
 export function extent(data: DominoData): Extent | null {
   let minX = Infinity;
@@ -91,7 +124,6 @@ export function extent(data: DominoData): Extent | null {
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (let i = 0; i < data.count; i++) {
-    if (data.hidden[i]) continue;
     const x = data.positions[3 * i];
     const y = data.positions[3 * i + 1];
     if (x < minX) minX = x;
@@ -111,8 +143,8 @@ export type Direction = "+x" | "-x" | "+y" | "-y";
 const DIRECTION_EPSILON = 1e-6;
 
 /**
- * The visible domino nearest `fromIndex` strictly in `direction` (parent-relative
- * mm), or undefined if none exists. Nearest on the primary axis, ties broken by
+ * The domino nearest `fromIndex` strictly in `direction` (parent-relative mm),
+ * or undefined if none exists. Nearest on the primary axis, ties broken by
  * nearest on the other. For today's row/column field this is exactly "the
  * adjacent cell in that direction" — but it makes no grid assumption, reading
  * only positions, so a future non-grid layout (a spiral, concentric rings) gets
@@ -136,7 +168,7 @@ export function nearestInDirection(
   let bestPerpDelta = Infinity;
 
   for (let i = 0; i < data.count; i++) {
-    if (i === fromIndex || data.hidden[i]) continue;
+    if (i === fromIndex) continue;
     const primary = data.positions[3 * i + axis];
     const primaryDelta = (primary - refPrimary) * sign;
     if (primaryDelta <= DIRECTION_EPSILON) continue;

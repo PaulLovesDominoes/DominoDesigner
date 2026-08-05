@@ -106,7 +106,7 @@ the one `AppState`. Three exist today:
 |---|---|
 | `domino-inventory/appStoreSlice.ts` | the inventory catalog, its selection and its sort |
 | `history/appStoreSlice.ts` | `Operation`, the undo/redo stacks, the domino-editing undo barrier |
-| `dominoes/appStoreSlice.ts` | the colour lock/shortcut, the five domino-colour writes, and domino editing mode's cancel snapshot |
+| `dominoes/appStoreSlice.ts` | the swatch lock/shortcut, every domino-colour write, select-by-swatch, the Expand toggle, and domino editing mode's cancel snapshot |
 
 What's left in `store.ts` is the state that isn't any one feature's: screen/menu/help, the
 DDObject hierarchy and its actions, domino editing mode, the properties dialog, and the camera
@@ -217,8 +217,8 @@ for a default-valued instance, and optional `modeller`/`bounds` members. The sib
    while preserving each type's concrete shape.)
 5. **Consume types through the registry accessors** (`getDDObjectIcon`,
    `getDDObjectDefaultName`, `createDDObject`, `getDDObjectEditor`, `getDDObjectModeller`,
-   `getDDObjectBounds`). Do not add `switch (ddObject.type)` branching or a central per-type
-   metadata config elsewhere in the app.
+   `getDDObjectBounds`, `getDominoExpansion`). Do not add `switch (ddObject.type)` branching or
+   a central per-type metadata config elsewhere in the app.
 
 `editor`, `modeller` and `bounds` all put the DDObject type in a contravariant position,
 which is why `DD_OBJECT_TYPES` is declared against `AnyDDObjectTypeDefinition`
@@ -300,7 +300,7 @@ nothing about grids, rows or spacing. The parent element decides where its domin
 subsystem stores them (`object-model.ts`/`store.ts`) and draws them (`modeller.tsx`).
 
 `object-model.ts` defines `DominoData`, a **Structure of Arrays**: one flat typed array per
-attribute (`positions` stride 3, `orientations`, `colorIds` stride 1, `hidden`), plus
+attribute (`positions` stride 3, `orientations` and `colorIds` stride 1), plus
 `count`/`capacity`. That shape exists because it is what an `InstancedMesh` consumes and because
 tens of thousands of dominoes must cost no per-object allocation. `generateDominoes(count)`
 allocates and defaults them; `extent(data)` derives a footprint from the dominoes themselves,
@@ -339,6 +339,36 @@ tone mapping has no physical scene to compensate for and only introduces color e
 load-bearing: dropping either one reintroduces a visible mismatch between a domino and its
 inventory color.
 
+**Hiding a domino is a flag over its `colorId`, not a column of its own.**
+`HIDDEN_COLOR_FLAG` (`dominoes/object-model.ts`) is added to the id the domino will return to.
+That choice is what makes hiding cost almost nothing: `commitDominoColors`, the clipboard,
+`rowColPaste`, history's `dominoColors` undo/redo, `colorMemory`'s survival across a regenerate
+and the mode's cancel snapshot all move `colorIds` around opaquely, so every one of them
+supported hiding the day it landed with no changes. Three consequences are load-bearing:
+
+- **Painting unhides, and there is no code that does it.** Every write path stores a raw
+  `numericId` or `0`, both far below the flag, so assigning any color to a hidden domino clears
+  the bit as a side effect. A hidden domino's low bits are therefore frozen — they are what it
+  returns to, and only unhiding reveals them.
+- **"Visible dominoes of color X" is plain equality on the raw value, and needs no masking** —
+  a hidden value can never equal a small `numericId` or `0`. That is the whole implementation of
+  the swatch menus' select-by-color skipping hidden dominoes (see *Domino color editing*).
+  Don't "fix" those predicates by masking; it would silently reverse the behaviour.
+- **Use arithmetic, never `|`/`&`.** JS bitwise operators coerce to signed int32. This flag sits
+  below 2³¹ so `|` happens to work today, but a wider one would produce a negative that wraps
+  into the `Uint32Array` and then compares false against the unsigned value read back, breaking
+  `commitDominoColors`' "already this color" early-out.
+
+**A hidden domino is drawn by discarding its pixels, not by shrinking it.** `dominoes/modeller.tsx`
+gives the fill geometry an `aVisible` instanced attribute and patches `dominoFillMaterial`'s
+fragment shader to `discard` when it is zero; the outline separately takes a zero `aScale` unless
+the domino is selected, so a selected hidden domino keeps the white box that is the only way to
+see what you are about to unhide. The alternative — collapsing the instance's *matrix* to zero
+scale — is simpler and wrong: `Raycaster` is plain CPU JavaScript that reads `instanceMatrix` and
+never sees a shader, so a discarded domino stays clickable while a zero-scaled one does not.
+Worse, rubber-band selection reads `positions` directly and would keep working, so the failure
+would be the confusing kind where drag-select finds dominoes that clicking cannot.
+
 **A domino's `colorIds` entry survives a regenerate**, via `dominoes/colorMemory.ts`'s
 `restoreDominoColors`, called once per regenerate (screen-switch remount, resize, undo/redo of
 either — anything that makes a domino-producing type's modeller rebuild its `DominoData` from
@@ -367,11 +397,11 @@ defaulting new cells to unpainted: nothing here scopes memory to a single "opera
 `colorByCell` has a second writer besides `restoreDominoColors`'s regenerate-time absorb/restore:
 `syncDominoColorMemory`, called from the three places that mutate a live `colorIds` array
 directly without going through a regenerate — `commitDominoColors` (`dominoes/appStoreSlice.ts`'s shared write
-path, covering the swatch paint, the Delete/Backspace clear, cut, and paste alike) and the
+path, covering the swatch paint, the unassign, hide/unhide, cut, and paste alike) and the
 `"dominoColors"` cases of `undo()`/`redo()`. Routing every colour write through
 `commitDominoColors` is what keeps that list at three even as the number of *writes* grows — the
-Delete/Backspace clear was added later and inherited the sync for free, which is exactly the
-property to preserve. This exists because
+unassign clear, then hide and unhide, were all added later and each inherited the sync for free,
+which is exactly the property to preserve. This exists because
 `restoreDominoColors`'s absorb step only ever *adds* entries (it records a cell's color when
 absorbing it off the live array only if that color is nonzero, so a live color of `0` is treated
 as "nothing to absorb," never as "clear this cell") — so on its own it could never learn that a
@@ -387,10 +417,14 @@ snapshot from the last regenerate.
 
 Load-bearing conventions:
 
-- **Deletion is a tombstone** (`hidden = 1`), never a swap-remove, so **a domino's index is
-  stable for the life of its parent**. The planned operation/undo stack depends on that: an op
-  names "domino 4812" and stays valid across any undo/redo. Hidden dominoes stay in the draw
-  collapsed to zero scale rather than compacting the buffer.
+- **Nothing ever compacts or swap-removes a buffer**, so **a domino's index is stable for the
+  life of its parent**. The operation/undo stack depends on that: an op names "domino 4812" and
+  stays valid across any undo/redo. There was once a `hidden: Uint8Array` tombstone column
+  reserving this for a per-domino delete; it was removed, having accumulated six read sites and
+  never a single writer. When a delete does land it must pick its own representation and uphold
+  index stability the same way — the drawing half still has the mechanism it needs, since the
+  outline's `aScale` collapses an instance to nothing at zero and the fill's matrix does the
+  same. Do not reintroduce a column speculatively.
 - **Positions are parent-relative**; the modeller puts them under a `<group>` at the parent's
   position, so moving a whole element is a transform, not a buffer rewrite.
 - `positions` carries a **z** and `orientations` carries **sideways/flat** that are unused in
@@ -439,6 +473,27 @@ once per domino via per-instance `aOffset`/`aScale`/`aOutlineColor` attributes p
 `aOutlineColor` is what lets each instance differ). Same one-draw-call, no-per-object-allocation
 budget as the fill.
 
+**The fill material's `polygonOffset` is load-bearing, not a tweak.** A domino's outline lies
+exactly on the boundary of its own top face, so wherever a line covers fill rather than
+background the two tie the depth test, and which wins a tie is nothing but draw order. With
+gaps between dominoes that only costs the inner half of each line and goes unnoticed; the
+moment dominoes touch — expanded (*Domino editing mode*), or a field whose spacing is zero —
+every shared edge disappears into the neighbour's face and the field renders as one solid
+block. Offsetting the *fill* away from the camera fixes it at any camera angle. Nudging the
+outline toward the camera in +Z would too, but only while the view stays top-down, and
+`polygonOffset` on the line material is not an option: WebGL only exposes
+`POLYGON_OFFSET_FILL`, never a line equivalent.
+
+**`SELECTED_OUTLINE_Z_BIAS` is the same problem one level up**, between two *outlines*. Every
+outline in a field is a single instanced draw call, so two dominoes sharing an edge tie there
+too, and the winner is simply the higher instance index. Layout is row-major, so the neighbours
+above and to the right always win — leaving a selected domino's white box drawn as an **L**,
+missing its top and right edges. Lifting a selected instance's `aOffset.z` a hair breaks the tie
+in its favour. It is applied to the outline only, never the fill, so a selected domino is never
+drawn at a different height than its neighbours. Note the two fixes are not interchangeable:
+`polygonOffset` can't separate two lines from each other, and the z-bias can't be given to every
+domino (it would just re-tie at the new height).
+
 Per-domino selection and color editing now exist (domino editing mode — see *Domino editing
 mode* and *Domino color editing* below), both riding the same `Operation` union DDObject-level
 undo/redo already used (see *Undo/redo*), exactly as anticipated when that union was designed.
@@ -454,17 +509,75 @@ its own to disarm `SelectionTool`/`CreateByRegionTool`/`onPointerMissed` (none o
 `DDObjectsPanel` to `DominoColorPanel` — no scattered `dominoEditingId` checks needed in those
 files, and calls `cameraApi.frameDDObject(id)` to fit the field to the canvas (see *three.js /
 R3F boundary*) — the one imperative step, hence outside the `set`. The mode is **fully modal**:
-Toolbar/undo-redo/the sidebar all disable via that same `activeTool` check, and only
-`ModeHintBar`'s Done (`exitDominoEditing`) and Cancel (`cancelDominoEditing`, which discards —
-see *Undo/redo*) leave it — Escape never does, even though it clears a lot of in-mode state
-(see below).
+the sidebar swaps and the toolbar's Select/New are *replaced* (not disabled) via that same
+`activeTool` check, and only `ModeHintBar`'s Done (`exitDominoEditing`) and Cancel
+(`cancelDominoEditing`, which discards — see *Undo/redo*) leave it — Escape never does, even
+though it clears a lot of in-mode state (see below). Undo/redo stay enabled, clamped by the
+barrier rather than disabled.
+
+`designer/DominoModeTools.tsx` is that replacement group, dropped into `Toolbar.tsx`'s left
+`.group` the way `NewElementMenu` is — so `Toolbar.tsx` stays a layout file rather than growing a
+branch per mode-specific button. It holds **Select All**, **Invert** and the **Expand** toggle
+(below). Note the first two are raw `<button>`s while Expand is a `ToolButton`: `ToolButton`
+always emits `aria-pressed`, which is right for a toggle and wrong for a command — the same split
+`Toolbar.tsx` already makes between its zoom/undo buttons and the Select tool.
+
+**Expand** (`dominoExpanded` in `dominoes/appStoreSlice.ts`) draws every domino oversized so
+tightly-spaced ones are easier to hit. Four things about it are deliberate:
+
+- **How much to grow is the element type's own decision**, via `dominoExpansion(ddObject)` on the
+  `DDObjectTypeDefinition` — per *side* (`x0/x1/y0/y1/z0/z1`), so a type whose dominoes aren't
+  centred in the room around them can grow into the space it actually has. `fieldElement` returns
+  half its spacing on each side, which makes an expanded domino span exactly one pitch and the
+  field tile edge to edge. Returning `undefined` means "nothing to grow into" and is *also* what
+  disables the toolbar button — one member is deliberately both the amount and the capability
+  flag, so a new type needs no second declaration.
+- **`dominoes/expansion.ts`'s `resolveDominoExpansion` is the single answer** both consumers read:
+  `dominoes/modeller.tsx`, which draws the domino, and `designer/DominoEditTool.tsx`, which
+  hit-tests it. They *must* agree — if the render grows and the rect predicates don't, a rubber
+  band visibly cuts through a domino without taking it, and a direct click (which raycasts the
+  real, drawn mesh) picks a domino that a drag over the same spot misses. It returns a zeroed
+  record rather than `null` so neither per-domino loop needs a branch, and it is **imperative on
+  purpose**: it builds a fresh object, so using it as a `useStore` selector is the `useShallow`
+  trap. Subscribe to `dominoExpanded`/`dominoEditingId`/`ddObjects[id]` and call it.
+- **Growth is per-instance, never a geometry rebuild** — a scale in the fill's `instanceMatrix`
+  plus a centre shift, and the vec3 `aScale` on the outline. Rebuilding either geometry would
+  remount the `InstancedMesh` on every toggle. The centre shift is what makes asymmetric growth
+  work at all, since both geometries are centred on their origin; the same reasoning generalises
+  the Z lift to `(length + z1 - z0) / 2`, without which an expanded domino sinks through the
+  build plane.
+- **It is view state, not document state**: no undo entry, and `exitDominoEditing` clears it
+  alongside `dominoColorLockedId`/`dominoColorShortcut`, which is the whole of "leaving the mode
+  restores the real sizes."
+
+**The white mode outline is measured off the dominoes, not the element's `bounds()`** —
+`modeOutlineRect` puts it `MODE_OUTLINE_MARGIN` outside every domino's drawn footprint, expansion
+included, so the gap stays constant whether Expand is on or off. Drawing it on `bounds()` (as it
+originally was) both left it flush against the dominoes — a normalised field's boundary rectangle
+lands *exactly* on their outer edges, since `requiredSpan` is precisely their drawn span — and let
+expanded dominoes overrun it. The trade is that after a handle-drag the outline no longer coincides
+with the field's own box, which is correct: the two are different rectangles (*The field's anchor
+model*). **`resolveDrag` must keep using `fieldBounds.x/y`**, not this rect, to convert world
+coordinates into the parent-relative space `DominoData.positions` lives in — that origin is the
+element's `position`, and pointing it at the outline would offset every rubber-band selection by
+the margin.
 
 `designer/DominoEditTool.tsx` is the canvas tool owning everything once inside the mode:
 per-domino selection (click / Ctrl+click / drag-rubberband / Ctrl+drag / arrow-keys /
 Shift+arrow-keys, stored in `dominoes/selectionStore.ts`'s `DominoSelectionEntry` — `selected`,
 plus `anchor`/`active`/`baseSelection` for Shift+Arrow's Excel-style rectangle
 grow/shrink/cross-the-anchor behavior) and, layered on top of that, color assignment (below).
-Delete/Backspace clears the selection to unpainted via `clearSelectedDominoColors`.
+Delete hides the selection and Backspace clears it to unpainted, both via `applyDominoSwatch`
+(see *Domino color editing*).
+
+**Selection commands that produce a whole set at once — select all, invert, and the swatch menus'
+four modes — live in `dominoes/appStoreSlice.ts`, not here**, since a toolbar button and a menu
+item both need them. They converge on one module-private `writeDominoSelection`, which is what
+guarantees they all seed `anchor`/`active` identically and all run `applyLockedSwatchIfAny`.
+**It finds the lowest index by iterating, never `Math.min(...selected)`** — spreading a `Set`
+creates one argument per element and V8 exhausts the call stack around 65k, so Select All on a
+250×250 field (62,500 dominoes) crashed. That is the reason the helper exists at all rather than
+the epilogue being copied four times.
 
 **Two rectangle predicates live side by side in that file and must not be merged.** A
 rubber-band drag uses `touchedIndices` (footprint *intersects* the box, so a box the user can
@@ -498,10 +611,30 @@ data* above).
 
 ### Domino color editing
 
-While in domino editing mode, `Sidebar.tsx` shows `DominoColorPanel.tsx` — a grid of swatches,
-one per **active** domino-inventory entry — instead of the object hierarchy. Two ways to color
-the current selection, both immediate and both push exactly one undoable `"dominoColors"`
-operation (see *Domino data* above for why that's a live color-id reference, not baked-in RGB):
+While in domino editing mode, `Sidebar.tsx` shows `DominoColorPanel.tsx` — a grid of **swatches**
+— instead of the object hierarchy.
+
+**A swatch is anything the panel offers as a click target**, and the abstraction is the point:
+`Hide` and `Unassigned` sit above one swatch per **active** domino-inventory entry, and everything
+downstream (the lock, the apply, the menus, the highlight) is keyed by `DominoSwatchId`
+(`dominoes/swatches.ts`) so none of it branches on which kind it holds. Only three things
+distinguish the two specials at all — no hover tip, labels that name keys rather than typeable
+shortcuts, and `Unhide` in Hide's menu. The split is store/presentation: `dominoes/swatches.ts`
+holds the ids, `designer/dominoSwatches.ts` flattens all three kinds into one `DominoSwatch` view
+model so the panel's JSX stays a single code path, and `dominoes/appStoreSlice.ts` holds every
+behaviour keyed by id. `background` is a free-form CSS value rather than a hex string specifically
+so Hide's hatch and a solid color share one `style` prop.
+
+**`applyDominoSwatch` is the single apply path** — the panel, the lock and the Delete/Backspace
+keys all go through it, so they cannot drift; it dispatches to `hideSelectedDominoes`,
+`clearSelectedDominoColors` or `applyColorToSelectedDominoes`. **Clicking Hide always hides,
+never toggles**, exactly as clicking Red always paints red; that is what lets Hide be locked
+without flip-flopping, and unhiding is the menu's separate command. Painting a hidden domino
+unhides it for free (see *Domino data*'s flag note).
+
+Two ways to color the current selection, both immediate and both pushing exactly one undoable
+`"dominoColors"` operation (see *Domino data* above for why that's a live color-id reference,
+not baked-in RGB):
 
 - **Select dominoes, then choose a color** — click a swatch, or type its `shortcut` (matches
   narrow live as you type; a unique match applies immediately; Space applies the *exact* match
@@ -509,10 +642,12 @@ operation (see *Domino data* above for why that's a live color-id reference, not
   (`dominoColorShortcut`) and its ~1.2s inactivity auto-clear live in `DominoEditTool.tsx`'s
   keyboard handler, reusing its existing typing-guard and Escape/pointer-gesture cleanup. That
   handler returns early on any Ctrl/Cmd+key combo before reaching the shortcut-typing branch, so
-  Ctrl+Z/Ctrl+Y (undo/redo) and Ctrl+C/X/V (the clipboard) all reach `DesignerScreen.tsx`'s
-  handler instead of being swallowed as one-letter shortcut buffer entries. Keep that early
-  return unconditional: every Ctrl chord in this app is dispatched from that one place, which is
-  why adding the clipboard needed no change to this file's keyboard handling at all.
+  Ctrl+Z/Ctrl+Y (undo/redo), Ctrl+C/X/V (the clipboard) and Ctrl+A (select all) all reach
+  `DesignerScreen.tsx`'s handler instead of being swallowed as one-letter shortcut buffer
+  entries. Keep that early return unconditional: every Ctrl chord in this app is dispatched from
+  that one place, which is why both the clipboard and Ctrl+A needed no change to this file's
+  keyboard handling at all. Ctrl+A is additionally gated on `dominoEditingId` *there*, so outside
+  the mode it falls through without `preventDefault` and the browser's own select-all still works.
 - **Choose a color first, then select dominoes** — double-click a swatch to lock it
   (`dominoColorLockedId`, badge via `RiLockFill`); every domino selected afterward, by any
   method, is recolored to it immediately (`DominoEditTool.tsx`'s `applyLockedColorIfAny`, called
@@ -526,10 +661,35 @@ operation (see *Domino data* above for why that's a live color-id reference, not
 
 Clicking a swatch with nothing selected is a documented no-op — nothing to apply to.
 
-**Delete/Backspace** clears the selection back to unpainted (`clearSelectedDominoColors`),
-distinct from cut only in leaving the clipboard alone. It goes through `commitDominoColors` like
-every other colour write, so it is one undoable step, keeps `colorByCell` in sync, and records
-nothing when the selection is already unpainted — all inherited, none of it restated there.
+**Delete hides, Backspace unassigns** — the `DEL`/`Bksp` labels on the two special swatches name
+exactly these keys, and both route through `applyDominoSwatch` so they inherit the one undo step,
+the `colorByCell` sync and the empty-selection no-op rather than restating any of it. Note the
+labels are *not* typeable: the shortcut buffer only ever matches inventory entries' own
+`shortcut`, so typing D-E-L does nothing.
+
+**Every swatch carries a caret opening `DominoSwatchMenu`** — Select / Add Select / Deselect /
+Deselect others over the dominoes matching it (`DominoSelectMode`'s
+`replace`/`add`/`remove`/`intersect`), plus `Unhide` at the top for Hide alone. Two things about
+it:
+
+- **Matching is plain equality on the stored `colorId`**, which is exactly why a color swatch
+  selects only *visible* dominoes of that color and Hide selects exactly the hidden ones (see
+  *Domino data*). There is no filter on top of the predicate and there must not be one.
+- **The matching set is built in one pass and then combined**, rather than the modes mutating the
+  previous selection inside the loop. `intersect` is why: it has to drop selected dominoes the
+  loop never visits, which an in-loop `add`/`delete` cannot express.
+
+**`applyLockedSwatchIfAny` runs after every selection change, from anywhere.** It is a store
+action rather than a `DominoEditTool` local specifically so the store's own commands reach it;
+`DominoEditTool`'s `applyLockedColorIfAny` is now a one-line delegate kept only for its five
+gesture call sites. This is the documented lock rule ("every domino selected afterward, by any
+method") holding literally, and it has teeth: with Red locked, Ctrl+A paints the entire field red
+in one undoable step, and `Select` from any swatch's menu repaints what it selected. `Unhide`
+still works with Hide locked, since the lock only re-applies when the selection *changes*.
+
+The caret is a sibling of the swatch button, not a child — `.swatch` is itself a `<button>` and a
+button cannot nest one — and the lock badge moved to the swatch's top-*left* to get out of its
+way.
 
 Each swatch's hover text is a `components/FloatingTip`, rendered once at the panel level rather
 than inside each button. It must not go back to being a CSS-only absolute tooltip: `Sidebar.tsx`
@@ -559,10 +719,13 @@ in that folder. Two seams do the work:
   mount a replacement registrant before unmounting the old one, and an unguarded clear would
   wipe the newer registration.
 - **One keyboard dispatcher, in `DesignerScreen.tsx`,** alongside the Ctrl+Z/Y handler that was
-  already there. Tools do not bind Ctrl+C/X/V themselves. This is why
+  already there — and Ctrl+A since. Tools do not bind Ctrl chords themselves. This is why
   `DominoEditTool.tsx`'s keydown handler still returns early on *every* Ctrl/Cmd chord and
-  needed no change when the clipboard landed; it is also what makes a future clipboard client
-  zero keyboard code.
+  needed no change when either the clipboard or Ctrl+A landed; it is also what makes a future
+  clipboard client zero keyboard code. Note this handler has no INPUT/TEXTAREA/contentEditable
+  guard of its own (unlike `DominoEditTool`'s), so it suppresses native Ctrl+C/X/V in any text
+  field outside the properties dialog — latent today, since the only such fields are in the
+  dialog, which it already excludes.
 
 `copy()`/`cut()` write the slot **only when the handler returns an item**, so a copy with
 nothing to take can't blank a good clipboard. A `PasteHandler` declares what it accepts via
@@ -836,17 +999,19 @@ otherwise "correct" backwards:
   to write, so it was removed from `store.ts`; the DDObject hierarchy was always excluded on
   purpose, so every load still starts a fresh default project. Re-adding persistence means
   re-wrapping the store and choosing a `partialize`.
-- **Per-domino colouring exists now** (domino editing mode's color panel — see *Domino color
+- **Per-domino colouring exists now** (domino editing mode's swatch panel — see *Domino color
   editing*), assigned from the domino inventory rather than a free picker, referenced by id
   rather than copied as RGB (see *Domino data*'s `colorIds`/`colorLookupStore.ts` note).
+  **Per-domino hiding rides the same `colorId`** as a flag rather than a column of its own; a
+  per-domino *delete* is still unimplemented and must not be conflated with it (see *Domino
+  data*).
 - **A field's dominoes are still regenerated wholesale** whenever a layout parameter changes —
   `generateDominoes` always zero-fills a fresh `DominoData` — but this no longer loses colors:
   `restoreDominoColors` (*Domino data*) carries them forward, keyed by each domino's stable
-  `dominoCellId`, across a resize, a screen-switch remount, or an undo/redo of either. `hidden`
-  tombstones aren't preserved the same way yet (nothing sets `hidden` to 1 anywhere in this
-  codebase today — no per-domino delete feature exists), but the same registry-driven mechanism
-  would extend to it directly whenever that feature lands, since a domino's cell id is exactly
-  what such a feature would need too.
+  `dominoCellId`, across a resize, a screen-switch remount, or an undo/redo of either. A future
+  per-domino delete will need the same treatment for whatever it stores, and gets it from the
+  same registry-driven mechanism — a domino's cell id is exactly what such a feature would need
+  too.
 - **The field's anchor model.** A field is described twice over — physically, and by domino
   counts — and the two are reconciled by an *anchor*, not by a mode flag. There is no
   `fixed_size` any more, and no display-unit fields (`displayWidth`/`displayHeight`/
@@ -888,12 +1053,17 @@ otherwise "correct" backwards:
   cycle that is benign *only* because nothing reads across it during module initialisation.
   **Never call `pitchX`/`pitchY`/`fitCount`/`signedFitCount`/`normalizeSize`/
   `fitCountsThenSize`/`normalizeField`/`createFromRegion`/`setBounds` at module scope.**
-- **`extent()` in `dominoes/object-model.ts` is currently uncalled.** A field's `bounds()`
-  reports its **boundary rectangle**, which needs no generated dominoes and is always defined.
-  The two are not interchangeable and are *expected* to differ after a resize, by the gap
-  described in *The field's anchor model* — so swapping `extent()` in would silently shrink a
-  field's selection overlay onto its dominoes and break the drag maths. `extent` is kept as
-  the generic footprint primitive other element types will want.
+- **`extent()` in `dominoes/object-model.ts` has exactly one caller: the mode outline**
+  (`DominoEditTool`'s `modeOutlineRect`, see *Domino editing mode*). It is **not**
+  interchangeable with a type's `bounds()`, and never will be. A field's `bounds()` reports its
+  **boundary rectangle**, which needs no generated dominoes and is always defined; `extent`
+  reports where the dominoes actually are. The two are *expected* to differ after a resize, by
+  the gap described in *The field's anchor model* — so swapping `extent()` in for `bounds()`
+  would silently shrink a field's selection overlay onto its dominoes and break `SelectionTool`'s
+  drag maths. The mode outline can use it precisely because it is decorative: nothing measures a
+  drag against it. `extent` remains the generic footprint primitive other element types will
+  want, and note it reports the bounding box of domino **centres** — half-extent and expansion
+  padding are the caller's job.
 - **`color` is a `"#rrggbb"` hex string** specifically because that is the shape color-picker
   controls consume directly — including the native `<input type="color">` that `ColorField`
   wraps, which is why no color-picker dependency was added.

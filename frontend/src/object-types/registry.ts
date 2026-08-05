@@ -6,6 +6,7 @@ import type {
   DDObjectEditorProps,
   DDObjectId,
   DDObjectModellerProps,
+  DominoExpansion,
   DominoRowCol,
 } from "./base";
 import type { DominoColorClipboardItem } from "../dominoes/clipboardItem";
@@ -83,6 +84,19 @@ export const isDDObjectSelectable = (ddObject: DDObject): boolean =>
  */
 export const isDominoEditable = (ddObject: DDObject): boolean =>
   DD_OBJECT_TYPES[ddObject.type].dominoEditable === true;
+
+/**
+ * How far this DDObject's dominoes grow while domino editing mode's Expand
+ * toggle is on, or undefined if its type declares no `dominoExpansion` or this
+ * instance has no room to grow — which is also what disables the Expand button.
+ * Cast as per getDDObjectBounds.
+ */
+export const getDominoExpansion = (ddObject: DDObject): DominoExpansion | undefined => {
+  const fn = DD_OBJECT_TYPES[ddObject.type].dominoExpansion as
+    | ((ddObject: DDObject) => DominoExpansion | undefined)
+    | undefined;
+  return fn?.(ddObject);
+};
 
 /**
  * A stable cell-id function for this DDObject, or undefined if its type

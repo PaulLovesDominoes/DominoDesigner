@@ -7,14 +7,27 @@ import type { InventoryEntryId } from "../domino-inventory/object-model";
 import { pushOperation, type Operation } from "../history/appStoreSlice";
 import { useDominoSelectionStore } from "./selectionStore";
 import { useDominoDataStore } from "./store";
-import type { DominoData } from "./object-model";
+import {
+  isHiddenColorId,
+  withHiddenColorId,
+  withoutHiddenColorId,
+  type DominoData,
+} from "./object-model";
+import {
+  HIDE_SWATCH_ID,
+  UNASSIGNED_SWATCH_ID,
+  type DominoSelectMode,
+  type DominoSwatchId,
+} from "./swatches";
 import { syncDominoColorMemory } from "./colorMemory";
 import { resolveDominoColorPaste } from "./rowColPaste";
 import type { DominoColorClipboardItem } from "./clipboardItem";
 
 /**
  * Per-domino colour editing: the swatch/shortcut/lock state of domino editing
- * mode, and the five writes that change a domino's colour.
+ * mode, and the five writes that change a domino's colour. Domino editing mode's
+ * other transient view state (the Expand toggle) rides along at the bottom —
+ * same lifetime, same clear-on-exit.
  *
  * These are a slice of the app store rather than of this folder's own
  * `store.ts` because each one needs `undoStack`, `ddObjects` and
@@ -30,6 +43,48 @@ import type { DominoColorClipboardItem } from "./clipboardItem";
  * store.ts, store.ts's body would run mid-evaluation and call the creator before
  * the const is initialized. That fails loudly at startup, not silently.
  */
+
+/**
+ * The one write path for *which dominoes are selected*, shared by every command
+ * that produces a whole selection at once (select-by-swatch, select all, invert).
+ * The canvas gestures in DominoEditTool don't come through here — they build
+ * anchor/active from where the pointer actually was — but they end the same way,
+ * which is why applyLockedSwatchIfAny is an action rather than living in either
+ * place.
+ *
+ * Three details, each of which was a bug or nearly one:
+ *
+ * - **The lowest index is found by iterating, never `Math.min(...selected)`.**
+ *   Spreading a Set creates one argument per element, and V8 exhausts the call
+ *   stack somewhere around 65k — a 250x250 field is 62,500 dominoes, so Select
+ *   All would reliably crash.
+ * - anchor/active seed a following Shift+Arrow, which needs a defined corner to
+ *   extend from; baseSelection preserves everything produced here beneath that
+ *   rectangle. Same shape as DominoEditTool's Ctrl+click branch.
+ * - An empty result clears instead of replacing, and applies no lock — there is
+ *   nothing to apply it to, the same rule a clearing gesture already follows.
+ */
+function writeDominoSelection(
+  get: () => AppState,
+  parentId: DDObjectId,
+  selected: Set<number>,
+) {
+  const store = useDominoSelectionStore.getState();
+  if (selected.size === 0) {
+    store.clear(parentId);
+    return;
+  }
+  let lowest = Infinity;
+  for (const i of selected) if (i < lowest) lowest = i;
+
+  store.replace(parentId, {
+    selected,
+    baseSelection: new Set(selected),
+    anchor: lowest,
+    active: lowest,
+  });
+  get().applyLockedSwatchIfAny();
+}
 
 /**
  * The one write path for a batch of domino color changes — shared by the color
@@ -56,9 +111,8 @@ function commitDominoColors(
   const before: number[] = [];
   const after: number[] = [];
   for (const [i, colorId] of targets) {
-    // i >= count: a selection left stale by a shrink. hidden: a tombstoned
-    // domino isn't drawn, so painting it would be invisible bookkeeping.
-    if (i >= data.count || data.hidden[i]) continue;
+    // i >= count: a selection left stale by a shrink.
+    if (i >= data.count) continue;
     if (data.colorIds[i] === colorId) continue; // already this color
     indices.push(i);
     before.push(data.colorIds[i]);
@@ -82,28 +136,62 @@ function commitDominoColors(
 }
 
 export interface DominoColorSlice {
-  // The inventory color currently locked (null = none). While locked, every
-  // newly-selected domino (by any means) is immediately recolored to it —
-  // see DominoEditTool.tsx's applyLockedColorIfAny. Cleared on exiting
-  // domino editing mode.
-  dominoColorLockedId: InventoryEntryId | null;
-  toggleDominoColorLock: (entryId: InventoryEntryId) => void;
+  // The swatch currently locked (null = none) — an inventory color, or Hide, or
+  // Unassigned. While locked, every newly-selected domino (by any means) has it
+  // applied immediately; see DominoEditTool.tsx's applyLockedColorIfAny.
+  // Cleared on exiting domino editing mode.
+  dominoColorLockedId: DominoSwatchId | null;
+  toggleDominoColorLock: (swatchId: DominoSwatchId) => void;
+  // Applies the locked swatch, if any, to whatever is selected right now.
+  // Called after every gesture and command that *changes* which dominoes are
+  // selected — that is the whole meaning of locking, and it lives here rather
+  // than in DominoEditTool so the store's own selection commands (select all,
+  // invert, the swatch menus) reach it too. A no-op when nothing is locked.
+  applyLockedSwatchIfAny: () => void;
   // The in-progress shortcut being typed to pick a color (see the domino
   // inventory's own `shortcut` column) — e.g. "B" while narrowing toward
   // "B1"/"B2". Cleared on a unique match, Space-disambiguation, Escape, a
   // new pointer gesture, ~1.2s of inactivity, or exiting the mode.
+  //
+  // Only inventory entries have a typeable shortcut. The Hide and Unassigned
+  // swatches show "DEL"/"Bksp", which name the keys that apply them — they are
+  // labels, not sequences this buffer can ever match.
   dominoColorShortcut: string;
   setDominoColorShortcut: (buffer: string) => void;
+  // The one entry point for "apply a swatch to the selection", used by the color
+  // panel, the lock, and the Delete/Backspace keys alike, so all three can't
+  // drift. Dispatches to the three writes below; each pushes at most one
+  // undoable "dominoColors" operation covering exactly the dominoes that
+  // actually changed, and no-ops on an empty selection.
+  applyDominoSwatch: (swatchId: DominoSwatchId) => void;
   // Recolors every currently-selected domino (in the field currently being
-  // domino-edited) to `entryId`'s color and pushes one undoable
-  // "dominoColors" operation covering exactly the dominoes that actually
-  // changed. A no-op if nothing is selected or every selected domino
-  // already has this color.
+  // domino-edited) to `entryId`'s color. Note this *unhides* any hidden domino
+  // it touches, for free: it writes a raw numericId, which is below
+  // HIDDEN_COLOR_FLAG (see object-model.ts).
   applyColorToSelectedDominoes: (entryId: InventoryEntryId) => void;
-  // Clears every currently-selected domino back to unpainted (the 0 sentinel)
-  // as one undoable step — Delete/Backspace in domino editing mode. Distinct
-  // from cut, which does the same clear but also overwrites the clipboard.
+  // Clears every currently-selected domino back to unpainted (the 0 sentinel),
+  // which likewise unhides. Backspace, and the Unassigned swatch. Distinct from
+  // cut, which does the same clear but also overwrites the clipboard.
   clearSelectedDominoColors: () => void;
+  // Hides every currently-selected domino, leaving its color underneath to
+  // return to. Deliberately never a toggle — clicking Hide is "make these
+  // hidden" the way clicking Red is "make these red", which is also what lets
+  // the Hide swatch be locked without flip-flopping. unhideSelectedDominoes is
+  // the swatch menu's separate Unhide command.
+  hideSelectedDominoes: () => void;
+  unhideSelectedDominoes: () => void;
+  // Selects the dominoes matching a swatch, combined with the live selection per
+  // `mode` (see DominoSelectMode). Matching is plain equality on the stored
+  // colorId, so a color swatch takes only *visible* dominoes of that color and
+  // Hide takes exactly the hidden ones, whatever color they'll return to.
+  selectDominoesBySwatch: (swatchId: DominoSwatchId, mode: DominoSelectMode) => void;
+  // Every domino in the field being edited, hidden ones included — they are
+  // dominoes, and selecting them is how the whole field gets unhidden at once.
+  selectAllDominoes: () => void;
+  // Selected becomes deselected and vice versa. With nothing selected this is
+  // select-all, which is the right reading of the set operation and needs no
+  // special case.
+  invertDominoSelection: () => void;
 
   // ---- Domino editing mode's cancel snapshot ----
   // The edited DDObject's whole colorIds column as of entering the mode, and the
@@ -136,6 +224,18 @@ export interface DominoColorSlice {
   copySelectedDominoColors: () => DominoColorClipboardItem | undefined;
   cutSelectedDominoColors: () => DominoColorClipboardItem | undefined;
   pasteDominoColorClipboard: (item: DominoColorClipboardItem) => void;
+
+  // ---- Domino editing mode's Expand toggle ----
+  // Whether the edited element's dominoes are drawn oversized, so tightly-spaced
+  // ones are easier to click and rubber-band. How much bigger is the element
+  // type's own decision (DDObjectTypeDefinition.dominoExpansion); this is only
+  // the on/off, and dominoes/expansion.ts resolves the two together.
+  //
+  // A view setting, not document state: no undo entry, nothing persisted, and
+  // exitDominoEditing clears it — which is what makes leaving the mode restore
+  // the real sizes without any extra wiring.
+  dominoExpanded: boolean;
+  toggleDominoExpanded: () => void;
 }
 
 export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorSlice> = (
@@ -143,10 +243,21 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
   get,
 ) => ({
   dominoColorLockedId: null,
-  toggleDominoColorLock: (entryId) =>
-    set((s) => ({ dominoColorLockedId: s.dominoColorLockedId === entryId ? null : entryId })),
+  toggleDominoColorLock: (swatchId) =>
+    set((s) => ({ dominoColorLockedId: s.dominoColorLockedId === swatchId ? null : swatchId })),
+  applyLockedSwatchIfAny: () => {
+    const lockedId = get().dominoColorLockedId;
+    if (lockedId) get().applyDominoSwatch(lockedId);
+  },
   dominoColorShortcut: "",
   setDominoColorShortcut: (buffer) => set({ dominoColorShortcut: buffer }),
+
+  applyDominoSwatch: (swatchId) => {
+    const s = get();
+    if (swatchId === HIDE_SWATCH_ID) s.hideSelectedDominoes();
+    else if (swatchId === UNASSIGNED_SWATCH_ID) s.clearSelectedDominoColors();
+    else s.applyColorToSelectedDominoes(swatchId);
+  },
 
   applyColorToSelectedDominoes: (entryId) => {
     const s = get();
@@ -187,6 +298,116 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
       [...selected].map((i) => [i, 0] as [number, number]),
     );
     if (op) set((st) => pushOperation(st.undoStack, op));
+  },
+
+  hideSelectedDominoes: () => {
+    const s = get();
+    const parentId = s.dominoEditingId;
+    if (!parentId) return;
+    const selected = useDominoSelectionStore.getState().get(parentId)?.selected;
+    if (!selected || selected.size === 0) return;
+    const data = useDominoDataStore.getState().get(parentId);
+    if (!data) return;
+
+    // withHiddenColorId leaves an already-hidden domino alone, and
+    // commitDominoColors then drops it as a no-op recolor — so hiding an
+    // all-hidden selection records nothing rather than an empty undo step.
+    const op = commitDominoColors(
+      parentId,
+      s.ddObjects[parentId],
+      data,
+      [...selected].map((i) => [i, withHiddenColorId(data.colorIds[i])] as [number, number]),
+    );
+    if (op) set((st) => pushOperation(st.undoStack, op));
+  },
+
+  unhideSelectedDominoes: () => {
+    const s = get();
+    const parentId = s.dominoEditingId;
+    if (!parentId) return;
+    const selected = useDominoSelectionStore.getState().get(parentId)?.selected;
+    if (!selected || selected.size === 0) return;
+    const data = useDominoDataStore.getState().get(parentId);
+    if (!data) return;
+
+    // Mirror of the above: a fully visible selection is a no-op, which is what
+    // makes this safe as a menu command rather than a mode.
+    const op = commitDominoColors(
+      parentId,
+      s.ddObjects[parentId],
+      data,
+      [...selected].map((i) => [i, withoutHiddenColorId(data.colorIds[i])] as [number, number]),
+    );
+    if (op) set((st) => pushOperation(st.undoStack, op));
+  },
+
+  selectDominoesBySwatch: (swatchId, mode) => {
+    const s = get();
+    const parentId = s.dominoEditingId;
+    if (!parentId) return;
+    const data = useDominoDataStore.getState().get(parentId);
+    if (!data) return;
+
+    // Plain equality on the stored colorId, deliberately unmasked: a hidden
+    // value is at or above HIDDEN_COLOR_FLAG, so it can never equal a small
+    // numericId or 0. That is the whole of "a color swatch selects only the
+    // visible dominoes of that color" — no filtering needed on top.
+    let matches: (colorId: number) => boolean;
+    if (swatchId === HIDE_SWATCH_ID) {
+      matches = isHiddenColorId;
+    } else if (swatchId === UNASSIGNED_SWATCH_ID) {
+      matches = (colorId) => colorId === 0;
+    } else {
+      const entry = s.inventoryEntries.find((e) => e.id === swatchId);
+      if (!entry) return;
+      matches = (colorId) => colorId === entry.numericId;
+    }
+
+    // Built in one pass, then combined — rather than mutating the previous
+    // selection in the loop — because "intersect" can't be expressed that way:
+    // it has to drop selected dominoes the loop never visits.
+    const matching = new Set<number>();
+    for (let i = 0; i < data.count; i++) if (matches(data.colorIds[i])) matching.add(i);
+
+    const previous = useDominoSelectionStore.getState().get(parentId)?.selected ?? new Set();
+    let selected: Set<number>;
+    if (mode === "replace") {
+      selected = matching;
+    } else if (mode === "add") {
+      selected = new Set(previous);
+      for (const i of matching) selected.add(i);
+    } else if (mode === "remove") {
+      selected = new Set(previous);
+      for (const i of matching) selected.delete(i);
+    } else {
+      selected = new Set<number>();
+      for (const i of previous) if (matching.has(i)) selected.add(i);
+    }
+
+    writeDominoSelection(get, parentId, selected);
+  },
+
+  selectAllDominoes: () => {
+    const parentId = get().dominoEditingId;
+    if (!parentId) return;
+    const data = useDominoDataStore.getState().get(parentId);
+    if (!data) return;
+
+    const selected = new Set<number>();
+    for (let i = 0; i < data.count; i++) selected.add(i);
+    writeDominoSelection(get, parentId, selected);
+  },
+
+  invertDominoSelection: () => {
+    const parentId = get().dominoEditingId;
+    if (!parentId) return;
+    const data = useDominoDataStore.getState().get(parentId);
+    if (!data) return;
+
+    const previous = useDominoSelectionStore.getState().get(parentId)?.selected;
+    const selected = new Set<number>();
+    for (let i = 0; i < data.count; i++) if (!previous?.has(i)) selected.add(i);
+    writeDominoSelection(get, parentId, selected);
   },
 
   dominoEditingColorSnapshot: null,
@@ -230,11 +451,9 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
     const data = useDominoDataStore.getState().get(parentId);
     if (!data) return undefined;
 
-    // Ascending so the buffer reads in layout order; hidden and stale indices
-    // are dropped here so no consumer has to re-check them.
-    const indices = [...selected]
-      .filter((i) => i < data.count && !data.hidden[i])
-      .sort((a, b) => a - b);
+    // Ascending so the buffer reads in layout order; stale indices are dropped
+    // here so no consumer has to re-check them.
+    const indices = [...selected].filter((i) => i < data.count).sort((a, b) => a - b);
     if (indices.length === 0) return undefined;
 
     return {
@@ -291,4 +510,7 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
     const op = commitDominoColors(parentId, ddObject, data, targets);
     if (op) set((st) => pushOperation(st.undoStack, op));
   },
+
+  dominoExpanded: false,
+  toggleDominoExpanded: () => set((s) => ({ dominoExpanded: !s.dominoExpanded })),
 });

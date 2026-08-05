@@ -14,13 +14,25 @@
   min-width: 0;
 }
 
+/*
+ * The swatch and its menu caret are siblings, not nested: .swatch is itself a
+ * <button> and a button can't contain one.
+ */
+.swatchRow {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
 .swatch {
   position: relative;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   height: 48px;
   padding: 0;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: 4px 0 0 4px;
+  border-right: none;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -34,10 +46,40 @@
   outline-offset: 1px;
 }
 
+/*
+ * A narrow strip down the swatch's right edge. Always visible rather than
+ * hover-revealed like DDObjectsPanel's ⋯ button: the swatches are a dense grid
+ * with no rows to hover, so a hidden control here would be undiscoverable.
+ */
+.caret {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 48px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-chrome-2);
+  color: var(--color-text-dim);
+  border: 1px solid var(--color-border);
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+}
+
+.caret:hover,
+.caret.caretOpen {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+/*
+ * Top-*left*, deliberately: the caret owns the right edge, and a badge there
+ * would sit under it.
+ */
 .lockBadge {
   position: absolute;
   top: 2px;
-  right: 2px;
+  left: 2px;
   width: 12px;
   height: 12px;
   color: inherit;
@@ -57,5 +99,6 @@
  * The swatch's hover text lives in components/FloatingTip, not here: an
  * absolutely positioned tip is clipped by the sidebar's overflow on both axes,
  * and this one is wider than the sidebar. .swatch keeps position: relative for
- * .lockBadge's sake.
+ * .lockBadge's sake. DominoSwatchMenu's popup escapes the same way, and for the
+ * same reason.
  */

@@ -12,7 +12,7 @@ build's contents, and live property editing.
 
 Future plans:
 - More element types beyond the domino field (walls, towers, lines)
-- Moving and deleting individual dominoes, alongside the coloring that exists today
+- Moving and deleting individual dominoes, alongside the coloring and hiding that exist today
 - Mapping an image onto domino colors
 - Saving and loading a build
 
@@ -65,7 +65,7 @@ frontend (`npm run build`) after changing frontend code.
 
 - **Title bar** with a logo placeholder, a hamburger menu that switches between the
   **Designer** and **Domino Inventory** screens, a toolbar (Select / New element / Undo / Redo /
-  Zoom), and a help panel.
+  Zoom — the first two swapped for domino tools while editing dominoes), and a help panel.
 - **Designer** — a 2D three.js canvas (1 unit = 1 mm) showing the build plane, with
   mouse-wheel zoom and right-drag pan. The build's contents are a hierarchy of **DDObjects**
   rooted at the build plane, shown in a left sidebar as a live tree (type icon + name) that
@@ -82,16 +82,29 @@ frontend (`npm run build`) after changing frontend code.
   the canvas, with Save/Cancel.
 - **Domino Inventory** screen — a catalog of the domino colors available to build with (color,
   material, finish, brand, shortcut, stock count), each toggleable active/inactive.
-- **Domino editing mode** — double-click a field (on the canvas or in the sidebar) to select
-  individual dominoes within it (click / Ctrl+click / drag a box / arrow keys) and set their
-  color from the inventory, shown as a grid of swatches in place of the object hierarchy while
-  the mode is active. Two ways to color a selection:
+- **Domino editing mode** — double-click a field (on the canvas or in the sidebar) to work on the
+  individual dominoes within it. The inventory colors appear as a grid of swatches in place of the
+  object hierarchy, and the toolbar swaps its Select/New buttons for the mode's own.
+  - **Selecting** — click, Ctrl+click, drag a box, Ctrl+drag, arrow keys and Shift+arrow keys,
+    plus **Ctrl+A** or the toolbar's select-all and invert buttons. Every swatch also carries a
+    menu that selects the dominoes of that color, adds them to the selection, removes them from
+    it, or narrows the selection down to just them.
   - **Select dominoes, then pick a color** — click a swatch, or type its shortcut (e.g. "B2");
     matching swatches highlight live as you type, and a unique match applies immediately.
   - **Pick a color first, then select dominoes** — double-click a swatch to lock it (shown with
     a lock badge); every domino you select afterward, by any method, is colored to it
     immediately, including whatever was already selected at the moment you locked it. Escape
     unlocks (and clears the current selection); so does exiting the mode.
+  - **Hiding** — two swatches above the inventory colors aren't colors at all. **Hide** (or
+    **Delete**) makes the selected dominoes invisible while remembering the color they will come
+    back to; **Unassigned** (or **Backspace**) clears them to no color. Hidden dominoes are still
+    there and still selectable, and the Hide swatch's own menu picks them all out or unhides them.
+    Assigning any color to a hidden domino brings it back.
+  - **Expand** — a toolbar toggle that draws every domino at the full size of the space it sits
+    in, so tightly-spaced dominoes are easy to click. It changes only the drawing, and resets
+    when you leave the mode.
+  - **Done** keeps the session's work on the undo stack; **Cancel** discards all of it and puts
+    the field back exactly as it was on entry.
 - **Copying and pasting colors** — **Ctrl+C** copies the selected dominoes' colors, **Ctrl+X**
   copies and clears them, **Ctrl+V** pastes onto the current selection. Paste lines the copied
   pattern's upper-left corner up with the destination's: select one domino and the whole pattern
@@ -100,7 +113,7 @@ frontend (`npm run build`) after changing frontend code.
   the shape you paste onto can be any shape, not just rectangles. What you copied survives
   leaving domino editing mode, so a pattern can be carried from one field to another.
 - **Undo/Redo** covers both DDObject-level edits (create/delete/move/resize/properties) and
-  domino color changes, on one shared history — undoing a color change works even after
-  leaving domino editing mode, and editing or deleting an inventory color's RGB immediately
-  updates every domino painted with it.
+  domino color changes, hiding included, on one shared history — undoing a color change works
+  even after leaving domino editing mode, and editing or deleting an inventory color's RGB
+  immediately updates every domino painted with it.
 - Nothing is persisted; every load starts a fresh default project.

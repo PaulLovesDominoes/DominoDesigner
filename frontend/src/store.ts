@@ -232,6 +232,9 @@ export const useStore = create<AppState>()((set, get, api) => ({
         dominoColorLockedId: null,
         dominoColorShortcut: "",
         dominoEditingColorSnapshot: null,
+        // The Expand toggle is a view aid scoped to the mode, so leaving it
+        // restores the dominoes' real size — no separate teardown needed.
+        dominoExpanded: false,
       };
     }),
   cancelDominoEditing: () => {

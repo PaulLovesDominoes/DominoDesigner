@@ -4,6 +4,11 @@ export function hexToRgbBytes(hex: string): [number, number, number] {
   return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
 }
 
+/** The inverse of hexToRgbBytes: 0-255 byte triples back into lowercase "#rrggbb". */
+export function rgbBytesToHex(rgb: readonly [number, number, number]): string {
+  return `#${rgb.map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+
 /**
  * YIQ perceived-brightness heuristic: which of black/white reads better on
  * top of `hex`. Good enough for "black lettering on light swatches, white on

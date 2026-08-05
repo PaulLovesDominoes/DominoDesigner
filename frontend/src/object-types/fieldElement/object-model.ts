@@ -311,6 +311,26 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
   modeller: FieldElementModeller,
   dominoEditable: true,
 
+  // Half the clear space on each side, so an expanded domino spans exactly one
+  // pitch in each axis and the field tiles edge to edge with no gaps — which is
+  // the largest target that still can't be confused with its neighbour. Nothing
+  // on Z: the designer camera is top-down orthographic, so vertical growth would
+  // cost matrix work for no visible benefit.
+  //
+  // A field with no spacing at all has nothing to grow into, and undefined is
+  // what disables the Expand button for it.
+  dominoExpansion: (field) =>
+    field.domino_spacing <= 0 && field.row_spacing <= 0
+      ? undefined
+      : {
+          x0: field.domino_spacing / 2,
+          x1: field.domino_spacing / 2,
+          y0: field.row_spacing / 2,
+          y1: field.row_spacing / 2,
+          z0: 0,
+          z1: 0,
+        },
+
   // Create an identifier for every domino in the field which is based on the domino's
   // row & column values to be used for mapping to the domino color.
   // 

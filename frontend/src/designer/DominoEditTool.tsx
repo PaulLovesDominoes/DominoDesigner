@@ -5,10 +5,17 @@ import { EdgesGeometry, PlaneGeometry, type Object3D, type Scene, type Raycaster
 
 import { useStore } from "../store";
 import { getDDObjectBounds } from "../object-types/registry";
-import type { DDObjectBounds, DDObjectId } from "../object-types/base";
+import type { DDObjectBounds, DDObjectId, DominoExpansion } from "../object-types/base";
 import { DOMINO_SIZE } from "../dimensions";
 import { useDominoDataStore } from "../dominoes/store";
-import { nearestInDirection, type DominoData, type Direction } from "../dominoes/object-model";
+import { resolveDominoExpansion } from "../dominoes/expansion";
+import { HIDE_SWATCH_ID, UNASSIGNED_SWATCH_ID } from "../dominoes/swatches";
+import {
+  extent,
+  nearestInDirection,
+  type DominoData,
+  type Direction,
+} from "../dominoes/object-model";
 import {
   useDominoSelectionStore,
   type DominoSelectionEntry,
@@ -26,6 +33,14 @@ const DRAG_BORDER_Z = 1.51;
 const DRAG_ORDER = 20;
 const DRAG_BORDER_ORDER = 21;
 
+// Clear space (mm) between the mode outline and the outermost dominoes it
+// surrounds. Measured from the dominoes rather than the element's own bounds so
+// the gap stays constant: a normalised field's boundary rectangle sits exactly
+// on the outer domino edges (requiredSpan is precisely the dominoes' drawn
+// span), which left the outline flush against them, while a handle-dragged one
+// can sit up to a full pitch outside them.
+const MODE_OUTLINE_MARGIN = 10;
+
 // Movement past this (mm) turns a press into a rubber-band drag rather than a
 // click. Small relative to a domino's pitch (tens of mm), so it doesn't feel
 // like a dead zone.
@@ -38,16 +53,77 @@ interface Rect {
   maxY: number;
 }
 
-/** Full-containment test: every visible domino whose own footprint fits inside `rect`. */
-function enclosedIndices(data: DominoData, rect: Rect): number[] {
-  const hx = DOMINO_SIZE.thickness / 2;
-  const hy = DOMINO_SIZE.width / 2;
+/**
+ * A domino's footprint on the build plane, parent-relative. Every hit test below
+ * measures against this rather than DOMINO_SIZE directly, so it follows the
+ * Expand toggle: a domino drawn oversized must be selectable at the size it is
+ * drawn, or the rubber band visibly cuts through one without taking it.
+ * `expansion` is per side, hence four terms rather than two half-extents.
+ */
+function footprint(data: DominoData, i: number, expansion: DominoExpansion) {
+  const x = data.positions[3 * i];
+  const y = data.positions[3 * i + 1];
+  return {
+    minX: x - DOMINO_SIZE.thickness / 2 - expansion.x0,
+    maxX: x + DOMINO_SIZE.thickness / 2 + expansion.x1,
+    minY: y - DOMINO_SIZE.width / 2 - expansion.y0,
+    maxY: y + DOMINO_SIZE.width / 2 + expansion.y1,
+  };
+}
+
+/**
+ * Where the mode outline is drawn: MODE_OUTLINE_MARGIN outside every domino's
+ * drawn footprint, in world coordinates. Falls back to the element's own bounds
+ * for an element with no dominoes, which is the one case `extent` can't answer.
+ *
+ * This is `extent`'s first caller — the generic footprint primitive in
+ * dominoes/object-model.ts, kept for exactly this. Using it here keeps the
+ * outline type-agnostic, and is safe in a way substituting it for a type's
+ * `bounds()` would not be: the outline is decorative, and nothing measures a
+ * drag against it.
+ *
+ * Two details `extent` leaves to the caller. It reports the bounding box of
+ * domino *centres*, so the half-extent and expansion padding are added here —
+ * and padding a centres-box is only the same as unioning every domino's own
+ * `footprint` because every domino in an element is drawn the same size
+ * (DOMINO_SIZE is global, expansion is per element). That is the assumption
+ * `footprint` already makes by ignoring `orientations`; if a type ever mixes
+ * orientations, both need revisiting together.
+ */
+function modeOutlineRect(
+  bounds: DDObjectBounds,
+  data: DominoData | undefined,
+  expansion: DominoExpansion,
+): DDObjectBounds {
+  const e = data && extent(data);
+  if (!e) {
+    return {
+      x: bounds.x - MODE_OUTLINE_MARGIN,
+      y: bounds.y - MODE_OUTLINE_MARGIN,
+      width: bounds.width + 2 * MODE_OUTLINE_MARGIN,
+      height: bounds.height + 2 * MODE_OUTLINE_MARGIN,
+    };
+  }
+  // DominoData positions are parent-relative, so bounds.x/y (the element's
+  // position) is what puts them back into world coordinates.
+  const padX0 = DOMINO_SIZE.thickness / 2 + expansion.x0 + MODE_OUTLINE_MARGIN;
+  const padX1 = DOMINO_SIZE.thickness / 2 + expansion.x1 + MODE_OUTLINE_MARGIN;
+  const padY0 = DOMINO_SIZE.width / 2 + expansion.y0 + MODE_OUTLINE_MARGIN;
+  const padY1 = DOMINO_SIZE.width / 2 + expansion.y1 + MODE_OUTLINE_MARGIN;
+  return {
+    x: bounds.x + e.x - padX0,
+    y: bounds.y + e.y - padY0,
+    width: e.width + padX0 + padX1,
+    height: e.height + padY0 + padY1,
+  };
+}
+
+/** Full-containment test: every domino whose own footprint fits inside `rect`. */
+function enclosedIndices(data: DominoData, rect: Rect, expansion: DominoExpansion): number[] {
   const result: number[] = [];
   for (let i = 0; i < data.count; i++) {
-    if (data.hidden[i]) continue;
-    const x = data.positions[3 * i];
-    const y = data.positions[3 * i + 1];
-    if (x - hx >= rect.minX && x + hx <= rect.maxX && y - hy >= rect.minY && y + hy <= rect.maxY) {
+    const f = footprint(data, i, expansion);
+    if (f.minX >= rect.minX && f.maxX <= rect.maxX && f.minY >= rect.minY && f.maxY <= rect.maxY) {
       result.push(i);
     }
   }
@@ -55,43 +131,40 @@ function enclosedIndices(data: DominoData, rect: Rect): number[] {
 }
 
 /**
- * Intersection test: every visible domino whose footprint overlaps `rect` at
- * all, however slightly. This is what a rubber-band drag uses — a box the user
- * can see cutting across a row is expected to take that row.
+ * Intersection test: every domino whose footprint overlaps `rect` at all,
+ * however slightly. This is what a rubber-band drag uses — a box the user can
+ * see cutting across a row is expected to take that row.
  *
  * Deliberately not a replacement for enclosedIndices above: Shift+Arrow's rect
  * comes from rectFromIndices, whose edges land flush on the anchor/active
  * dominoes' own boundaries, so an intersection test there would let neighbours
  * on the far side of a tight pitch bleed in.
  */
-function touchedIndices(data: DominoData, rect: Rect): number[] {
-  const hx = DOMINO_SIZE.thickness / 2;
-  const hy = DOMINO_SIZE.width / 2;
+function touchedIndices(data: DominoData, rect: Rect, expansion: DominoExpansion): number[] {
   const result: number[] = [];
   for (let i = 0; i < data.count; i++) {
-    if (data.hidden[i]) continue;
-    const x = data.positions[3 * i];
-    const y = data.positions[3 * i + 1];
-    if (x + hx >= rect.minX && x - hx <= rect.maxX && y + hy >= rect.minY && y - hy <= rect.maxY) {
+    const f = footprint(data, i, expansion);
+    if (f.maxX >= rect.minX && f.minX <= rect.maxX && f.maxY >= rect.minY && f.minY <= rect.maxY) {
       result.push(i);
     }
   }
   return result;
 }
 
-/** The tight rectangle spanning two dominoes' own footprints (each ± its half-extent). */
-function rectFromIndices(data: DominoData, i1: number, i2: number): Rect {
-  const hx = DOMINO_SIZE.thickness / 2;
-  const hy = DOMINO_SIZE.width / 2;
-  const x1 = data.positions[3 * i1];
-  const y1 = data.positions[3 * i1 + 1];
-  const x2 = data.positions[3 * i2];
-  const y2 = data.positions[3 * i2 + 1];
+/** The tight rectangle spanning two dominoes' own footprints. */
+function rectFromIndices(
+  data: DominoData,
+  i1: number,
+  i2: number,
+  expansion: DominoExpansion,
+): Rect {
+  const a = footprint(data, i1, expansion);
+  const b = footprint(data, i2, expansion);
   return {
-    minX: Math.min(x1, x2) - hx,
-    maxX: Math.max(x1, x2) + hx,
-    minY: Math.min(y1, y2) - hy,
-    maxY: Math.max(y1, y2) + hy,
+    minX: Math.min(a.minX, b.minX),
+    maxX: Math.max(a.maxX, b.maxX),
+    minY: Math.min(a.minY, b.minY),
+    maxY: Math.max(a.maxY, b.maxY),
   };
 }
 
@@ -135,9 +208,11 @@ function recomputeFromRect(
   baseSelection: Set<number>,
   anchor: number,
   active: number,
+  expansion: DominoExpansion,
 ): Set<number> {
   const selected = new Set(baseSelection);
-  for (const i of enclosedIndices(data, rectFromIndices(data, anchor, active))) selected.add(i);
+  for (const i of enclosedIndices(data, rectFromIndices(data, anchor, active, expansion), expansion))
+    selected.add(i);
   return selected;
 }
 
@@ -179,13 +254,17 @@ function hitDominoIndex(
 }
 
 /**
- * Recolors the current selection to whatever's locked, if anything. Called
- * after every gesture that changes which dominoes are selected (but not
- * after clearing a selection — nothing to color then).
+ * Applies whatever swatch is locked, if any, to the current selection. Called
+ * after every gesture below that changes which dominoes are selected (but not
+ * after clearing a selection — nothing to apply to then).
+ *
+ * A thin delegate: the real action lives in the store so the selection commands
+ * that don't come through this file — select all, invert, the swatch menus —
+ * apply the lock the same way. Kept as a local name only because the five
+ * gesture call sites read better for it.
  */
 function applyLockedColorIfAny() {
-  const lockedId = useStore.getState().dominoColorLockedId;
-  if (lockedId) useStore.getState().applyColorToSelectedDominoes(lockedId);
+  useStore.getState().applyLockedSwatchIfAny();
 }
 
 interface GestureState {
@@ -241,6 +320,17 @@ export default function DominoEditTool() {
     }),
   );
   const rootBounds = useStore(useShallow((s) => getDDObjectBounds(s.ddObjects[s.rootId])));
+  // The mode outline is measured off the dominoes, so unlike everything else in
+  // this file it has to follow DominoData itself — a resize regenerates the
+  // buffers without necessarily re-rendering this component otherwise. These
+  // three plus the expansion inputs below are what modeOutlineRect reads.
+  const dataVersion = useDominoDataStore((s) =>
+    dominoEditingId ? s.versions[dominoEditingId] : undefined,
+  );
+  const dominoExpanded = useStore((s) => s.dominoExpanded);
+  const editedDDObject = useStore((s) =>
+    s.dominoEditingId ? s.ddObjects[s.dominoEditingId] : undefined,
+  );
 
   const invalidate = useThree((s) => s.invalidate);
   const scene = useThree((s) => s.scene);
@@ -257,6 +347,25 @@ export default function DominoEditTool() {
   // rectangle border, scaled per-use — mirrors SelectionTool.tsx's unitEdges.
   const unitEdges = useMemo(() => new EdgesGeometry(new PlaneGeometry(1, 1)), []);
   useEffect(() => () => unitEdges.dispose(), [unitEdges]);
+
+  // Memoized rather than computed inline: this component re-renders on every
+  // pointermove of a rubber-band drag, and modeOutlineRect's extent() call is an
+  // O(count) pass over the dominoes.
+  const outlineRect = useMemo(
+    () =>
+      dominoEditingId && fieldBounds
+        ? modeOutlineRect(
+            fieldBounds,
+            useDominoDataStore.getState().get(dominoEditingId),
+            resolveDominoExpansion(dominoEditingId),
+          )
+        : null,
+    // dataVersion/dominoExpanded/editedDDObject are deliberate deps despite not
+    // appearing above: they are the reactive signals behind the two imperative
+    // reads, same pattern as DominoColorPanel's memos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dominoEditingId, fieldBounds, dataVersion, dominoExpanded, editedDDObject],
+  );
 
   // ── Clipboard: this component is the active cut/copy/paste context while the
   // mode is on. The Ctrl+C/X/V keys themselves are handled once, app-wide, in
@@ -343,7 +452,13 @@ export default function DominoEditTool() {
       if (!data || !entry) return;
 
       const nextActive = nearestInDirection(data, entry.active, direction) ?? entry.active;
-      const selected = recomputeFromRect(data, entry.baseSelection, entry.anchor, nextActive);
+      const selected = recomputeFromRect(
+        data,
+        entry.baseSelection,
+        entry.anchor,
+        nextActive,
+        resolveDominoExpansion(dominoEditingId),
+      );
       useDominoSelectionStore.getState().replace(dominoEditingId, {
         selected,
         baseSelection: entry.baseSelection,
@@ -381,10 +496,16 @@ export default function DominoEditTool() {
         return;
       }
 
+      // The two special swatches' keys — the "DEL"/"Bksp" labels the color
+      // panel shows on them name exactly these. Routed through applyDominoSwatch
+      // so they inherit the same undo step, colour memory sync and
+      // empty-selection no-op as clicking the swatch itself.
       if (e.key === "Delete" || e.key === "Backspace") {
         // Backspace would otherwise navigate the page back.
         e.preventDefault();
-        useStore.getState().clearSelectedDominoColors();
+        useStore
+          .getState()
+          .applyDominoSwatch(e.key === "Delete" ? HIDE_SWATCH_ID : UNASSIGNED_SWATCH_ID);
         return;
       }
 
@@ -492,7 +613,7 @@ export default function DominoEditTool() {
       minY: Math.min(startLocal.y, endLocal.y),
       maxY: Math.max(startLocal.y, endLocal.y),
     };
-    const touched = touchedIndices(data, rect);
+    const touched = touchedIndices(data, rect, resolveDominoExpansion(dominoEditingId));
     if (!force && g.lastTouched && sameIndices(touched, g.lastTouched)) return null;
     g.lastTouched = touched;
 
@@ -598,18 +719,22 @@ export default function DominoEditTool() {
     <>
       {/* White, no-fill context indicator — this DDObject's dominoes are being
           edited. No resize handles: nothing in this pass changes the field's
-          own shape from inside the mode. */}
-      <lineSegments
-        geometry={unitEdges}
-        position={[
-          fieldBounds.x + fieldBounds.width / 2,
-          fieldBounds.y + fieldBounds.height / 2,
-          OUTLINE_Z,
-        ]}
-        scale={[fieldBounds.width, fieldBounds.height, 1]}
-      >
-        <lineBasicMaterial color="#ffffff" transparent depthTest={false} />
-      </lineSegments>
+          own shape from inside the mode. Drawn a fixed margin off the dominoes
+          rather than on the element's bounds, so it clears them by the same gap
+          whether or not the Expand toggle is on — see modeOutlineRect. */}
+      {outlineRect && (
+        <lineSegments
+          geometry={unitEdges}
+          position={[
+            outlineRect.x + outlineRect.width / 2,
+            outlineRect.y + outlineRect.height / 2,
+            OUTLINE_Z,
+          ]}
+          scale={[outlineRect.width, outlineRect.height, 1]}
+        >
+          <lineBasicMaterial color="#ffffff" transparent depthTest={false} />
+        </lineSegments>
+      )}
 
       {/* Catches gestures across the whole build plane (not just the field's
           own footprint), so a click anywhere empty still clears the selection.

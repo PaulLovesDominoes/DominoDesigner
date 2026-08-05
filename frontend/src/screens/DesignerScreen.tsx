@@ -32,7 +32,7 @@ export default function DesignerScreen() {
   // whatever handler the current context has registered, so a new clipboard
   // client (DDObject cut/paste next) adds no keyboard code at all. This is
   // also why DominoEditTool's own keydown handler can keep returning early on
-  // every Ctrl/Cmd chord — they all belong to this handler.
+  // every Ctrl/Cmd chord — they all belong to this handler, Ctrl+A included.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const s = useStore.getState();
@@ -54,6 +54,15 @@ export default function DesignerScreen() {
       } else if (key === "v") {
         e.preventDefault();
         useClipboardStore.getState().paste();
+      } else if (key === "a") {
+        // Select-all means "every domino in the field being edited", so outside
+        // domino editing mode this falls through untouched — no preventDefault,
+        // leaving the browser's own select-all alone. That gate is also why the
+        // missing typing guard in this handler doesn't bite here: the mode's
+        // sidebar is the swatch panel, with no text inputs in it.
+        if (!s.dominoEditingId) return;
+        e.preventDefault();
+        useStore.getState().selectAllDominoes();
       }
     };
     window.addEventListener("keydown", onKeyDown);

@@ -9,6 +9,7 @@ import {
 import { useStore } from "../store";
 import ToolButton from "./ToolButton";
 import NewElementMenu from "./NewElementMenu";
+import DominoModeTools from "./DominoModeTools";
 import { TOOLS } from "./toolConfig";
 import styles from "./Toolbar.module.css";
 
@@ -37,9 +38,10 @@ export default function Toolbar() {
   const canRedo = useStore((s) => s.redoStack.length > 0);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
-  // Domino editing mode is fully modal: only the canvas and the ModeHintBar's
-  // Done/Cancel/Help stay live. Zoom is left enabled — it's harmless (and
-  // useful) while picking dominoes.
+  // Domino editing mode is fully modal: the DDObject tools are swapped out for
+  // the mode's own below, and only the canvas and the ModeHintBar's
+  // Done/Cancel/Help stay live besides. Zoom is left enabled — it's harmless
+  // (and useful) while picking dominoes.
   const editingDominoes = useStore((s) => s.activeTool === "editDominoes");
   // Which DDObject the fit button frames while the mode is on — see its button.
   const dominoEditingId = useStore((s) => s.dominoEditingId);
@@ -52,16 +54,24 @@ export default function Toolbar() {
 
   return (
     <div className={styles.bar}>
-      {/* Left-justified: Select, then the New element-creation menu. */}
+      {/* Left-justified: Select and the New element-creation menu, swapped out
+          wholesale for the mode's own tools while domino editing is on. Those
+          two act on the DDObject hierarchy, which the mode is modal against, so
+          they'd only ever be shown disabled. */}
       <div className={styles.group}>
-        <ToolButton
-          label={SELECT_TOOL.label}
-          Icon={SELECT_TOOL.Icon}
-          active={activeTool === SELECT_TOOL.id}
-          onClick={() => setTool(SELECT_TOOL.id)}
-          disabled={editingDominoes}
-        />
-        <NewElementMenu />
+        {editingDominoes ? (
+          <DominoModeTools />
+        ) : (
+          <>
+            <ToolButton
+              label={SELECT_TOOL.label}
+              Icon={SELECT_TOOL.Icon}
+              active={activeTool === SELECT_TOOL.id}
+              onClick={() => setTool(SELECT_TOOL.id)}
+            />
+            <NewElementMenu />
+          </>
+        )}
       </div>
 
       {/* Right-justified: undo/redo, then canvas zoom controls. Nested in one

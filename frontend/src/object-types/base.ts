@@ -57,6 +57,22 @@ export interface DominoRowCol {
 }
 
 /**
+ * Extra size added to a domino's drawn footprint, in mm, per side: x0/y0/z0 on
+ * the -X/-Y/-Z faces, x1/y1/z1 on the +X/+Y/+Z. Per side rather than per axis so
+ * a type whose dominoes don't sit centred in the room around them can grow into
+ * the space it actually has, rather than growing symmetrically and overlapping on
+ * one edge. See `dominoExpansion` below.
+ */
+export interface DominoExpansion {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  z0: number;
+  z1: number;
+}
+
+/**
  * The contract every DDObject-type module implements. Registering a type is a
  * matter of exporting one of these; the store and the sidebar hierarchy drive
  * everything off the registry's accessors rather than per-type branching, so
@@ -103,6 +119,19 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
    * finished implementing domino editing.
    */
   dominoEditable?: boolean;
+  /**
+   * For domino-producing types only: how far to grow each domino's *drawn*
+   * footprint while domino editing mode's Expand toggle is on, so tightly-spaced
+   * dominoes are easier to click and rubber-band. Purely a view aid — it never
+   * touches the stored layout, is not undoable, and resets on leaving the mode.
+   *
+   * The type decides the amount from its own layout knowledge (a field grows by
+   * half its spacing on each side, so grown dominoes tile edge to edge). Returning
+   * undefined means this instance has nothing to gain from expanding, which is
+   * also what disables the toolbar button — one member is deliberately both the
+   * amount and the capability flag.
+   */
+  dominoExpansion?(ddObject: T): DominoExpansion | undefined;
   /**
    * For domino-producing types only: a stable identifier for the domino at
    * `flatIndex`, given the ddObject's CURRENT layout parameters. Used by
