@@ -73,6 +73,17 @@ function cursorFor(id: HandleId): string {
   }
 }
 
+/**
+ * Which mesh a hover cursor belongs to. "overlay" covers the selection fill and
+ * all eight resize handles together — they mount and unmount as one group, with
+ * the selection itself — while each selectable child's PickPlane owns its own.
+ * See cursorOwnerRef for what this is for.
+ */
+type CursorOwner = { kind: "pick"; id: DDObjectId } | { kind: "overlay" };
+
+/** The one owner shared by the selection overlay's fill and its handles. */
+const OVERLAY_CURSOR: CursorOwner = { kind: "overlay" };
+
 /** New footprint for a resize handle dragged by (dx,dy) mm, clamped to `root`. */
 function resizeRect(
   orig: DDObjectBounds,
@@ -166,7 +177,27 @@ export default function SelectionTool() {
 
   const armed = activeTool === "select" && !editing && !!rootBounds;
 
-  const setCursor = (c: string) => {
+  /**
+   * Which mesh's hover the canvas cursor currently belongs to, or null when
+   * nothing holds it.
+   *
+   * A hover cursor is normally cleared by the same mesh's own onPointerOut —
+   * but a mesh deleted, deselected or disarmed out from under the pointer never
+   * gets one: R3F derives pointerout by diffing raycast hits between pointer
+   * events, and an object removed from the scene is never diffed against. (The
+   * Delete key is the worst case: it fires from a keydown handler, so there is
+   * no pointer event at all.) The cursor it set would then sit on the canvas
+   * indefinitely — and because this is an inline style on the <canvas> itself,
+   * it outranks the inherited `cursor: crosshair` from .canvasAreaPlacing, so a
+   * stranded hand survives even a subsequent placement drag.
+   *
+   * The effect below re-checks instead. This token is what keeps that re-check
+   * from clearing a cursor some *other*, still-hovered mesh has since set.
+   */
+  const cursorOwnerRef = useRef<CursorOwner | null>(null);
+
+  const setCursor = (owner: CursorOwner | null, c: string) => {
+    cursorOwnerRef.current = c === "" ? null : owner;
     gl.domElement.style.cursor = c;
   };
 
@@ -186,7 +217,7 @@ export default function SelectionTool() {
     }
     dragRef.current = null;
     setDragging(false);
-    setCursor("");
+    setCursor(null, "");
     invalidate();
   };
 
@@ -225,6 +256,28 @@ export default function SelectionTool() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [armed]);
 
+  // Release a hover cursor whose mesh has gone away — deleted, deselected, or
+  // unmounted by the tool disarming. See cursorOwnerRef for why no pointerout
+  // ever arrives to do it. Skipped mid-drag: the cursor belongs to the drag
+  // then, and endDrag clears it.
+  //
+  // The three deps are exactly the reactive signals for the three ways a setter
+  // can vanish — `armed` (tool switch, dialog opened, entering domino editing),
+  // `selected` (the fill and handles exist only while something is selected),
+  // and `childIds` (a delete strips the id from the root's children, which is
+  // what unmounts that object's PickPlane). ddObjects is read imperatively
+  // rather than subscribed: childIds is already the signal, so a second
+  // subscription would only add re-renders.
+  useEffect(() => {
+    const owner = cursorOwnerRef.current;
+    if (!owner || dragRef.current) return;
+    const stillThere =
+      armed &&
+      (owner.kind === "overlay" ? !!selected : !!useStore.getState().ddObjects[owner.id]);
+    if (!stillThere) setCursor(null, "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [armed, selected, childIds]);
+
   if (!armed) return null;
   const root = rootBounds!;
 
@@ -243,7 +296,7 @@ export default function SelectionTool() {
       handle,
     };
     setDragging(true);
-    setCursor(handle === "move" ? "move" : cursorFor(handle));
+    setCursor(OVERLAY_CURSOR, handle === "move" ? "move" : cursorFor(handle));
   };
 
   const onCatchMove = (e: ThreeEvent<PointerEvent>) => {
@@ -306,10 +359,10 @@ export default function SelectionTool() {
             renderOrder={FILL_ORDER}
             onPointerDown={(e) => beginDrag("move", e)}
             onPointerOver={() => {
-              if (!dragRef.current) setCursor("move");
+              if (!dragRef.current) setCursor(OVERLAY_CURSOR, "move");
             }}
             onPointerOut={() => {
-              if (!dragRef.current) setCursor("");
+              if (!dragRef.current) setCursor(null, "");
             }}
           >
             <planeGeometry args={[1, 1]} />
@@ -342,10 +395,10 @@ export default function SelectionTool() {
                 renderOrder={HANDLE_ORDER}
                 onPointerDown={(e) => beginDrag(id, e)}
                 onPointerOver={() => {
-                  if (!dragRef.current) setCursor(cursorFor(id));
+                  if (!dragRef.current) setCursor(OVERLAY_CURSOR, cursorFor(id));
                 }}
                 onPointerOut={() => {
-                  if (!dragRef.current) setCursor("");
+                  if (!dragRef.current) setCursor(null, "");
                 }}
               >
                 <planeGeometry args={[handleSize, handleSize]} />
@@ -386,7 +439,7 @@ function PickPlane({
   onSelect: (id: DDObjectId) => void;
   onEnterDominoEditing: (id: DDObjectId) => void;
   dragging: boolean;
-  setCursor: (c: string) => void;
+  setCursor: (owner: CursorOwner | null, c: string) => void;
 }) {
   const ddObject = useStore((s) => s.ddObjects[ddObjectId] ?? null);
   if (!ddObject || !isDDObjectSelectable(ddObject)) return null;
@@ -407,10 +460,10 @@ function PickPlane({
         if (isDominoEditable(ddObject)) onEnterDominoEditing(ddObjectId);
       }}
       onPointerOver={() => {
-        if (!dragging) setCursor("pointer");
+        if (!dragging) setCursor({ kind: "pick", id: ddObjectId }, "pointer");
       }}
       onPointerOut={() => {
-        if (!dragging) setCursor("");
+        if (!dragging) setCursor(null, "");
       }}
     >
       <planeGeometry args={[b.width, b.height]} />

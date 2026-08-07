@@ -24,6 +24,10 @@ import {
   pushOperation,
   type HistorySlice,
 } from "./history/appStoreSlice";
+import {
+  createShapeSelectSlice,
+  type ShapeSelectSlice,
+} from "./shape-select/appStoreSlice";
 import { applyRemoveDDObject, ddObjectsEqual } from "./ddObjectOps";
 
 /**
@@ -69,7 +73,11 @@ export function isDDObjectInUndoHistory(id: DDObjectId): boolean {
  * StateCreator against it — see domino-inventory/appStoreSlice.ts, which holds
  * the inventory members that used to sit at the bottom of this interface.
  */
-export interface AppState extends InventorySlice, HistorySlice, DominoColorSlice {
+export interface AppState
+  extends InventorySlice,
+    HistorySlice,
+    DominoColorSlice,
+    ShapeSelectSlice {
   // Which screen is showing.
   screen: ScreenId;
   setScreen: (screen: ScreenId) => void;
@@ -235,6 +243,11 @@ export const useStore = create<AppState>()((set, get, api) => ({
         // The Expand toggle is a view aid scoped to the mode, so leaving it
         // restores the dominoes' real size — no separate teardown needed.
         dominoExpanded: false,
+        // Same reasoning for the armed shape-select gesture: it only means
+        // anything inside the mode, so leaving returns the next visit to the
+        // default rectangle rubber band.
+        dominoShapeSelectId: null,
+        dominoShapeSelectHint: null,
       };
     }),
   cancelDominoEditing: () => {
@@ -429,4 +442,5 @@ export const useStore = create<AppState>()((set, get, api) => ({
   ...createInventorySlice(set, get, api),
   ...createHistorySlice(set, get, api),
   ...createDominoColorSlice(set, get, api),
+  ...createShapeSelectSlice(set, get, api),
 }));

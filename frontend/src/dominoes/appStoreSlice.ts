@@ -48,7 +48,7 @@ import type { DominoColorClipboardItem } from "./clipboardItem";
  * The one write path for *which dominoes are selected*, shared by every command
  * that produces a whole selection at once (select-by-swatch, select all, invert).
  * The canvas gestures in DominoEditTool don't come through here — they build
- * anchor/active from where the pointer actually was — but they end the same way,
+ * their corners from where the pointer actually was — but they end the same way,
  * which is why applyLockedSwatchIfAny is an action rather than living in either
  * place.
  *
@@ -58,9 +58,9 @@ import type { DominoColorClipboardItem } from "./clipboardItem";
  *   Spreading a Set creates one argument per element, and V8 exhausts the call
  *   stack somewhere around 65k — a 250x250 field is 62,500 dominoes, so Select
  *   All would reliably crash.
- * - anchor/active seed a following Shift+Arrow, which needs a defined corner to
- *   extend from; baseSelection preserves everything produced here beneath that
- *   rectangle. Same shape as DominoEditTool's Ctrl+click branch.
+ * - Both selection corners seed a following Shift+Arrow, which needs a defined
+ *   corner to extend from; baseSelection preserves everything produced here
+ *   beneath that rectangle. Same shape as DominoEditTool's Ctrl+click branch.
  * - An empty result clears instead of replacing, and applies no lock — there is
  *   nothing to apply it to, the same rule a clearing gesture already follows.
  */
@@ -80,8 +80,8 @@ function writeDominoSelection(
   store.replace(parentId, {
     selected,
     baseSelection: new Set(selected),
-    anchor: lowest,
-    active: lowest,
+    selectionFixedCornerIndex: lowest,
+    selectionMovingCornerIndex: lowest,
   });
   get().applyLockedSwatchIfAny();
 }

@@ -28,7 +28,8 @@ Future plans:
 - **Frontend:** [Vite](https://vite.dev/) + React + TypeScript +
   [react-three-fiber](https://r3f.docs.pmnd.rs/) / [drei](https://github.com/pmndrs/drei) +
   [three.js](https://threejs.org/), with [Zustand](https://zustand.docs.pmnd.rs/) for state
-  and [Remix Icon](https://remixicon.com/) for icons. Styling via CSS Modules.
+  and [Remix Icon](https://remixicon.com/) for icons, alongside a few hand-drawn SVGs inlined by
+  [vite-plugin-svgr](https://github.com/pd4d10/vite-plugin-svgr). Styling via CSS Modules.
 - **Backend:** [FastAPI](https://fastapi.tiangolo.com/) — a thin static-file server for the
   built frontend. No API endpoints in v1.
 
@@ -85,10 +86,21 @@ frontend (`npm run build`) after changing frontend code.
 - **Domino editing mode** — double-click a field (on the canvas or in the sidebar) to work on the
   individual dominoes within it. The inventory colors appear as a grid of swatches in place of the
   object hierarchy, and the toolbar swaps its Select/New buttons for the mode's own.
-  - **Selecting** — click, Ctrl+click, drag a box, Ctrl+drag, arrow keys and Shift+arrow keys,
-    plus **Ctrl+A** or the toolbar's select-all and invert buttons. Every swatch also carries a
-    menu that selects the dominoes of that color, adds them to the selection, removes them from
-    it, or narrows the selection down to just them.
+  - **Selecting** — click, Ctrl+click, drag a box, arrow keys and Shift+arrow keys, plus
+    **Ctrl+A** or the toolbar's select-all and invert buttons. **Ctrl+drag** adds a region to the
+    selection and **Alt+drag** takes one back out, so a selection can be built up and cut into
+    without starting over; the region you drag is drawn white while adding and dark while removing,
+    so you can see which before letting go. Every swatch also carries a menu that selects the
+    dominoes of that color, adds them to the selection, removes them from it, or narrows the
+    selection down to just them.
+  - **Selecting with a shape** — as well as dragging a box, the toolbar offers a **circle** (drawn
+    from the centre out), a **circle by diameter** (drawn across), an **oval**, a **triangle** and
+    an **angled rectangle**. Each stays chosen until you turn it off, and the ones needing more
+    than one drag say what to do next in the hint bar. A domino is taken when its centre falls
+    inside the shape, which keeps edges as smooth as the dominoes allow. Where a shape is drawn
+    from snaps to the field's grid — every domino's middle, and every point halfway between two —
+    so a side you meant to be level comes out exactly level; sizes stay free. Clicking still picks
+    a single domino whatever is chosen, so you rarely need to switch back.
   - **Select dominoes, then pick a color** — click a swatch, or type its shortcut (e.g. "B2");
     matching swatches highlight live as you type, and a unique match applies immediately.
   - **Pick a color first, then select dominoes** — double-click a swatch to lock it (shown with

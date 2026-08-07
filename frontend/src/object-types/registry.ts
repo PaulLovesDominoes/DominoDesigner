@@ -142,6 +142,21 @@ export const getDominoIndexAt = (
 };
 
 /**
+ * How this DDObject snaps a point onto its own grid, or undefined when its type
+ * has no grid to snap to — see `snapShapePoint`'s contract in base.ts.
+ * If undefined, the point is resolved to itself, so shapes can simply
+ * call the function unconditionally.
+ */
+export const getSnapShapePoint = (
+  ddObject: DDObject,
+): ((x: number, y: number) => { x: number; y: number }) | undefined => {
+  const fn = DD_OBJECT_TYPES[ddObject.type].snapShapePoint as
+    | ((ddObject: DDObject, x: number, y: number) => { x: number; y: number })
+    | undefined;
+  return fn ? (x: number, y: number) => fn(ddObject, x, y) : undefined;
+};
+
+/**
  * This type's override of how copied domino colors land on it, or undefined —
  * which is the normal case, meaning "use the generic row/col paste". Resolved
  * by dominoes/rowColPaste.ts's resolveDominoColorPaste rather than called

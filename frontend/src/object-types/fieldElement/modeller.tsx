@@ -1,12 +1,11 @@
 import { useEffect } from "react";
 
-import { DOMINO_SIZE } from "../../dimensions";
 import { generateDominoes, type DominoData } from "../../dominoes/object-model";
 import { DominoModeller } from "../../dominoes/modeller";
 import { useDominoDataStore } from "../../dominoes/store";
 import { restoreDominoColors } from "../../dominoes/colorMemory";
 import type { DDObjectModellerProps } from "../base";
-import { pitchX, pitchY, type FieldElementDDObject } from "./object-model";
+import { gridBaseLocal, pitchX, pitchY, type FieldElementDDObject } from "./object-model";
 
 /**
  * The field-specific half of the domino system: it decides *where* a field's
@@ -27,10 +26,7 @@ type FieldLayout = Pick<
 >;
 
 function layoutField(field: FieldLayout): DominoData {
-  const {
-    rows, dominoes_per_row, row_spacing, domino_spacing,
-    anchorX, anchorY, originRow, originCol, position,
-  } = field;
+  const { rows, dominoes_per_row, row_spacing, domino_spacing } = field;
   const data = generateDominoes(rows * dominoes_per_row);
 
   const px = pitchX(domino_spacing);
@@ -40,11 +36,9 @@ function layoutField(field: FieldLayout): DominoData {
   // originCol/originRow — how many columns/rows now sit before the anchor after
   // bottom/left handle-drags — and NOT to `position`, which is only the
   // boundary rectangle. That is exactly what keeps an existing domino still
-  // while the box is resized around it. Subtracting position.(xy) at the end
-  // converts that world offset into the parent-relative space DominoModeller's
-  // group expects. Same expression normalizeField uses for the grid origin.
-  const baseX = (anchorX - originCol * px + DOMINO_SIZE.thickness / 2) - position.x;
-  const baseY = (anchorY - originRow * py + DOMINO_SIZE.width / 2) - position.y;
+  // while the box is resized around it. gridBaseLocal is the shared definition,
+  // used by normalizeField and snapShapePoint too, so the three cannot drift.
+  const { x: baseX, y: baseY } = gridBaseLocal(field);
 
   let i = 0;
   for (let row = 0; row < rows; row++) {

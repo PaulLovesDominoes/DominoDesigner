@@ -199,6 +199,29 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
    */
   dominoIndexAt?(ddObject: T, row: number, col: number): number | undefined;
   /**
+   * Snap an arbitrary point in this instance's parent-relative mm — the space
+   * DominoData.positions lives in — onto its own grid.
+   *
+   * Domino editing mode's shape-select gestures use it so a shape can be placed
+   * on the lattice rather than wherever the cursor happened to land. That is
+   * what makes a circle symmetric: it is impossible to click exactly on a
+   * domino's midpoint or exactly between two, and a centre a hair off takes a
+   * different count on each side. With the centre snapped, the midpoints are
+   * symmetric about it and the count matches at *every* radius.
+   *
+   * Declaring it is the whole of "this type has a grid" — a type that omits it
+   * is simply never snapped, and shape-select substitutes an identity so no
+   * variant has to branch on support. What counts as a snap point is entirely
+   * the type's business; a field offers every domino's centre plus every
+   * midpoint between them.
+   *
+   * Must NOT clamp to the instance's current extent. A shape's origin
+   * legitimately sits outside it — a large circle whose arc merely clips the
+   * field is centred well away from it — so the lattice returned here is
+   * conceptually infinite.
+   */
+  snapShapePoint?(ddObject: T, x: number, y: number): { x: number; y: number };
+  /**
    * Optional override of how copied domino colors land on this instance.
    * Returns the flat indices to recolor and each one's colorId, or undefined
    * when the paste means nothing here.

@@ -108,6 +108,46 @@ export const pitchX = (domino_spacing: number) =>
 
 export const pitchY = (row_spacing: number) => DOMINO_SIZE.width + row_spacing;
 
+/** The fields that say where a field's grid sits, independent of its box. */
+type GridAnchored = Pick<
+  FieldElementDDObject,
+  "anchorX" | "anchorY" | "originRow" | "originCol" | "row_spacing" | "domino_spacing"
+>;
+
+/**
+ * World mm of the grid's origin corner — where column 0's outer edge sits.
+ *
+ * `anchor - origin * pitch`, since originCol/originRow count how many columns
+ * and rows now sit *before* the anchor after a west/south handle-drag. This is
+ * the single definition of where the grid is: normalizeField re-hugs the
+ * boundary box to it, layoutField places every domino from it, and
+ * snapShapePoint quantises onto it. Do not hand-copy the expression a fourth
+ * time — the three agreeing is what keeps a resize from moving existing
+ * dominoes.
+ */
+export const gridOriginWorld = (field: GridAnchored) => ({
+  x: field.anchorX - field.originCol * pitchX(field.domino_spacing),
+  y: field.anchorY - field.originRow * pitchY(field.row_spacing),
+});
+
+/**
+ * Parent-relative mm of the row-0 / col-0 domino's *centre* — the grid's phase
+ * in the space DominoData.positions and shape-select's ShapePoint both live in.
+ *
+ * The half-extents turn the origin corner into the first domino's middle, and
+ * subtracting `position` converts the world offset into the parent-relative
+ * space DominoModeller's group expects.
+ */
+export const gridBaseLocal = (
+  field: GridAnchored & Pick<FieldElementDDObject, "position">,
+) => {
+  const origin = gridOriginWorld(field);
+  return {
+    x: origin.x + DOMINO_SIZE.thickness / 2 - field.position.x,
+    y: origin.y + DOMINO_SIZE.width / 2 - field.position.y,
+  };
+};
+
 /**
  * Float-noise tolerance for the counting maths below, in mm. Every span here
  * is recomputed from values themselves derived from a pitch multiple, so a
@@ -268,20 +308,14 @@ function fitCountsThenSize<T extends FieldSize>(field: T): T {
  * next editor edit would shrink the box off its *far* edge, pushing the last
  * row or column outside a boundary whose dominoes must not move.
  *
- * The grid origin is `anchor - origin * pitch`, since originCol/originRow count
- * how many columns/rows now sit *before* the anchor — the same expression
- * layoutField (modeller.tsx) uses to place column 0. This is therefore the one
- * place the box is re-hugged to the grid; a drag never does it.
+ * The grid origin comes from gridOriginWorld — the same one layoutField
+ * (modeller.tsx) uses to place column 0 and snapShapePoint quantises onto. This
+ * is therefore the one place the box is re-hugged to the grid; a drag never
+ * does it.
  */
 export const normalizeField = (field: FieldElementDDObject): FieldElementDDObject => {
   const sized = normalizeSize(field);
-  return {
-    ...sized,
-    position: {
-      x: sized.anchorX - sized.originCol * pitchX(sized.domino_spacing),
-      y: sized.anchorY - sized.originRow * pitchY(sized.row_spacing),
-    },
-  };
+  return { ...sized, position: gridOriginWorld(sized) };
 };
 
 export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject> = {
@@ -365,6 +399,26 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
     row >= 0 && row < field.rows && col >= 0 && col < field.dominoes_per_row
       ? row * field.dominoes_per_row + col
       : undefined,
+
+  // Half a pitch, so the lattice carries a point on every domino's centre AND
+  // one in the middle of every gap between them. Both are useful centres for a
+  // circle: on a domino it takes an odd count each side, between two an even
+  // one, and either way the counts match — which is the whole point (see
+  // snapShapePoint's contract in base.ts).
+  //
+  // Deliberately NOT clamped to rows/dominoes_per_row. The lattice keeps going
+  // past the field's own dominoes, because a shape's origin legitimately sits
+  // outside it — a big circle whose arc just clips one edge is centred nowhere
+  // near the field, and clamping would drag it back onto the boundary.
+  snapShapePoint: (field, x, y) => {
+    const base = gridBaseLocal(field);
+    const stepX = pitchX(field.domino_spacing) / 2;
+    const stepY = pitchY(field.row_spacing) / 2;
+    return {
+      x: base.x + Math.round((x - base.x) / stepX) * stepX,
+      y: base.y + Math.round((y - base.y) / stepY) * stepY,
+    };
+  },
 
   // The field's boundary rectangle — what CameraRig fits and frames to, what
   // SelectionTool draws its overlay/handles over and measures drags against,

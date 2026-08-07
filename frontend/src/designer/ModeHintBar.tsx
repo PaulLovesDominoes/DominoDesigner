@@ -51,6 +51,11 @@ export default function ModeHintBar() {
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const openHelpTopic = useStore((s) => s.openHelpTopic);
   const dominoColorLockedId = useStore((s) => s.dominoColorLockedId);
+  // What the armed shape-select gesture is asking for, if any — written by
+  // DominoEditTool, since a variant's hint can vary by stage and the live
+  // gesture state lives in a ref inside the <Canvas>. A string, so it's safe to
+  // read straight out of a selector.
+  const dominoShapeSelectHint = useStore((s) => s.dominoShapeSelectHint);
   // The color clipboard is otherwise invisible, so say what's in it. Survives
   // leaving domino editing mode, which is what makes field-to-field paste work.
   const clipboardItem = useClipboardStore((s) => s.item);
@@ -70,9 +75,16 @@ export default function ModeHintBar() {
     // Locking a color swaps the sentence but keeps the same escape hatches —
     // "ESC to exit" here means exit the lock, not the mode; Done/Cancel stay
     // the only way to leave domino editing mode entirely.
+    //
+    // An armed shape-select gesture outranks both: what the user is *doing* is
+    // more specific than the standing mode state, the same rule help/registry.ts
+    // applies when it consults TOOL_TOPIC before SCREEN_TOPIC. Nothing is lost
+    // by displacing the lock sentence — the lock stays badged on its swatch.
     content = (
       <>
-        {dominoColorLockedId ? (
+        {dominoShapeSelectHint ? (
+          <span>{dominoShapeSelectHint}</span>
+        ) : dominoColorLockedId ? (
           <span>Select dominoes to change to the locked color, ESC to exit.</span>
         ) : (
           <span>

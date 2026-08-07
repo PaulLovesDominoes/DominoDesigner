@@ -100,13 +100,14 @@ becomes a **slice** of the app store instead.
 
 `store.ts` grew past a thousand lines holding every feature's state inline, so a feature's
 members live in an `appStoreSlice.ts` under that feature's own folder while remaining part of
-the one `AppState`. Three exist today:
+the one `AppState`. Four exist today:
 
 | Slice | Holds |
 |---|---|
 | `domino-inventory/appStoreSlice.ts` | the inventory catalog, its selection and its sort |
 | `history/appStoreSlice.ts` | `Operation`, the undo/redo stacks, the domino-editing undo barrier |
 | `dominoes/appStoreSlice.ts` | the swatch lock/shortcut, every domino-colour write, select-by-swatch, the Expand toggle, and domino editing mode's cancel snapshot |
+| `shape-select/appStoreSlice.ts` | which shape-select gesture is armed inside domino editing mode, and its hint text |
 
 What's left in `store.ts` is the state that isn't any one feature's: screen/menu/help, the
 DDObject hierarchy and its actions, domino editing mode, the properties dialog, and the camera
@@ -128,9 +129,10 @@ The shape, and why each part is what it is:
   `dominoes/` and `clipboard/` already have a `store.ts` of their own — `appStoreSlice.ts` says
   unambiguously "this feature's slice of the *app* store," as distinct from a store the feature
   owns outright.
-- A slice imports `AppState` **type-only**. `domino-inventory`'s needs nothing else from
-  `store.ts` and is therefore fully acyclic; the other two reach `dominoes/store.ts` and
-  `dominoes/colorMemory.ts`, which import `useStore` back, so they sit in a cycle.
+- A slice imports `AppState` **type-only**. `domino-inventory`'s and `shape-select`'s need
+  nothing else from `store.ts` and are therefore fully acyclic; the other two reach
+  `dominoes/store.ts` and `dominoes/colorMemory.ts`, which import `useStore` back, so they sit
+  in a cycle.
 
 **`store.ts` must remain the only importer of a slice's creator.** That cycle
 (`store.ts` → slice → `dominoes/*` → `store.ts`) is safe *only* while `store.ts` is the module
@@ -517,10 +519,12 @@ barrier rather than disabled.
 
 `designer/DominoModeTools.tsx` is that replacement group, dropped into `Toolbar.tsx`'s left
 `.group` the way `NewElementMenu` is — so `Toolbar.tsx` stays a layout file rather than growing a
-branch per mode-specific button. It holds **Select All**, **Invert** and the **Expand** toggle
-(below). Note the first two are raw `<button>`s while Expand is a `ToolButton`: `ToolButton`
-always emits `aria-pressed`, which is right for a toggle and wrong for a command — the same split
-`Toolbar.tsx` already makes between its zoom/undo buttons and the Select tool.
+branch per mode-specific button. It holds the selection-mode buttons (**Rectangle** plus one per
+registered shape — see *Shape select*), a `.separator`, then **Select All**, **Invert** and the
+**Expand** toggle (below). Note Select All and Invert are raw `<button>`s while the modes and
+Expand are `ToolButton`s: `ToolButton` always emits `aria-pressed`, which is right for a toggle or
+a mode and wrong for a command — the same split `Toolbar.tsx` already makes between its zoom/undo
+buttons and the Select tool.
 
 **Expand** (`dominoExpanded` in `dominoes/appStoreSlice.ts`) draws every domino oversized so
 tightly-spaced ones are easier to hit. Four things about it are deliberate:
@@ -550,55 +554,95 @@ tightly-spaced ones are easier to hit. Four things about it are deliberate:
   alongside `dominoColorLockedId`/`dominoColorShortcut`, which is the whole of "leaving the mode
   restores the real sizes."
 
-**The white mode outline is measured off the dominoes, not the element's `bounds()`** —
+**The mode outline is measured off the dominoes, not the element's `bounds()`** —
 `modeOutlineRect` puts it `MODE_OUTLINE_MARGIN` outside every domino's drawn footprint, expansion
 included, so the gap stays constant whether Expand is on or off. Drawing it on `bounds()` (as it
 originally was) both left it flush against the dominoes — a normalised field's boundary rectangle
 lands *exactly* on their outer edges, since `requiredSpan` is precisely their drawn span — and let
 expanded dominoes overrun it. The trade is that after a handle-drag the outline no longer coincides
 with the field's own box, which is correct: the two are different rectangles (*The field's anchor
-model*). **`resolveDrag` must keep using `fieldBounds.x/y`**, not this rect, to convert world
+model*). **`resolveDragToSelection` must keep using `fieldBounds.x/y`**, not this rect, to convert world
 coordinates into the parent-relative space `DominoData.positions` lives in — that origin is the
 element's `position`, and pointing it at the outline would offset every rubber-band selection by
 the margin.
 
+**Three colours carry meaning in the mode, and they are assigned as a set.** White means
+*dominoes being taken into the selection* — a selected domino's own outline
+(`dominoes/modeller.tsx`'s `SELECTED_OUTLINE_COLOR`) and a region gesture that is adding
+(`shape-select/preview.ts`'s `SELECT_PREVIEW_STYLE`). Dark means *being given back*: an Alt
+gesture's `DESELECT_PREVIEW_STYLE`. The frame round the edited DDObject, was originally light 
+grey purely but later changed to white because light-gray could not not be seen. This is an unfortunate
+collision with the selection color, but it can not be helped. No actual color (e.g. other than black, gray or white), because these colors need to be neutral so as not to bias the user's color selections as they
+color their domino DDObject.
+Meanwhile, a domino's *unselected* outline (`OUTLINE_COLOR`) is a fourth, darker grey, chosen to clearly
+outline the dominoes but to be less intrusive than a fully black outline.
+
 `designer/DominoEditTool.tsx` is the canvas tool owning everything once inside the mode:
-per-domino selection (click / Ctrl+click / drag-rubberband / Ctrl+drag / arrow-keys /
+per-domino selection (click / Ctrl+click / drag-rubberband / Ctrl+drag / Alt+drag / arrow-keys /
 Shift+arrow-keys, stored in `dominoes/selectionStore.ts`'s `DominoSelectionEntry` — `selected`,
-plus `anchor`/`active`/`baseSelection` for Shift+Arrow's Excel-style rectangle
-grow/shrink/cross-the-anchor behavior) and, layered on top of that, color assignment (below).
+plus `selectionFixedCornerIndex`/`selectionMovingCornerIndex`/`baseSelection` for Shift+Arrow's
+Excel-style rectangle grow/shrink/cross-the-fixed-corner behavior) and, layered on top of that,
+color assignment (below). **`recomputeFromRect` — Shift+Arrow — is the only reader of either
+corner index in the app**; every other site that touches them is merely seeding them for a
+Shift+Arrow that may follow, which is why they are named for that role rather than the generic
+`anchor`/`active` the spreadsheet convention would suggest. Note a plain (unshifted) arrow does
+not read them either: it rescans the whole selection for its extreme domino in the direction of
+travel, then reseeds both corners onto where it landed.
 Delete hides the selection and Backspace clears it to unpainted, both via `applyDominoSwatch`
 (see *Domino color editing*).
 
 **Selection commands that produce a whole set at once — select all, invert, and the swatch menus'
 four modes — live in `dominoes/appStoreSlice.ts`, not here**, since a toolbar button and a menu
 item both need them. They converge on one module-private `writeDominoSelection`, which is what
-guarantees they all seed `anchor`/`active` identically and all run `applyLockedSwatchIfAny`.
+guarantees they all seed both selection corners identically and all run `applyLockedSwatchIfAny`.
 **It finds the lowest index by iterating, never `Math.min(...selected)`** — spreading a `Set`
 creates one argument per element and V8 exhausts the call stack around 65k, so Select All on a
 250×250 field (62,500 dominoes) crashed. That is the reason the helper exists at all rather than
 the epilogue being copied four times.
 
+**Ctrl and Alt are one value, not two booleans.** `SelectionGestureMode`
+(`shape-select/base.ts`) is `"replace" | "add" | "remove"`, captured into `GestureSequenceState`
+at the sequence's first press and threaded to `selectionFrom`. Four decisions here:
+
+- **It is read once and then fixed** — tapping Alt part-way through a drag changes nothing. That
+  is what makes it unambiguous for a shape spanning several presses (the `live?.shape` branch
+  reuses the same `GestureSequenceState`, so pinning needed no new code), and it is also what
+  keeps `sameIndices` correct: a mode that could flip mid-drag would have to invalidate that
+  redraw guard, since the same covered indices would no longer imply the same result.
+- **Alt is tested before Ctrl**, so both held gives `"remove"`. They ask for opposite things, and
+  the preview colour has to agree with whichever wins.
+- **Alt is drag-only.** `onPointerUp`'s non-drag path has a deliberately *empty* `"remove"` branch
+  ahead of the three click branches. Letting it fall through would replace the whole selection
+  with the single domino under the cursor — the opposite of the ask. It catches a click on empty
+  space too, which would otherwise clear the selection. The shape path needs no equivalent: a
+  click while a shape is armed is a zero-radius circle, and removing nothing changes nothing.
+- **A remove does not change the two selection corners.** `nearestToPoint` picks from `indices`,
+  which in a remove are exactly the dominoes that just *left* the selection. It also sets
+  `baseSelection` to the surviving set rather than to `before.selected`, or the next Shift+Arrow
+  would refill its rectangle from the pre-gesture selection and resurrect what was just removed.
+  This is the part of the feature likeliest to be broken by a later "simplification".
+
 **Two rectangle predicates live side by side in that file and must not be merged.** A
 rubber-band drag uses `touchedIndices` (footprint *intersects* the box, so a box the user can
 see cutting a row takes that row); Shift+Arrow's `recomputeFromRect` uses `enclosedIndices`
 (full containment). The difference is not a preference: Shift+Arrow's rect comes from
-`rectFromIndices`, whose edges land flush on the anchor/active dominoes' own boundaries, so an
+`rectFromIndices`, whose edges land flush on the two corner dominoes' own boundaries, so an
 intersection test there would let neighbours on the far side of a tight pitch bleed in.
 
 **A rubber-band drag previews live**, replacing the stored selection on every pointermove
-(`resolveDrag`, shared with the pointerup commit so the two can't disagree). Three consequences
+(`resolveDragToSelection`, shared with the pointerup commit so the two can't disagree). Three consequences
 are load-bearing:
 
-- **`resolveDrag` must stay a pure function of the gesture, never of the stored selection** —
+- **`resolveDragToSelection` must stay a pure function of the gesture, never of the stored selection** —
   after the first frame the store holds this same drag's own preview, so Ctrl+drag's union
-  builds on `GestureState.before`, the entry captured at pointerdown. Holding that reference is
+  builds on `GestureSequenceState.before`, the entry captured at pointerdown. Holding that reference is
   a sound snapshot only because every write path calls `replace` with a brand-new entry;
   nothing mutates one in place.
 - **`applyLockedColorIfAny` runs at pointerup only.** Calling it per frame would paint, and push
   an undo entry, on every frame of the drag.
 - **Escape mid-drag restores `before`** — a preview that wrote to the store has to be undone by
-  `cancelDrag`, which used to have nothing to put back.
+  `cancelSequence`, which used to have nothing to put back. It covers shape gestures too, which
+  preview identically (see *Shape select*).
 
 `sameIndices` skips the store write when a frame swept nothing new; the modeller's redraw is
 per-domino matrix/colour/attribute work, so that integer compare is orders cheaper than the
@@ -608,6 +652,229 @@ rather than through R3F's synthetic pointer-event system, because that system on
 objects with their own pointer-event props — and the mesh deliberately has none, so
 `SelectionTool`'s DDObject-level pick planes underneath it keep receiving clicks (see *Domino
 data* above).
+
+### Shape select
+
+`shape-select/` holds the mode's non-rectangular region gestures — five today: `circle`,
+`circleByDiameter`, `oval`, `triangle` and `angledRectangle`. It follows the `object-types/` layout
+exactly, per the *Guiding principle*:
+`base.ts` (the `ShapeSelectDefinition<TState>` contract plus the `AnyShapeSelectDefinition`
+erasure), `registry.ts` (the `SHAPE_SELECTS` map and its accessors), `dispatcher.ts` (the shared
+algorithm every variant's output flows through), and one folder per variant holding
+`object-model.ts` (state shape + pure maths + the definition) and `preview.tsx` (its R3F nodes).
+**Adding a shape is a new folder plus one line in `SHAPE_SELECTS`** — the toolbar, the hint bar
+and `DominoEditTool` are all driven off the map and none of them names a variant.
+
+**Oval is the worked example of a multi-press sequence, and it landed without one line changing in
+`DominoEditTool.tsx`, `dispatcher.ts` or `base.ts`.** That is the claim the whole subsystem was
+built to make good on, so it is worth naming the three things that made it true, since a later
+refactor could break any of them without an obvious symptom: `onPointerDown`'s `live?.shape` branch
+routes a press into a sequence that is already open rather than starting a new one (which is also
+what pins Ctrl/Alt and `before` to the *first* press); `onPointerMove` is deliberately not gated on
+`dragging`, so a variant keeps receiving moves with the button **up**; and `runNextStep` clears the
+gesture ref only on `"done"`, so a `"release"` returning `"active"` leaves the sequence alive.
+Oval's own gesture is press at one **end** → drag to the other end (length and angle) → release →
+move (width) → press.
+
+**Snapping both ends of a drag is about getting the angle exact — not about symmetry.** This is the
+single most reversible thing in the subsystem, because the symmetry story sounds more plausible and
+is wrong. With both ends on the lattice the span between them is a whole number of half-pitches on
+each axis, so a drag the user meant to be horizontal lands on *exactly* horizontal and one meant to
+be vertical on *exactly* vertical. Before it, axis-aligned ovals came out perceptibly canted and
+looked broken; that is the bug two-end snapping fixed.
+
+It costs symmetry, and knowingly. A two-end shape's centre is only *derived*, as the midpoint, and
+since snap points sit half a pitch apart that midpoint lands on a snap point only when the two ends
+are an even number of half-pitches apart. So `oval` and `circleByDiameter` are not always symmetric
+about the domino centres, where `circle` — which snaps its centre — always is. It is also why the
+two-end shapes' `controlPoints` return their ends rather than their centre, which can now sit in the
+gap between two dominoes.
+
+**That is what makes the two circle variants both worth having**, rather than one being a
+convenience: `circle` snaps the centre and guarantees symmetry at every radius; `circleByDiameter`
+snaps both ends and guarantees the circle spans exactly between two chosen dominoes. Neither
+guarantee implies the other. `circleByDiameter` reuses `circle`'s `CircleSelectState` and
+`CircleSelectPreview` outright — a deliberate exception to one-folder-per-variant, since the two are
+the *same shape* drawn two ways and a copied containment test would be a second definition of
+"circle" with nothing keeping the two in step. Don't generalise the exception: shapes that merely
+resemble each other should still each own their maths.
+
+**Every shape snaps points to improve useability** An earlier version of this
+file claimed the two polygons deliberately snapped nothing, on the reasoning that a triangle has no
+orientation worth squaring up; using them disproved it, and the rule is simply the oval's rule
+applied (mostly) everywhere. `triangle` snaps all three corners and `angledRectangle` both ends of its drag
+line. `circle` (by radius) is the exception and stays as it is: it snaps its *centre* instead, which is what
+buys its symmetry, and its rim is free.
+
+The split is between points that *place* a shape and points that only *size* one. The oval's width
+click and the angled rectangle's closing click set sizes, so they stay free; the triangle's third
+click places a corner, so it snaps. A triangle with one level side and two ragged ones would look
+worse than one with none.
+
+**`SELECTION_MARGIN_MM` (`base.ts`) exists because snapping creates its own artefact.** A snapped
+edge lands exactly on a domino's centre, so that domino is precisely on the boundary and is taken
+while its neighbours — which the shape may cover 49.9% of — are not, leaving one domino sticking out
+of a clean edge. Every shape that snaps carries the margin; `circle` (by radius) again does not, since its
+boundary is never snapped to anything. Two rules about it:
+
+- **It goes in `contains`, never in the drawn shape.** A millimetre is small enough to keep a snapped edge visibly passing through
+  the dominoes the user picked.
+- **Each variant applies it once, where its state is built, never per domino.** The oval folds it
+  into its stored inverses; `circleByDiameter` into a precomputed `selectRadiusSquared` (which is
+  why its state extends `CircleSelectState` rather than being it); `angledRectangle` into resolved
+  `alongMin`/`alongMax` ranges; and `triangle` into a per-edge threshold in `edgeCross`'s own units,
+  which is what avoids a division per domino per edge — `edgeCross` returns edge length times
+  distance, so "at least 1mm outside" becomes "at least `-1 * edgeLength`".
+
+**`polygonPreview.tsx` draws the shapes that aren't round** — `triangle` passes three corners,
+`angledRectangle` four — filling any convex polygon as a triangle fan plus a `lineLoop` outline.
+Two things there are load-bearing:
+
+- **`side={DoubleSide}` on the fill.** The order a polygon's corners are listed in decides which
+  face the GPU treats as the front, and only the front is drawn by default. Dragging a triangle's
+  third corner across the line of the first two reverses that order, so without this the fill
+  silently vanishes for half the triangles a user can draw. Circle and oval never hit it because
+  `CircleGeometry` always winds the same way.
+- **It rebuilds its geometry per frame, deliberately unlike `UNIT_DISC`.** Three or four vertices
+  is nothing; a 64-segment disc rebuilt per pointermove would not be.
+
+**A degenerate first stage is the idiom both polygons use, and neither needs a stage check for it.**
+Each spends its opening drag with two points coincident — the triangle's third corner still on its
+second, the rectangle's width still zero. A polygon with no area selects nothing and draws no fill,
+and its outline collapses to exactly the single line that stage is meant to show. So `contains`
+needs no guard and `Preview` needs no branch; the maths already does it. The same reasoning is why
+the triangle keeps a `stage` field *only* for `hint`.
+
+Two traps oval hit that the next multi-step shape will hit too:
+
+- **The release that ends one stage must not read the next stage's value from that same point.**
+  Oval's width is the cursor's sideways distance from its long axis, and at the moment of release
+  the cursor is *on* that axis — so reading it there collapses the oval to a flat line the instant
+  the button comes up. It keeps the placeholder width and only switches stage.
+- **Closing on the press, not the release.** The trailing release then arrives with the sequence
+  already over, which `onPointerUp`'s existing `if (!g) return` absorbs. Closing on the release
+  instead would leave the shape mutating between the user's press and their release.
+
+Decisions a fresh session would plausibly reverse:
+
+- **The rectangle rubber band is deliberately not a registered shape**, and never will be. It is
+  the mode's *default* gesture, active whenever nothing is armed, and it stays in
+  `DominoEditTool.tsx` where it always was. Its toolbar button means "arm nothing"; registering
+  it would make `dominoShapeSelectId === null` and `=== "rectangle"` two encodings of one state.
+- **`dominoShapeSelectId` is not a `ToolId`.** `activeTool` is a single slot already held by
+  `"editDominoes"` for the whole mode, and seven files gate on that exact value. This is a
+  sub-mode *within* it, so it lives in `shape-select/appStoreSlice.ts` and is cleared by
+  `exitDominoEditing` alongside `dominoExpanded` — view state, never document state, never
+  undoable.
+- **Parent-relative mm is the only space a variant sees.** `DominoEditTool` converts world →
+  parent-relative once (`toLocal`) and re-applies the same offset once, as a
+  `<group position={[fieldBounds.x, fieldBounds.y, 0]}>` around the variant's `Preview`. That
+  makes the drawn shape and the tested shape *the same numbers* rather than two computations
+  that agree; the alternative is each variant subtracting `fieldBounds` itself and one of them
+  eventually getting it wrong. (The rectangle band still keeps world and local copies of its
+  rect. Fine for one hard-coded shape, not a pattern to repeat five times.)
+- **`contains` is a midpoint test, not a footprint one** — and therefore
+  `resolveDominoExpansion` is correctly absent from this whole subsystem. The goal is a selection
+  that approximates the shape as closely as possible; full-enclosure or any-touch tests both give
+  unnecessarily jagged edges. Expand changes how big a domino is *drawn*, not where its midpoint
+  is, so a shape takes the same dominoes with it on or off. The rectangle band's predicates do
+  consult expansion, because they test against a drawn footprint. Don't unify the two.
+- **Snapping is declared by the DDObject and *applied by the variant*.** A type with a grid
+  declares `snapShapePoint(ddObject, x, y)` (`object-types/base.ts`); omitting it is the whole of
+  "this type has no grid", resolved through `getSnapShapePoint`. `DominoEditTool` falls that back
+  to `NO_SNAP` and passes it into `nextStep` as a third argument, so a variant calls it
+  unconditionally — the same branch-free reasoning as `dominoes/expansion.ts`'s zeroed record.
+  It is deliberately **not** pre-applied to `ShapeSelectEvent`'s coordinates: *which* points snap
+  is shape-specific, and circle snaps only its centre while letting the rim stay continuous. Two
+  things not to reverse: the field's lattice is **half-pitch** (a point on every domino centre
+  *and* every midpoint between them, so a circle can sit symmetrically on a domino or on a gap),
+  and it is **unclamped** to the field's own rows/columns, because a big circle whose arc merely
+  clips the field is centred well outside it and clamping would drag it back onto the boundary.
+  The rectangle band is never snapped — its edges already mean what the user drew.
+  *Why this fixes lopsided circles:* the centre used to land wherever the cursor was, at a
+  different phase relative to the lattice on each side, so the boundary cut a different count left
+  and right. On a lattice point the domino midpoints are symmetric about the centre, which makes
+  the counts match at **every** radius — which is why snapping the centre alone is sufficient and
+  the radius needs no quantising.
+- **A click behaves the same whatever is armed, and the tool enforces that — not the variants.**
+  `DominoEditTool` does not start a shape on the press: it waits until the pointer has travelled
+  `DRAG_THRESHOLD_MM`, then feeds the variant a `"press"` whose `origin` is still where the user
+  actually pressed. So a press that never moves never opens a sequence, falls through to the same
+  plain click / Ctrl+click branches the rectangle band uses, and selects the domino under it —
+  followable by the arrow keys like any other selection. The `g.shape` test in `onPointerUp` is
+  what routes it there.
+
+  This reverses an earlier decision, deliberately. Preserving single-domino clicking used to be
+  each variant's own call via `"ignore"`, and none of them took it, so clicking did nothing useful
+  whenever anything was armed. A user cannot be expected to remember which shapes allow a click, so
+  the rule belongs in one place. `"ignore"` remains in the contract for a variant that wants to
+  decline a *drag*; nothing does today.
+- **Arming is sticky**, and **Escape is an escalating ladder** of four rungs: cancel the sequence
+  in progress → clear the selection → disarm back to the rectangle band → release the lock and the
+  shortcut buffer. Each press makes exactly one visible change, and `"done"` never disarms.
+  **The order of the middle two is the whole rule.** Testing the selection *before* the armed shape
+  is what makes them separate presses; swapping them collapses both back into one, which is what
+  this replaced — so from "circle armed with a selection" it is press one to clear and press two to
+  disarm. **Escape and the Rectangle button still deliberately differ**: the button is a mode change
+  and keeps the selection, Escape is a back-out and ends with it gone; that now takes two presses
+  rather than one, but the distinction is unchanged. A locked colour survives every rung above it on
+  purpose — it has its own badge and its own way out, so neither clearing a selection nor disarming
+  a shape may silently unlock.
+- **One catch plane, one gesture-sequence ref.** A second tool component would need its own catch
+  plane; whichever sat nearer the camera would swallow `pointerdown` for both, and they would
+  hold independent state while `replace`ing the same selection entry. That one plane is
+  **always `CATCH_SIZE`**, far past the build plane, so a gesture can be *started* off-plane as
+  well as dragged off it — which is what makes a large circle whose arc merely clips the field
+  usable, its centre being nowhere near the plane. Two intended consequences: a click far off the
+  plane clears the selection exactly as an empty click on it does, and `DesignerCanvas`'s
+  `onPointerMissed` becomes unreachable in the mode (it only ever acted for `"select"`, so it was
+  already a no-op here).
+- **`nextStep` must return a fresh state object.** The dispatcher stores it in React state to
+  trigger the preview repaint, and React compares by identity — a mutated-in-place object looks
+  unchanged and nothing redraws.
+- **`applyLockedColorIfAny` at `done` only**, never per `active`. Restated from the rubber band's
+  version of the rule because a multi-click variant has many non-committing steps.
+- **`GestureSequenceState`/`ShapeGestureSequence`, not `Gesture`** — a sequence may span several
+  presses and releases before the variant calls itself finished.
+- **`ShapeSelectEvent` carries no click count.** No shape needs a double click to be distinct
+  from two single clicks; a multi-click variant closes on something meaningful instead (clicking
+  its first vertex again). If one ever does need a count it cannot come from
+  `nativeEvent.detail`, which the Pointer Events spec pins at 0 for pointerdown/pointerup.
+
+`shape-select/preview.ts` holds the drag-preview layer, read by both the rectangle band and every
+variant's `Preview` so region gestures can't drift apart visually — the same
+one-answer-both-consumers-read idiom as `dominoes/expansion.ts`. It splits in two on purpose: the
+z/renderOrder constants are *layering* and never vary, while `ShapePreviewStyle` is *colour* and
+comes in two instances resolved by `previewStyleFor(mode)` — white while a gesture is selecting,
+dark while Alt is deselecting (see the colour scheme under *Domino editing mode*). The style
+reaches a variant as a `Preview` prop rather than being read inside the component, so the contract
+in `base.ts` names it and a variant that hard-codes a colour is visibly wrong instead of quietly
+showing the selecting colours during an Alt drag. It also holds `UNIT_DISC`/`UNIT_RIM`, a radius-1
+disc and matching ring built once for the app and scaled per use — circle scales them evenly, oval
+scales x and y differently to squash the disc into an ellipse, and any later round-ish shape wants
+the same two. They were private to `circle/preview.tsx` until oval needed them; the alternative was
+duplicating 64 vertices and the long comment explaining why they are module constants. Note a
+variant's `Preview` draws only the region being swept out; domino outlines are decided per domino
+in `dominoes/modeller.tsx` and nothing here touches them. `base.ts` and `preview.ts` consequently
+name each other — `base` for
+`ShapePreviewStyle`, `preview` for `SelectionGestureMode` — but both are `import type`, which
+TypeScript erases entirely, so there is no cycle in the built JavaScript at all and neither file
+needs to enter the other. Keep both imports type-only.
+`dispatcher.ts`'s `selectionFrom` is the other half of that: the Ctrl union onto the
+pre-sequence snapshot and the `nearestToPoint` corner seeding, shared verbatim, which is
+what shrank `resolveDragToSelection` rather than duplicating it. `nearestToPoint` exists because a gesture
+defines itself by *points* — a band's press/release, a circle's centre/rim, none of which need
+land on a domino — while the corners must be domino *indices*; snapping against the gesture's own
+result, never all dominoes, is what keeps both corners inside the set just selected.
+
+The toolbar shows the commands first and the modes inline after them (`[Select All] [Invert]
+[Expand]` │ `[Rectangle] [Circle] [Circle⌀] [Oval] [Triangle] [AngledRect]`, split by
+`Toolbar.module.css`'s `.separator`). **The modes go last because that is the group that grows** —
+every shape registered lengthens it, and anything after it would slide along each time. At six or
+seven a `NewElementMenu`-style popup becomes right; the buttons are already registry-driven and confined to
+`DominoModeTools.tsx`, so that swap is one file. The part to plan for is that a popup hides
+*which* mode is armed, which matters more here than for New — an armed shape changes what every
+drag does — so its trigger should render the armed mode's own icon.
 
 ### Domino color editing
 
@@ -656,8 +923,10 @@ not baked-in RGB):
   fires the lock — not a special case, just how the browser sequences the two events. Clicking a
   *different* swatch while one is locked unlocks it (then applies the new color as an ordinary
   click); clicking the already-locked swatch is just a no-op re-apply. Escape clears the
-  selection, the lock, and any in-progress shortcut buffer all at once; so does exiting the mode.
-  Only one color locks at a time. `ModeHintBar` swaps its sentence while locked.
+  selection, the lock, and any in-progress shortcut buffer all at once — though only as the
+  *last* rung of its ladder, below cancelling a gesture and disarming a shape (see *Shape
+  select*); so does exiting the mode. Only one color locks at a time. `ModeHintBar` swaps its
+  sentence while locked, unless a shape is armed, which outranks it.
 
 Clicking a swatch with nothing selected is a documented no-op — nothing to apply to.
 
@@ -860,6 +1129,19 @@ Deliberate decisions a fresh session could otherwise reverse:
   the ray. During a drag a huge transparent catch-plane is mounted so pointer move/up keep arriving
   when the cursor leaves the grabbed handle — the same role the placement tool's footprint plane
   plays.
+- **A hover cursor must be released when its mesh disappears, not only on `pointerout`.** This
+  file is the only one in the app that writes a cursor imperatively (`gl.domElement.style.cursor`),
+  set by the overlay fill (`move`), the eight handles (`*-resize`) and each `PickPlane`
+  (`pointer`). R3F derives `pointerout` by diffing raycast hits between pointer events, so an
+  object **removed from the scene while the pointer is over it never fires one** — and Delete is
+  the worst case, arriving from a `keydown` with no pointer event at all. The cursor was then
+  stranded on the canvas indefinitely, and because an inline style on the `<canvas>` outranks the
+  inherited `cursor: crosshair` from `.canvasAreaPlacing`, the stale hand survived even the next
+  placement drag. The fix is `cursorOwnerRef` — a token recording *which* mesh holds the cursor —
+  plus one effect on `armed`/`selected`/`childIds` that releases it when that owner no longer
+  exists. The token is load-bearing: without it the release would also clear a cursor a
+  different, still-hovered mesh had since set. Don't replace it with an unmount cleanup on
+  `PickPlane`; that fires for every plane that unmounts, hovered or not.
 
 ### Undo/redo
 
@@ -1023,10 +1305,14 @@ otherwise "correct" backwards:
     The anchor is the field's original creation corner and moves *only* under a whole-field
     translate — never under a resize. `originRow`/`originCol` count how many rows/columns
     currently sit *before* that anchor, and go negative once the bottom/left edges shrink past
-    it. The grid origin is therefore `anchor - origin * pitch`, computed identically in
-    `normalizeField` and in `modeller.tsx`'s `layoutField`. This is what lets a resize from
-    *any* edge add or remove rows and columns while every existing domino stays exactly where
-    it is — and, with `dominoCellId` keyed off the same anchor-relative coordinates, keeps
+    it. The grid origin is therefore `anchor - origin * pitch`, and it has exactly one
+    definition — **`gridOriginWorld`**, with **`gridBaseLocal`** layering on the half-extents and
+    the `position` subtraction to give the row-0/col-0 domino's centre in parent-relative mm.
+    `normalizeField` re-hugs the box to the first, `modeller.tsx`'s `layoutField` places every
+    domino from the second, and `snapShapePoint` quantises onto the second; hand-copying the
+    expression a fourth time is how a resize starts moving dominoes. This is what lets a resize
+    from *any* edge add or remove rows and columns while every existing domino stays exactly
+    where it is — and, with `dominoCellId` keyed off the same anchor-relative coordinates, keeps
     their colors attached through it.
   - **`setBounds` must stay a pure function of `(bounds, anchor)`.** Deriving the counts
     incrementally — from the field's own live `rows`/`originCol` as the previous frame left
@@ -1080,16 +1366,75 @@ otherwise "correct" backwards:
   window-level handlers behind it (`DominoEditTool`'s Delete and colour shortcuts,
   `DesignerScreen`'s Ctrl chords) can't keep editing the thing being asked about.
 
-## Code style
+## Code style0
 
 - Co-located CSS Modules: `Component.tsx` + `Component.module.css`, imported as `styles`.
 - Shared design tokens are CSS custom properties (`--color-chrome`, `--color-text-dim`,
   `--color-accent`, `--sidebar-width`, ...) defined in `src/global.css`. Use them rather than
   hard-coded colors so new UI matches the existing chrome.
-- Icons come from `@remixicon/react` as React components (`RiSquareLine`, `RiGridFill`), passed
-  around typed as `RemixiconComponentType` — not string names.
+- Icons are React components passed around typed as `RemixiconComponentType` — not string names.
+  Most come from `@remixicon/react` (`RiSquareLine`, `RiGridFill`); the rest are hand-drawn, and
+  the two are interchangeable everywhere by design (see *Hand-drawn icons* below).
 - Comments in this codebase explain *why* and flag interim decisions (e.g. "Stub for v1").
   Match that density rather than narrating what the code plainly does.
+
+### Hand-drawn icons
+
+Remixicon has no glyph for most of the shape-select gestures, and a drawing of the gesture itself
+turned out to say more than any stock icon anyway. `src/icons/` holds the ones drawn by hand
+(PowerPoint → *Save as Picture* → SVG, sources kept in `src/assets/`).
+
+- **`createSvgIcon(Svg, viewBox)`** adapts what `vite-plugin-svgr` produces — a component taking
+  raw SVG attributes — into the `size`/`color` contract the app passes icons around by. It puts
+  `fill={color}` on the `<svg>` and nothing on the paths, which is the whole mechanism: `fill` is
+  inherited, so an icon follows a button's four colour states exactly as a Remixicon one does. An
+  exported path carrying its own `fill` would freeze one colour and stop matching its neighbours.
+- **`viewBox` is required, and `paddedViewBox(width, height)` is how to supply it.** PowerPoint
+  writes `width`/`height` and no viewBox, which pins a drawing to one size; nothing upstream fills
+  that in, because the svgr plugin runs no SVGO (see `vite.config.ts`). The padding matters too — a
+  drawing filling its own box reads visibly heavier than a Remixicon glyph, which leaves a margin.
+- **`src/icons/index.tsx` is the one barrel file in `src`.** It earns the exception because icons
+  import nothing from the app, so it cannot join an import cycle. Not a licence for barrels
+  elsewhere.
+- **The two numbers passed to `paddedViewBox` must match the `width`/`height` on the first line of
+  the `.svg`, and nothing checks it.** TypeScript cannot see inside the file and the build passes
+  either way; the only symptom is an icon sitting slightly off-centre or at the wrong size. This
+  has already drifted once. Re-check line 1 after every re-export.
+- **Ids are the hazard to watch as more icons land.** PowerPoint emits them for gradients, picture
+  fills, shadows and clipping, numbered from zero *within each file* — and an inlined icon's ids
+  belong to the whole page. Two drawings both carrying `clip0` collide, and one gets clipped by the
+  other's rectangle. No icon has an id today. The fix, when one turns up, is recorded in
+  `vite.config.ts`; note it is SVGO's `prefixIds` that does the work, not the default preset.
+
+The three rules below apply to **code and comments you write or change from now on**. They are
+not a licence to go reformat what is already here — existing names and comments are only worth
+touching when you are editing that code anyway.
+
+- **Write comments in plain language, and say things directly.** Prefer "if there is no snap
+  function, the point is returned unchanged, so shapes can just call it without checking" to
+  "resolves the undefined case to an identity, so a variant calls the result unconditionally".
+  Two habits to avoid. First, maths and computer-science jargon — *identity*, *idempotent*,
+  *contravariant*, *erasure*, *monomorphic* — where an ordinary sentence carries the same
+  meaning; where such a word genuinely is the clearest one, explain it in the same sentence the
+  first time it appears in a file. Second, indirection that makes the reader hold something in
+  their head: "calls the result" forces them to work out that the result is a function before
+  the sentence means anything, where "calls the snap function" just says it.
+- **Assume the reader is new to React, react-three-fiber and three.js, and has never written
+  GPU code.** This is the actual audience for this codebase's comments and for this file. Say
+  what a piece of machinery *is* before saying why it is used: a `<group>` is a three.js node
+  that applies its position to everything nested inside it; an *instanced attribute* is one
+  value per copy of a repeated mesh, uploaded as an array the GPU indexes by copy number; a
+  *uniform* is a single value shared by every pixel a shader draws in one pass, as opposed to
+  one that varies per pixel. A term like `onBeforeCompile`, `depthTest`, `polygonOffset` or
+  `raycast` deserves a clause saying what it does, not just that it is needed. Where a comment
+  would balloon, one sentence naming the concept plus a pointer to the section of this file that
+  explains it is enough.
+- **Name things in full.** `selectionGestureEvent` over `event`, `snapShapePoint` over `snap`,
+  `dominoIndexUnderCursor` over `idx`. A longer name that removes a guess is worth the
+  characters. Short names are fine only where the line itself already says what the thing is —
+  the `e` of a one-line JSX event handler, the `i` of a `for` loop over dominoes, the `p` of a
+  two-line point helper. Anything that lives longer than a few lines, crosses a function
+  boundary, or appears in an exported signature gets the full name.
 - **DDObject naming.** Any identifier — variable, parameter, prop, type, or function — that
   holds or means a DDObject (as opposed to an incidental JS object, e.g. three.js `Object3D`
   or a plain object literal) is named with the `ddObject`/`DDObject` convention: `ddObject` /
@@ -1100,3 +1445,4 @@ otherwise "correct" backwards:
   aliases carry the suffix too (`BuildPlaneDDObject`, `FieldElementDDObject`). Identifiers
   already unambiguous through an `Id`-typed-as-`DDObjectId` suffix (`rootId`, `parentId`) are
   exempt — don't force those to stutter.
+- **Avoid use of the word 'seed' and its variants.** To the owner of the project, "seed" should be reserved for generative algorithms which grow into large complexity from a small seed. Instead of "seed" or "reseed" consider alternative, simpler and more direct words such as "change", "initialize", "set", or "reset".

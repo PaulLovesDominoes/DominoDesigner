@@ -10,20 +10,28 @@ import type { DDObjectId } from "../object-types/base";
  * a whole selection-defining gesture replaces wholesale (see DominoEditTool.tsx)
  * rather than something mutated column-by-column.
  *
- * anchor/active/baseSelection are domino *indices* and physical positions, never
- * grid row/column — the dominoes subsystem knows nothing about grids (see
- * object-model.ts's header comment), so keeping selection spatial means it needs
- * no rework when a future domino-producing type isn't a grid at all.
+ * The two corner indices and baseSelection are domino *indices* and physical
+ * positions, never grid row/column — the dominoes subsystem knows nothing about
+ * grids (see object-model.ts's header comment), so keeping selection spatial
+ * means it needs no rework when a future domino-producing type isn't a grid at
+ * all.
+ *
+ * The two corners exist for exactly one consumer: DominoEditTool's runShiftArrow,
+ * which walks the moving corner one domino per press and refills the selection
+ * from the rectangle spanning the two. Every other write site merely seeds them
+ * so that a *following* Shift+Arrow has somewhere to extend from — nothing else
+ * in the mode (colouring, hiding, the clipboard, the swatch menus) reads them,
+ * so they are not "the current domino" in any general sense.
  */
 export interface DominoSelectionEntry {
   /** The live, displayed set — what actually gets a white outline. */
   selected: Set<number>;
   /** Preserved while Shift+Arrow grows/shrinks a rectangle on top of it. */
   baseSelection: Set<number>;
-  /** Domino index — the rectangle's fixed corner for Shift+Arrow. */
-  anchor: number;
-  /** Domino index — the rectangle's corner Shift+Arrow moves. */
-  active: number;
+  /** Domino index — the corner Shift+Arrow's rectangle pivots around. */
+  selectionFixedCornerIndex: number;
+  /** Domino index — the corner each Shift+Arrow press steps to a neighbour. */
+  selectionMovingCornerIndex: number;
 }
 
 interface DominoSelectionStore {

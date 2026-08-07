@@ -4,7 +4,7 @@ import { useShallow } from "zustand/shallow";
 import { EdgesGeometry, PlaneGeometry, type Object3D, type Scene, type Raycaster } from "three";
 
 import { useStore } from "../store";
-import { getDDObjectBounds } from "../object-types/registry";
+import { getDDObjectBounds, getSnapShapePoint } from "../object-types/registry";
 import type { DDObjectBounds, DDObjectId, DominoExpansion } from "../object-types/base";
 import { DOMINO_SIZE } from "../dimensions";
 import { useDominoDataStore } from "../dominoes/store";
@@ -22,16 +22,61 @@ import {
 } from "../dominoes/selectionStore";
 import { makeDominoColorClipboardHandlers } from "../dominoes/clipboardHandlers";
 import { useCutCopyHandler, usePasteHandler } from "../clipboard/useClipboardHandlers";
+import { getShapeSelect } from "../shape-select/registry";
+import { indicesInShape, selectionFrom } from "../shape-select/dispatcher";
+import {
+  NO_SNAP,
+  type SelectionGestureMode,
+  type ShapeGestureSequence,
+  type ShapeSelectEvent,
+  type SnapShapePoint,
+} from "../shape-select/base";
+import {
+  PREVIEW_BORDER_ORDER,
+  PREVIEW_BORDER_Z,
+  PREVIEW_FILL_Z,
+  PREVIEW_ORDER,
+  previewStyleFor,
+} from "../shape-select/preview";
 
 // Z layering, lowest first — same convention as SelectionTool.tsx. The catch
 // plane sits at the same height as other pick planes ("just above the build
-// plane").
+// plane"). The drag preview's own layer lives in shape-select/preview.ts, since
+// the rectangle band below and every shape variant have to agree on it.
 const CATCH_Z = 0.5;
 const OUTLINE_Z = 1;
-const DRAG_FILL_Z = 1.5;
-const DRAG_BORDER_Z = 1.51;
-const DRAG_ORDER = 20;
-const DRAG_BORDER_ORDER = 21;
+
+// The frame drawn round the DDObject whose dominoes are being edited. Original white,
+// then changed to grey (to not conflict with the region selection color), but now
+// changed back to white because "grey" basically disappeared.
+//
+// Deliberately it should not be any other color (other than white, black or gray)
+// so as to stay as neutral as possible
+// in terms of the user's artistic intentions for the colors they are creating in the 
+// domoino element.
+//
+const MODE_OUTLINE_COLOR = "#FFFFFF";
+
+// The catch plane's size — far past the build plane, always, so a selection
+// gesture can be *started* anywhere as well as dragged anywhere. Ending
+// off-plane matters because a drag that loses pointermove/pointerup is stranded
+// half-finished; starting off-plane matters most for shape select, where the
+// centre of a large circle whose arc just clips the field naturally falls well
+// outside it. Same size as SelectionTool.tsx's mid-drag catch plane.
+//
+// Two consequences, both intended. A click far off the build plane now clears
+// the selection, exactly as an empty click on it does — previously such a click
+// fell through to DesignerCanvas's onPointerMissed, which only acts for the
+// Select tool and so did nothing at all inside this mode. And onPointerMissed is
+// now unreachable while the mode is on, which for the same reason changes
+// nothing.
+//
+// Safe only because this plane exists solely inside domino editing mode
+// (see the early return below), where SelectionTool and CreateByRegionTool are
+// both disarmed by the activeTool === "editDominoes" check. OrbitControls is
+// unaffected either way: it listens on gl.domElement at the DOM level, so an R3F
+// mesh handler's stopPropagation never reaches it.
+const CATCH_SIZE = 1_000_000;
 
 // Clear space (mm) between the mode outline and the outermost dominoes it
 // surrounds. Measured from the dominoes rather than the element's own bounds so
@@ -136,7 +181,7 @@ function enclosedIndices(data: DominoData, rect: Rect, expansion: DominoExpansio
  * see cutting across a row is expected to take that row.
  *
  * Deliberately not a replacement for enclosedIndices above: Shift+Arrow's rect
- * comes from rectFromIndices, whose edges land flush on the anchor/active
+ * comes from rectFromIndices, whose edges land flush on the two corner
  * dominoes' own boundaries, so an intersection test there would let neighbours
  * on the far side of a tight pitch bleed in.
  */
@@ -181,38 +226,30 @@ function sameIndices(a: number[], b: number[]): boolean {
   return true;
 }
 
-/** The index among `candidates` nearest physical point (cx, cy). */
-function nearestToPoint(data: DominoData, candidates: number[], cx: number, cy: number): number {
-  let best = candidates[0];
-  let bestDist = Infinity;
-  for (const i of candidates) {
-    const dx = data.positions[3 * i] - cx;
-    const dy = data.positions[3 * i + 1] - cy;
-    const dist = dx * dx + dy * dy;
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = i;
-    }
-  }
-  return best;
-}
-
 /**
  * Shift+Arrow's live selection: everything preserved from before the
- * Shift+Arrow sequence began, unioned with the rectangle spanning anchor/active
- * — recomputed fresh on every press, never accumulated, so the rectangle can
- * shrink back down as freely as it grows.
+ * Shift+Arrow sequence began, unioned with the rectangle spanning the two
+ * selection corners — recomputed fresh on every press, never accumulated, so
+ * the rectangle can shrink back down as freely as it grows.
+ *
+ * This is the only reader of either corner index in the app; every other site
+ * that touches them only seeds them for a Shift+Arrow that may follow.
  */
 function recomputeFromRect(
   data: DominoData,
   baseSelection: Set<number>,
-  anchor: number,
-  active: number,
+  selectionFixedCornerIndex: number,
+  selectionMovingCornerIndex: number,
   expansion: DominoExpansion,
 ): Set<number> {
+  const rect = rectFromIndices(
+    data,
+    selectionFixedCornerIndex,
+    selectionMovingCornerIndex,
+    expansion,
+  );
   const selected = new Set(baseSelection);
-  for (const i of enclosedIndices(data, rectFromIndices(data, anchor, active, expansion), expansion))
-    selected.add(i);
+  for (const i of enclosedIndices(data, rect, expansion)) selected.add(i);
   return selected;
 }
 
@@ -267,13 +304,27 @@ function applyLockedColorIfAny() {
   useStore.getState().applyLockedSwatchIfAny();
 }
 
-interface GestureState {
+/**
+ * One in-progress selection gesture — "sequence" rather than "gesture" because
+ * a shape-select variant may span several presses and releases before it calls
+ * itself finished. The rectangle band always completes in one press-drag-release.
+ */
+interface GestureSequenceState {
   startWorld: { x: number; y: number };
   startIndex: number | undefined;
-  ctrl: boolean;
+  /**
+   * Whether this gesture replaces the selection, adds to it (Ctrl) or removes
+   * from it (Alt). Read once, from the sequence's first press, and then fixed —
+   * so pressing or releasing Alt part-way through a drag changes nothing, and a
+   * shape spanning several presses means one thing from start to finish.
+   *
+   * Applies to region gestures only: the rectangle rubber band and every shape.
+   * A plain click never removes — see the "remove" branch in onPointerUp.
+   */
+  selectionGestureMode: SelectionGestureMode;
   dragging: boolean;
   /**
-   * The selection as it stood when the gesture began. A rubber-band drag now
+   * The selection as it stood when the sequence began. A rubber-band drag now
    * previews live, replacing the stored selection on every frame, so Ctrl+drag's
    * union has to build on this snapshot rather than on the store — which after
    * the first frame holds this very drag's own preview. It is also what Escape
@@ -282,8 +333,14 @@ interface GestureState {
    * place.
    */
   before: DominoSelectionEntry | undefined;
-  /** Touched set last pushed, so a frame that swept nothing new skips the redraw. */
-  lastTouched: number[] | undefined;
+  /** Index set last pushed, so a frame that swept nothing new skips the redraw. */
+  lastIndices: number[] | undefined;
+  /**
+   * Set once the armed shape's variant has claimed this sequence, and null
+   * while no shape is armed (the rectangle band's case) or the variant returned
+   * "ignore" and the plain click branches still apply.
+   */
+  shape: ShapeGestureSequence | null;
 }
 
 const DIRECTION_KEYS: Record<string, Direction> = {
@@ -296,10 +353,11 @@ const DIRECTION_KEYS: Record<string, Direction> = {
 /**
  * Domino editing mode's canvas tool: entry is handled elsewhere (SelectionTool's
  * PickPlane double-click, DDObjectsPanel's row double-click); this owns
- * everything once inside the mode — the white no-fill mode-outline, per-domino
- * click/Ctrl+click/drag/Ctrl+drag selection, and arrow-key navigation. Mounted
- * unconditionally alongside CreateByRegionTool/SelectionTool; self-arms via
- * early return, like both of those.
+ * everything once inside the mode — the light-grey no-fill mode-outline,
+ * per-domino click/Ctrl+click/drag/Ctrl+drag/Alt+drag selection, and arrow-key
+ * navigation. Mounted unconditionally alongside
+ * CreateByRegionTool/SelectionTool; self-arms via early return, like both of
+ * those.
  *
  * Selection is not undoable and has no snapshot/rollback — this pass only
  * selects dominoes, it never edits them, so there's nothing to commit or
@@ -332,12 +390,35 @@ export default function DominoEditTool() {
     s.dominoEditingId ? s.ddObjects[s.dominoEditingId] : undefined,
   );
 
+  // Which shape-select gesture is armed, if any — null means the default
+  // rectangle rubber band. A primitive, so no useShallow needed. The definition
+  // is resolved outside the selector deliberately: a selector that calls an
+  // accessor is one refactor away from the React #185 trap the two useShallow
+  // subscriptions above exist for.
+  const shapeSelectId = useStore((s) => s.dominoShapeSelectId);
+  const shapeDefinition = shapeSelectId ? getShapeSelect(shapeSelectId) : undefined;
+
+  // How the edited DDObject's type snaps a point onto its own grid, falling back
+  // to NO_SNAP for a type that declares none — so a shape variant can call it
+  // unconditionally. Memoized rather than built per event: a pointermove would
+  // otherwise allocate a closure per frame. editedDDObject is already subscribed
+  // above, and is the only thing the answer depends on.
+  const snapShapePoint = useMemo<SnapShapePoint>(() => {
+    const fn = editedDDObject ? getSnapShapePoint(editedDDObject) : undefined;
+    return fn ? (p) => fn(p.x, p.y) : NO_SNAP;
+  }, [editedDDObject]);
+
   const invalidate = useThree((s) => s.invalidate);
   const scene = useThree((s) => s.scene);
   const raycaster = useThree((s) => s.raycaster);
 
-  const gestureRef = useRef<GestureState | null>(null);
+  const gestureSequenceRef = useRef<GestureSequenceState | null>(null);
   const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
+  // The live shape sequence, mirrored out of the ref into React state purely to
+  // trigger the preview's repaint — the authoritative copy stays on the ref.
+  // Same role dragCurrent plays for the rectangle band, and likewise exactly one
+  // setState per frame.
+  const [shapeSequence, setShapeSequence] = useState<ShapeGestureSequence | null>(null);
   // Auto-clears the shortcut buffer after a pause in typing — reset on every
   // keystroke, cleared (and the timer with it) whenever the buffer resolves
   // or gets abandoned some other way (Escape, Space, a new pointer gesture).
@@ -384,19 +465,40 @@ export default function DominoEditTool() {
   useCutCopyHandler(clipboardHandlers?.cutCopy ?? null);
   usePasteHandler(clipboardHandlers?.paste ?? null);
 
-  const cancelDrag = () => {
-    const g = gestureRef.current;
-    // A drag previews its selection live, so backing out has to put the
-    // pre-gesture selection back — Escape mid-drag must leave no trace.
-    if (g?.dragging && dominoEditingId) {
+  const cancelSequence = () => {
+    const g = gestureSequenceRef.current;
+    // A drag — rectangle band or shape alike — previews its selection live, so
+    // backing out has to put the pre-sequence selection back. Escape mid-drag
+    // must leave no trace.
+    if ((g?.dragging || g?.shape) && dominoEditingId) {
       const store = useDominoSelectionStore.getState();
       if (g.before) store.replace(dominoEditingId, g.before);
       else store.clear(dominoEditingId);
     }
-    gestureRef.current = null;
+    gestureSequenceRef.current = null;
     setDragCurrent(null);
+    setShapeSequence(null);
+    // Back to the armed shape's idle prompt — the mid-sequence text no longer
+    // describes anything. Read imperatively rather than from `shapeDefinition`
+    // above: the keydown effect below is keyed on dominoEditingId alone, so the
+    // copy of this function it captured would otherwise hold whatever was armed
+    // when that effect last ran.
+    const st = useStore.getState();
+    st.setDominoShapeSelectHint(
+      st.dominoShapeSelectId ? getShapeSelect(st.dominoShapeSelectId).hint(undefined) : null,
+    );
     invalidate();
   };
+
+  // Changing the armed shape, or returning to Rectangle, abandons any sequence
+  // in flight. A variant's state is opaque and private to it, so handing a
+  // half-drawn polygon's state to circle's nextStep() would not merely be wrong,
+  // it would be untyped — pinning the definition inside ShapeGestureSequence is
+  // what makes the mismatch detectable at all.
+  useEffect(() => {
+    if (gestureSequenceRef.current?.shape) cancelSequence();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapeSelectId]);
 
   // Arrow-key navigation + Escape. Installed only while in the mode; every
   // handler reads fresh state imperatively (getState()), so dominoEditingId is
@@ -437,11 +539,15 @@ export default function DominoEditTool() {
       const target = nearestInDirection(data, refIndex, direction);
       if (target === undefined) return; // already at the edge
 
+      // A plain arrow deliberately ignores the stored corners — it steps from
+      // the extreme domino of the whole selection, found above — and only
+      // reseeds them, so a Shift+Arrow that follows extends from the domino it
+      // just landed on.
       useDominoSelectionStore.getState().replace(dominoEditingId, {
         selected: new Set([target]),
         baseSelection: new Set(),
-        anchor: target,
-        active: target,
+        selectionFixedCornerIndex: target,
+        selectionMovingCornerIndex: target,
       });
       applyLockedColorIfAny();
     };
@@ -451,19 +557,21 @@ export default function DominoEditTool() {
       const entry = useDominoSelectionStore.getState().get(dominoEditingId);
       if (!data || !entry) return;
 
-      const nextActive = nearestInDirection(data, entry.active, direction) ?? entry.active;
+      const nextMovingCorner =
+        nearestInDirection(data, entry.selectionMovingCornerIndex, direction) ??
+        entry.selectionMovingCornerIndex;
       const selected = recomputeFromRect(
         data,
         entry.baseSelection,
-        entry.anchor,
-        nextActive,
+        entry.selectionFixedCornerIndex,
+        nextMovingCorner,
         resolveDominoExpansion(dominoEditingId),
       );
       useDominoSelectionStore.getState().replace(dominoEditingId, {
         selected,
         baseSelection: entry.baseSelection,
-        anchor: entry.anchor,
-        active: nextActive,
+        selectionFixedCornerIndex: entry.selectionFixedCornerIndex,
+        selectionMovingCornerIndex: nextMovingCorner,
       });
       applyLockedColorIfAny();
     };
@@ -479,17 +587,47 @@ export default function DominoEditTool() {
       if (e.ctrlKey || e.metaKey) return;
 
       if (e.key === "Escape") {
-        // Cancels a drag if one is in flight; otherwise clears the domino
-        // selection, the color lock, and any in-progress shortcut buffer all
-        // at once — Escape never exits the mode itself; only ModeHintBar's
-        // Done/Cancel can.
-        if (gestureRef.current?.dragging) {
-          cancelDrag();
+        // Escape backs out one layer at a time, each press making exactly one
+        // visible change, so nothing is ever lost by surprise:
+        //   1. a sequence in progress (rectangle band or shape) → abandon it
+        //      and put the previous selection back. The armed shape stays
+        //      armed, so it can be drawn again from scratch.
+        //   2. otherwise, dominoes selected → clear the selection. An armed
+        //      shape stays armed: this rung is about the selection only.
+        //   3. otherwise, a shape armed → disarm back to the default rectangle
+        //      band. Reached only once nothing is selected, so it is Escape
+        //      twice that gets from "circle armed with a selection" back to
+        //      Rectangle.
+        //   4. otherwise → release the color lock and any part-typed shortcut
+        //      buffer. The lock survives every rung above it, so neither
+        //      clearing a selection nor disarming a shape silently unlocks —
+        //      the lock has its own badge and its own way out.
+        //
+        // The order of rungs 2 and 3 is the whole of the rule. Testing the
+        // selection *before* the armed shape is what splits them into separate
+        // presses; testing them the other way round would collapse both into
+        // one press again, which is what this replaced.
+        //
+        // The toolbar's Rectangle button is still deliberately different: it is
+        // a mode change and keeps the selection, where Escape is a back-out and
+        // ends with the selection gone. That now takes two presses rather than
+        // one, but the distinction is unchanged.
+        //
+        // Escape never exits the mode itself; only ModeHintBar's Done/Cancel can.
+        if (gestureSequenceRef.current?.dragging || gestureSequenceRef.current?.shape) {
+          cancelSequence();
           return;
         }
         const entry = useDominoSelectionStore.getState().get(dominoEditingId);
-        if (entry && entry.selected.size > 0) useDominoSelectionStore.getState().clear(dominoEditingId);
+        if (entry && entry.selected.size > 0) {
+          useDominoSelectionStore.getState().clear(dominoEditingId);
+          return;
+        }
         const st = useStore.getState();
+        if (st.dominoShapeSelectId) {
+          st.setDominoShapeSelect(null);
+          return;
+        }
         if (st.dominoColorLockedId) st.toggleDominoColorLock(st.dominoColorLockedId);
         if (st.dominoColorShortcut) st.setDominoColorShortcut("");
         window.clearTimeout(shortcutTimerRef.current);
@@ -572,20 +710,126 @@ export default function DominoEditTool() {
 
   if (!dominoEditingId || !fieldBounds || !rootBounds) return null;
 
+  /** World coordinates -> the parent-relative mm DominoData.positions lives in. */
+  const toLocal = (p: { x: number; y: number }) => ({
+    x: p.x - fieldBounds.x,
+    y: p.y - fieldBounds.y,
+  });
+
+  /**
+   * The selection the armed shape's current state implies. Mirrors resolveDrag
+   * below — same sameIndices skip, same shared tail — with the shape's own
+   * containment test and control points in place of the rectangle's.
+   */
+  const resolveShapeToSelection = (
+    data: DominoData,
+    g: GestureSequenceState,
+    sequence: ShapeGestureSequence,
+    force: boolean,
+  ): DominoSelectionEntry | null => {
+    const indices = indicesInShape(sequence.definition, sequence.state, data);
+    if (!force && g.lastIndices && sameIndices(indices, g.lastIndices)) return null;
+    g.lastIndices = indices;
+    const points = sequence.definition.controlPoints(sequence.state);
+    return selectionFrom(data, indices, {
+      before: g.before,
+      selectionGestureMode: g.selectionGestureMode,
+      selectionFixedCornerPoint: points.selectionFixedCornerPoint,
+      selectionMovingCornerPoint: points.selectionMovingCornerPoint,
+    });
+  };
+
+  /**
+   * Feeds one pointer event to the armed shape and applies whatever it decided.
+   * Returns false only for "ignore", which is the caller's signal to fall
+   * through to the plain click semantics below — circle never returns it, but a
+   * future variant may.
+   */
+  const runNextStep = (
+    g: GestureSequenceState,
+    kind: ShapeSelectEvent["kind"],
+    worldPoint: { x: number; y: number },
+  ): boolean => {
+    if (!shapeDefinition) return false;
+    const step = shapeDefinition.nextStep(
+      { kind, point: toLocal(worldPoint), origin: toLocal(g.startWorld), dragging: g.dragging },
+      g.shape?.state,
+      snapShapePoint,
+    );
+    if (step.status === "ignore") return false;
+
+    const sequence: ShapeGestureSequence = { definition: shapeDefinition, state: step.state };
+    g.shape = sequence;
+    setShapeSequence(sequence);
+
+    const data = useDominoDataStore.getState().get(dominoEditingId);
+    if (data) {
+      const entry = resolveShapeToSelection(data, g, sequence, step.status === "done");
+      if (entry) useDominoSelectionStore.getState().replace(dominoEditingId, entry);
+    }
+
+    // A variant's hint can change stage mid-sequence. Written only when it
+    // actually differs, so a per-pointermove step costs a string compare rather
+    // than a store write.
+    const st = useStore.getState();
+    const nextHint = shapeDefinition.hint(step.state);
+    if (st.dominoShapeSelectHint !== nextHint) st.setDominoShapeSelectHint(nextHint);
+
+    if (step.status === "done") {
+      // Once, here — never per frame. A locked color applied on every frame of
+      // a sequence would paint, and push an undo entry, on each one.
+      applyLockedColorIfAny();
+      gestureSequenceRef.current = null;
+      setShapeSequence(null);
+      // Arming is sticky: the tool stays armed for the next shape. Only Escape,
+      // or the toolbar's Rectangle button, disarms.
+      st.setDominoShapeSelectHint(shapeDefinition.hint(undefined));
+      invalidate();
+    }
+    return true;
+  };
+
   const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
     if (e.button !== 0) return;
     e.stopPropagation();
     // A new pointer gesture abandons any in-progress shortcut typing.
     if (useStore.getState().dominoColorShortcut) useStore.getState().setDominoColorShortcut("");
     window.clearTimeout(shortcutTimerRef.current);
-    gestureRef.current = {
+
+    // A multi-click sequence stays open across pointerup, so a press with one
+    // still in flight continues it rather than starting over. Reusing the same
+    // GestureSequenceState is what pins `selectionGestureMode` and `before` to the
+    // sequence's FIRST press, which is what makes Ctrl mean "add this whole shape"
+    // and Alt "remove this whole shape".
+    const live = gestureSequenceRef.current;
+    if (live?.shape) {
+      runNextStep(live, "press", e.point);
+      return;
+    }
+
+    const g: GestureSequenceState = {
       startWorld: { x: e.point.x, y: e.point.y },
+      // Needed whatever is armed: a press that never travels far enough to
+      // become a shape ends up in onPointerUp's plain click branches, which
+      // select this domino.
       startIndex: hitDominoIndex(scene, raycaster, dominoEditingId),
-      ctrl: e.ctrlKey || e.metaKey,
+      // Alt is tested before Ctrl, so holding both deselects. The two ask for
+      // opposite things, and the preview colours have to agree with whichever
+      // one wins — showing the white "adding" colours while dominoes were being
+      // removed would read as a bug.
+      selectionGestureMode: e.altKey ? "remove" : e.ctrlKey || e.metaKey ? "add" : "replace",
       dragging: false,
       before: useDominoSelectionStore.getState().get(dominoEditingId),
-      lastTouched: undefined,
+      lastIndices: undefined,
+      shape: null,
     };
+    gestureSequenceRef.current = g;
+    // Deliberately does NOT start an armed shape here. A shape only begins once
+    // the pointer has actually travelled (see onPointerMove), so that a press
+    // which never moves stays an ordinary click — selecting the domino under it,
+    // exactly as it would with the rectangle band. Starting the shape on the
+    // press is what used to make single-domino clicking unavailable whenever
+    // anything was armed.
   };
 
   /**
@@ -598,15 +842,14 @@ export default function DominoEditTool() {
    * frame, so an unchanged drag costs one integer compare instead of a full
    * redraw. `force` skips that shortcut for the final resolve at pointerup.
    */
-  const resolveDrag = (
+  const resolveDragToSelection = (
     data: DominoData,
-    g: GestureState,
+    g: GestureSequenceState,
     endWorld: { x: number; y: number },
     force: boolean,
   ): DominoSelectionEntry | null => {
-    // Field-local coordinates — DominoData positions are parent-relative.
-    const startLocal = { x: g.startWorld.x - fieldBounds.x, y: g.startWorld.y - fieldBounds.y };
-    const endLocal = { x: endWorld.x - fieldBounds.x, y: endWorld.y - fieldBounds.y };
+    const startLocal = toLocal(g.startWorld);
+    const endLocal = toLocal(endWorld);
     const rect: Rect = {
       minX: Math.min(startLocal.x, endLocal.x),
       maxX: Math.max(startLocal.x, endLocal.x),
@@ -614,33 +857,50 @@ export default function DominoEditTool() {
       maxY: Math.max(startLocal.y, endLocal.y),
     };
     const touched = touchedIndices(data, rect, resolveDominoExpansion(dominoEditingId));
-    if (!force && g.lastTouched && sameIndices(touched, g.lastTouched)) return null;
-    g.lastTouched = touched;
+    if (!force && g.lastIndices && sameIndices(touched, g.lastIndices)) return null;
+    g.lastIndices = touched;
 
-    const baseSelection = g.ctrl ? new Set(g.before?.selected ?? []) : new Set<number>();
-    const selected = new Set(baseSelection);
-    for (const i of touched) selected.add(i);
-
-    // anchor/active track the drag's actual start/end points (not the
-    // rectangle's normalized corners), so Shift+Arrow always extends from
-    // wherever the gesture ended, whichever corner that geometrically was
-    // — mirrors Excel's click-drag-then-shift-arrow behavior.
-    let anchor = g.before?.anchor ?? 0;
-    let active = g.before?.active ?? 0;
-    if (touched.length > 0) {
-      anchor = nearestToPoint(data, touched, startLocal.x, startLocal.y);
-      active = nearestToPoint(data, touched, endLocal.x, endLocal.y);
-    }
-    return { selected, baseSelection, anchor, active };
+    // The Ctrl union and the corner seeding are shared with every shape-select
+    // variant (shape-select/dispatcher.ts) so the two can't drift. The corners
+    // track the drag's actual start/end points, not the rectangle's normalized
+    // corners, so Shift+Arrow always extends from wherever the gesture ended,
+    // whichever corner that geometrically was — mirrors Excel's
+    // click-drag-then-shift-arrow behavior.
+    return selectionFrom(data, touched, {
+      before: g.before,
+      selectionGestureMode: g.selectionGestureMode,
+      selectionFixedCornerPoint: startLocal,
+      selectionMovingCornerPoint: endLocal,
+    });
   };
 
   const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
-    const g = gestureRef.current;
+    const g = gestureSequenceRef.current;
     if (!g) return;
     const dx = e.point.x - g.startWorld.x;
     const dy = e.point.y - g.startWorld.y;
-    if (!g.dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD_MM) return;
-    g.dragging = true;
+    if (!g.dragging && Math.hypot(dx, dy) >= DRAG_THRESHOLD_MM) g.dragging = true;
+
+    if (shapeDefinition) {
+      // Opening the sequence is gated on g.dragging, but only for its very
+      // first step: until the pointer has travelled DRAG_THRESHOLD_MM the
+      // gesture is still a possible click, and a click has to reach the plain
+      // branches in onPointerUp so it selects the domino under it. Once the
+      // sequence is open every move is passed straight through, ungated — which
+      // is what lets a multi-stage variant track the cursor between clicks with
+      // the button up.
+      if (!g.shape) {
+        if (!g.dragging) return;
+        // A variant that answered "ignore" has declined the gesture; leave it to
+        // the click branches rather than pressing on with a move it never saw a
+        // press for. Nothing declines today.
+        if (!runNextStep(g, "press", e.point)) return;
+      }
+      runNextStep(g, "move", e.point);
+      return;
+    }
+
+    if (!g.dragging) return;
     setDragCurrent({ x: e.point.x, y: e.point.y });
 
     // Preview which dominoes the box has swept so far. Deliberately no
@@ -648,14 +908,29 @@ export default function DominoEditTool() {
     // on every frame of the drag. A locked color is applied once, at pointerup.
     const data = useDominoDataStore.getState().get(dominoEditingId);
     if (!data) return;
-    const entry = resolveDrag(data, g, { x: e.point.x, y: e.point.y }, false);
+    const entry = resolveDragToSelection(data, g, { x: e.point.x, y: e.point.y }, false);
     if (entry) useDominoSelectionStore.getState().replace(dominoEditingId, entry);
   };
 
   const onPointerUp = (e: ThreeEvent<PointerEvent>) => {
-    const g = gestureRef.current;
-    gestureRef.current = null;
+    const g = gestureSequenceRef.current;
     if (!g) return;
+
+    // g.shape is the load-bearing part: a press that never travelled far enough
+    // to open a sequence falls straight through to the click branches below,
+    // which is the whole of "a click behaves the same whatever is armed".
+    if (shapeDefinition && g.shape && runNextStep(g, "release", e.point)) {
+      // "done" — runNextStep already committed the selection and ended the
+      // sequence. "active" — a multi-click sequence still accumulating, so the
+      // ref deliberately stays alive for the next press.
+      setDragCurrent(null);
+      invalidate();
+      return;
+    }
+
+    // No shape armed, a shape armed but never started by this gesture, or the
+    // variant returned "ignore": the original four branches, unchanged.
+    gestureSequenceRef.current = null;
 
     const data = useDominoDataStore.getState().get(dominoEditingId);
     const selectionStore = useDominoSelectionStore.getState();
@@ -664,14 +939,23 @@ export default function DominoEditTool() {
       if (g.dragging) {
         // Same resolve the live preview has been running; forced, so the final
         // state is committed even if this frame swept nothing new.
-        const entry = resolveDrag(data, g, { x: e.point.x, y: e.point.y }, true);
+        const entry = resolveDragToSelection(data, g, { x: e.point.x, y: e.point.y }, true);
         if (entry) selectionStore.replace(dominoEditingId, entry);
         applyLockedColorIfAny();
+      } else if (g.selectionGestureMode === "remove") {
+        // Alt was held, but this was a click rather than a drag. Alt is a
+        // drag-only modifier, so nothing happens at all.
+        //
+        // Deliberately an empty branch rather than letting it fall through: the
+        // branches below would replace the whole selection with the single
+        // domino under the cursor, which is the opposite of what someone
+        // holding Alt is asking for. Catches a click on empty space too, which
+        // would otherwise clear the selection outright.
       } else if (g.startIndex === undefined) {
         // Click on empty space.
-        if (!g.ctrl) selectionStore.clear(dominoEditingId);
-      } else if (g.ctrl) {
-        // Toggle in/out of the current selection. Anchor/active only reseed on
+        if (g.selectionGestureMode !== "add") selectionStore.clear(dominoEditingId);
+      } else if (g.selectionGestureMode === "add") {
+        // Toggle in/out of the current selection. The corners only reseed on
         // toggle-on — pointing them at a domino that just got deselected would
         // be meaningless for a future Shift+Arrow.
         const prevEntry = selectionStore.get(dominoEditingId);
@@ -679,13 +963,15 @@ export default function DominoEditTool() {
         const wasSelected = selected.has(g.startIndex);
         if (wasSelected) selected.delete(g.startIndex);
         else selected.add(g.startIndex);
-        const anchor = wasSelected ? prevEntry!.anchor : g.startIndex;
-        const active = wasSelected ? prevEntry!.active : g.startIndex;
         selectionStore.replace(dominoEditingId, {
           selected,
           baseSelection: new Set(selected),
-          anchor,
-          active,
+          selectionFixedCornerIndex: wasSelected
+            ? prevEntry!.selectionFixedCornerIndex
+            : g.startIndex,
+          selectionMovingCornerIndex: wasSelected
+            ? prevEntry!.selectionMovingCornerIndex
+            : g.startIndex,
         });
         applyLockedColorIfAny();
       } else {
@@ -693,8 +979,8 @@ export default function DominoEditTool() {
         selectionStore.replace(dominoEditingId, {
           selected: new Set([g.startIndex]),
           baseSelection: new Set(),
-          anchor: g.startIndex,
-          active: g.startIndex,
+          selectionFixedCornerIndex: g.startIndex,
+          selectionMovingCornerIndex: g.startIndex,
         });
         applyLockedColorIfAny();
       }
@@ -704,9 +990,25 @@ export default function DominoEditTool() {
     invalidate();
   };
 
-  const dragStart = gestureRef.current?.startWorld;
+  // Capitalised local binding: JSX can't render a member expression as a
+  // component.
+  const ShapePreview = shapeSequence?.definition.Preview;
+
+  // Which colours the region being swept out draws itself in — white while it
+  // is selecting, dark while Alt is deselecting. Read straight off the ref, the
+  // same way dragStart below is: the ref is always populated before the render
+  // that setDragCurrent/setShapeSequence triggers. Defaults to the selecting
+  // colours between gestures, when there is no region on screen to colour.
+  //
+  // Handed to both the rectangle band's own materials and the armed shape's
+  // Preview, so the two can never disagree about what a colour means.
+  const previewStyle = previewStyleFor(
+    gestureSequenceRef.current?.selectionGestureMode ?? "replace",
+  );
+
+  const dragStart = gestureSequenceRef.current?.startWorld;
   const dragRect: DDObjectBounds | null =
-    dragCurrent && dragStart
+    dragCurrent && dragStart && !shapeDefinition
       ? {
           x: Math.min(dragStart.x, dragCurrent.x),
           y: Math.min(dragStart.y, dragCurrent.y),
@@ -717,11 +1019,11 @@ export default function DominoEditTool() {
 
   return (
     <>
-      {/* White, no-fill context indicator — this DDObject's dominoes are being
-          edited. No resize handles: nothing in this pass changes the field's
-          own shape from inside the mode. Drawn a fixed margin off the dominoes
-          rather than on the element's bounds, so it clears them by the same gap
-          whether or not the Expand toggle is on — see modeOutlineRect. */}
+      {/* Light grey, no-fill context indicator — this DDObject's dominoes are
+          being edited. No resize handles: nothing in this pass changes the
+          field's own shape from inside the mode. Drawn a fixed margin off the
+          dominoes rather than on the element's bounds, so it clears them by the
+          same gap whether or not the Expand toggle is on — see modeOutlineRect. */}
       {outlineRect && (
         <lineSegments
           geometry={unitEdges}
@@ -732,13 +1034,17 @@ export default function DominoEditTool() {
           ]}
           scale={[outlineRect.width, outlineRect.height, 1]}
         >
-          <lineBasicMaterial color="#ffffff" transparent depthTest={false} />
+          <lineBasicMaterial color={MODE_OUTLINE_COLOR} transparent depthTest={false} />
         </lineSegments>
       )}
 
-      {/* Catches gestures across the whole build plane (not just the field's
-          own footprint), so a click anywhere empty still clears the selection.
-          Transparent, not invisible, so it still raycasts. */}
+      {/* Catches every gesture in the mode — well beyond the build plane, not
+          just the field's own footprint, so a selection can start and end
+          anywhere (see CATCH_SIZE). Transparent, not invisible, so it still
+          raycasts. Centred on the build plane so it stays symmetric about what
+          the user is looking at. One plane rather than a second mounted
+          mid-gesture, so no two handler meshes ever compete for the same
+          pointerdown. */}
       <mesh
         position={[
           rootBounds.x + rootBounds.width / 2,
@@ -749,28 +1055,45 @@ export default function DominoEditTool() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
-        <planeGeometry args={[rootBounds.width, rootBounds.height]} />
+        <planeGeometry args={[CATCH_SIZE, CATCH_SIZE]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
       {dragRect && dragRect.width > 0 && dragRect.height > 0 && (
         <>
           <mesh
-            position={[dragRect.x + dragRect.width / 2, dragRect.y + dragRect.height / 2, DRAG_FILL_Z]}
-            renderOrder={DRAG_ORDER}
+            position={[dragRect.x + dragRect.width / 2, dragRect.y + dragRect.height / 2, PREVIEW_FILL_Z]}
+            renderOrder={PREVIEW_ORDER}
           >
             <planeGeometry args={[dragRect.width, dragRect.height]} />
-            <meshBasicMaterial color="#2b2f36" transparent opacity={0.35} depthTest={false} depthWrite={false} />
+            <meshBasicMaterial
+              color={previewStyle.fillColor}
+              transparent
+              opacity={previewStyle.fillOpacity}
+              depthTest={false}
+              depthWrite={false}
+            />
           </mesh>
           <lineSegments
             geometry={unitEdges}
-            position={[dragRect.x + dragRect.width / 2, dragRect.y + dragRect.height / 2, DRAG_BORDER_Z]}
+            position={[dragRect.x + dragRect.width / 2, dragRect.y + dragRect.height / 2, PREVIEW_BORDER_Z]}
             scale={[dragRect.width, dragRect.height, 1]}
-            renderOrder={DRAG_BORDER_ORDER}
+            renderOrder={PREVIEW_BORDER_ORDER}
           >
-            <lineBasicMaterial color="#000000" transparent depthTest={false} />
+            <lineBasicMaterial color={previewStyle.borderColor} transparent depthTest={false} />
           </lineSegments>
         </>
+      )}
+
+      {/* The armed shape's own live preview. The <group> is a three.js node that
+          applies its transform to everything nested inside it — putting one at
+          the edited DDObject's origin is the whole of the world <-> parent-relative
+          conversion, done once here for every variant rather than each of them
+          subtracting fieldBounds itself and one eventually getting it wrong. */}
+      {ShapePreview && shapeSequence && (
+        <group position={[fieldBounds.x, fieldBounds.y, 0]}>
+          <ShapePreview state={shapeSequence.state} previewStyle={previewStyle} />
+        </group>
       )}
     </>
   );
