@@ -9,6 +9,8 @@ import {
 import { useStore } from "../store";
 import { getDominoExpansion } from "../object-types/registry";
 import { SHAPE_SELECT_LIST, type ShapeSelectId } from "../shape-select/registry";
+import { DOMINO_BRUSH_LIST } from "../paint-brush/registry";
+import DominoBrushButton from "./DominoBrushButton";
 import ToolButton from "./ToolButton";
 import styles from "./Toolbar.module.css";
 
@@ -28,6 +30,9 @@ export default function DominoEditingTools() {
   const invertDominoSelection = useStore((s) => s.invertDominoSelection);
   const dominoShapeSelectId = useStore((s) => s.dominoShapeSelectId);
   const setDominoShapeSelect = useStore((s) => s.setDominoShapeSelect);
+  // Only so Rectangle can tell "no shape armed" from "the rectangle band is
+  // what a drag actually does" — see its button below.
+  const dominoBrushId = useStore((s) => s.dominoBrushId);
 
   if (!dominoEditingId) return null;
 
@@ -84,14 +89,26 @@ export default function DominoEditingTools() {
           aria-pressed is right for a mode (the same split Expand makes against
           the two commands above).
 
-          Rectangle is deliberately not in SHAPE_SELECTS: it *is* the null
-          state, so a registry entry would make "nothing armed" and "rectangle
-          armed" two encodings of one thing. Everything after it is
-          registry-driven, so adding a shape needs no edit here. */}
+          Rectangle stays first because it is this group's default — the null
+          state a shape is always left back to. It is deliberately not in
+          SHAPE_SELECTS: a registry entry would make "nothing armed" and
+          "rectangle armed" two encodings of one thing. Everything after it is
+          registry-driven, so adding a shape needs no edit here.
+
+          Its highlight has to test the brush as well, and the reason is not
+          visible in the expression: a null dominoShapeSelectId means "no *shape*
+          armed", which stopped meaning "a drag draws the rectangle band" once
+          brushes existed — arming a brush sets that same field to null to keep
+          the two mutually exclusive. Without the second test, arming a brush lit
+          this button up too, leaving two tools looking armed at once.
+
+          It stays *enabled* while a brush is armed, though: clicking it is one
+          of the two ways out of a brush (the other is Escape), since
+          setDominoShapeSelect clears dominoBrushId in turn. */}
       <ToolButton
         label="Rectangle select"
         Icon={RiRectangleLine}
-        active={dominoShapeSelectId === null}
+        active={dominoShapeSelectId === null && dominoBrushId === null}
         onClick={() => setDominoShapeSelect(null)}
       />
       {SHAPE_SELECT_LIST.map((shape) => (
@@ -102,6 +119,22 @@ export default function DominoEditingTools() {
           active={dominoShapeSelectId === shape.id}
           onClick={() => setDominoShapeSelect(shape.id as ShapeSelectId)}
         />
+      ))}
+
+      <span className={styles.separator} aria-hidden="true" />
+
+      {/* Paint brushes: freehand tools that lay down the locked colour as you
+          drag, rather than selecting a region for a swatch click to fill. Same
+          radio semantics as the shapes above and mutually exclusive with them —
+          both interpret canvas drags, so arming either disarms the other. Each
+          brings its own size menu, hence a component rather than a ToolButton.
+
+          Both gesture groups grow as variants are registered, so the fixed
+          commands stay pinned at the front and everything that grows sits behind
+          them. When either group outgrows a flat row, the NewElementMenu-style
+          popup swap is one file, since both are already registry-driven. */}
+      {DOMINO_BRUSH_LIST.map((brush) => (
+        <DominoBrushButton key={brush.id} brush={brush} />
       ))}
     </>
   );

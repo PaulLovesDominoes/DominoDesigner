@@ -100,14 +100,15 @@ becomes a **slice** of the app store instead.
 
 `store.ts` grew past a thousand lines holding every feature's state inline, so a feature's
 members live in an `appStoreSlice.ts` under that feature's own folder while remaining part of
-the one `AppState`. Four exist today:
+the one `AppState`. Five exist today:
 
 | Slice | Holds |
 |---|---|
 | `domino-inventory/appStoreSlice.ts` | the inventory catalog, its selection and its sort |
 | `history/appStoreSlice.ts` | `Operation`, the undo/redo stacks, the domino-editing undo barrier |
-| `dominoes/appStoreSlice.ts` | the swatch lock/shortcut, every domino-colour write, select-by-swatch, the Expand toggle, and domino editing mode's cancel snapshot |
+| `dominoes/appStoreSlice.ts` | the swatch lock/shortcut, every domino-colour write (including a paint stroke's), select-by-swatch, the Expand toggle, and domino editing mode's cancel snapshot |
 | `shape-select/appStoreSlice.ts` | which shape-select gesture is armed inside domino editing mode, and its hint text |
+| `paint-brush/appStoreSlice.ts` | which paint brush is armed inside domino editing mode, and each brush's chosen size |
 
 What's left in `store.ts` is the state that isn't any one feature's: screen/menu/help, the
 DDObject hierarchy and its actions, domino editing mode, the properties dialog, and the camera
@@ -520,11 +521,20 @@ barrier rather than disabled.
 `designer/DominoEditingTools.tsx` is that replacement group, dropped into `Toolbar.tsx`'s left
 `.group` the way `NewElementMenu` is — so `Toolbar.tsx` stays a layout file rather than growing a
 branch per mode-specific button. It holds **Select All**, **Invert** and the **Expand** toggle
-(below), a `.separator`, then the selection-mode buttons (**Rectangle** plus one per registered
-shape — see *Shape select*). Note Select All and Invert are raw `<button>`s while the modes and
-Expand are `ToolButton`s: `ToolButton` always emits `aria-pressed`, which is right for a toggle or
-a mode and wrong for a command — the same split `Toolbar.tsx` already makes between its zoom/undo
-buttons and the Select tool.
+(below); a `.separator`; the selection-mode buttons (**Rectangle** plus one per registered shape —
+see *Shape select*); another `.separator`; then one `DominoBrushButton` per registered paint brush
+(see *Paint brushes*). Note Select All and Invert are raw `<button>`s while the modes and Expand
+are `ToolButton`s: `ToolButton` always emits `aria-pressed`, which is right for a toggle or a mode
+and wrong for a command — the same split `Toolbar.tsx` already makes between its zoom/undo buttons
+and the Select tool.
+
+**Both gesture groups grow as variants are registered**, which is why the fixed commands stay
+pinned at the front and everything that grows sits behind them. Rectangle stays first *within* its
+group because it is that group's null state. Its `active` test is the one thing in this file that
+isn't obvious: it must be `dominoShapeSelectId === null && dominoBrushId === null`, because a null
+`dominoShapeSelectId` means "no *shape* armed" and stopped meaning "a drag draws the rectangle
+band" once a brush could own drags while leaving that field null. Without the second test, arming a
+brush lit Rectangle up too and two tools looked armed at once.
 
 **Expand** (`dominoExpanded` in `dominoes/appStoreSlice.ts`) draws every domino oversized so
 tightly-spaced ones are easier to hit. Four things about it are deliberate:
@@ -568,8 +578,9 @@ the margin.
 
 **Three colours carry meaning in the mode, and they are assigned as a set.** White means
 *dominoes being taken into the selection* — a selected domino's own outline
-(`dominoes/modeller.tsx`'s `SELECTED_OUTLINE_COLOR`) and a region gesture that is adding
-(`shape-select/preview.ts`'s `SELECT_PREVIEW_STYLE`). Dark means *being given back*: an Alt
+(`dominoes/modeller.tsx`'s `SELECTED_OUTLINE_COLOR`), a region gesture that is adding
+(`shape-select/preview.ts`'s `SELECT_PREVIEW_STYLE`), and a paint brush's nib, which reads that
+same style rather than choosing its own. Dark means *being given back*: an Alt
 gesture's `DESELECT_PREVIEW_STYLE`. The frame round the edited DDObject, was originally light 
 grey purely but later changed to white because light-gray could not not be seen. This is an unfortunate
 collision with the selection color, but it can not be helped. No actual color (e.g. other than black, gray or white), because these colors need to be neutral so as not to bias the user's color selections as they
@@ -579,8 +590,8 @@ outline the dominoes but to be less intrusive than a fully black outline.
 
 `designer/DominoEditor.tsx` is the canvas tool owning everything once inside the mode. **It was
 called `DominoEditTool.tsx`, and the rename is worth keeping**: it has tools of its own — the
-selection modes in `DominoEditingTools.tsx` and every shape-select variant — so "the tools of the
-domino edit tool" had become an unreadable sentence. It owns per-domino selection
+selection modes in `DominoEditingTools.tsx`, every shape-select variant and every paint brush — so
+"the tools of the domino edit tool" had become an unreadable sentence. It owns per-domino selection
 (click / Ctrl+click / Alt+click / drag-rubberband / Ctrl+drag / Alt+drag / arrow-keys /
 Shift+arrow-keys, stored in `dominoes/selectionStore.ts`'s `DominoSelectionEntry` — `selected`,
 plus `selectionFixedCornerIndex`/`selectionMovingCornerIndex`/`baseSelection` for Shift+Arrow's
@@ -817,17 +828,25 @@ Decisions a fresh session would plausibly reverse:
   whenever anything was armed. A user cannot be expected to remember which shapes allow a click, so
   the rule belongs in one place. `"ignore"` remains in the contract for a variant that wants to
   decline a *drag*; nothing does today.
-- **Arming is sticky**, and **Escape is an escalating ladder** of four rungs: cancel the sequence
-  in progress → clear the selection → disarm back to the rectangle band → release the lock and the
-  shortcut buffer. Each press makes exactly one visible change, and `"done"` never disarms.
+- **Arming is sticky**, and **Escape is an escalating ladder** of four rungs: cancel the gesture in
+  progress (a shape sequence, a rubber band, or a paint stroke — a stroke reverts every colour it
+  laid down) → clear the selection → disarm back to the rectangle band, whether a shape or a brush
+  was armed → release the lock and the shortcut buffer. Each press makes exactly one visible change,
+  and `"done"` never disarms.
   **The order of the middle two is the whole rule.** Testing the selection *before* the armed shape
   is what makes them separate presses; swapping them collapses both back into one, which is what
   this replaced — so from "circle armed with a selection" it is press one to clear and press two to
-  disarm. **Escape and the Rectangle button still deliberately differ**: the button is a mode change
+  disarm. **Rung 2 is skipped outright while a paint brush is armed**, and that is not an
+  exception to the rule but the rule applied: what is "selected" under a brush is the nib's own
+  hover footprint, which the next pointermove puts straight back, so a rung that made no lasting
+  change would break the one-visible-change-per-press property.
+  **Escape and the Rectangle button still deliberately differ**: the button is a mode change
   and keeps the selection, Escape is a back-out and ends with it gone; that now takes two presses
   rather than one, but the distinction is unchanged. A locked colour survives every rung above it on
   purpose — it has its own badge and its own way out, so neither clearing a selection nor disarming
-  a shape may silently unlock.
+  a shape may silently unlock. Note an *open size menu* claims Escape ahead of all four rungs, in
+  the capture phase, so closing a menu never also disarms the tool it belongs to (see *Paint
+  brushes*).
 - **One catch plane, one gesture-sequence ref.** A second tool component would need its own catch
   plane; whichever sat nearer the camera would swallow `pointerdown` for both, and they would
   hold independent state while `replace`ing the same selection entry. That one plane is
@@ -907,6 +926,15 @@ never toggles**, exactly as clicking Red always paints red; that is what lets Hi
 without flip-flopping, and unhiding is the menu's separate command. Painting a hidden domino
 unhides it for free (see *Domino data*'s flag note).
 
+**Those three all became one line each over `applySwatchToSelection`**, which holds the guard
+prologue (in the mode, something selected, dominoes exist) and the commit-then-push tail they had
+copied between them. Underneath it, `swatchTargets` is the one place that answers *what a swatch
+means as a colour write* — Hide adds the flag to whatever colour the domino returns to, Unassigned
+is `0`, anything else is the entry's `numericId`. It takes `data` only because Hide's answer is
+per-domino where the other two are one value for every index. **A paint stroke shares
+`swatchTargets` but deliberately not `applySwatchToSelection`**, since it needs the same swatch
+resolution while pushing nothing per frame (see *Paint brushes*).
+
 Two ways to color the current selection, both immediate and both pushing exactly one undoable
 `"dominoColors"` operation (see *Domino data* above for why that's a live color-id reference,
 not baked-in RGB):
@@ -984,9 +1012,139 @@ sidebar clips on **both** axes and the tip is wider than the sidebar. `position:
 escape (the same one `DDObjectMenu` documents), and it works only because nothing between
 `#root` and `.sidebar` sets `transform`/`filter`/`will-change`/`contain` — don't add any.
 
-A third route exists alongside those two — **pasting** a copied pattern of colors (Ctrl+V) —
-but it belongs to the clipboard subsystem below rather than to the panel, and it is the only
-one of the three that can set many *different* colors in a single operation.
+Two further routes exist alongside those two, neither belonging to the panel. **Pasting** a copied
+pattern of colors (Ctrl+V) belongs to the clipboard subsystem below, and is the only route that can
+set many *different* colors in a single operation. **Painting freehand** with a pencil or quill
+belongs to *Paint brushes*, and is the only one that writes continuously while recording a single
+undo entry.
+
+### Paint brushes
+
+`paint-brush/` holds domino editing mode's freehand painting tools — two today, `pencil` (a round
+nib) and `quill` (a thin bar fixed at 45°, lower-left to upper-right). Drag one across the field and
+every domino it passes over takes the locked swatch as it goes. It follows the `object-types/`
+layout, per the *Guiding principle*: `base.ts` (the `DominoBrushDefinition` contract, the three
+sizes), `registry.ts` (`DOMINO_BRUSHES` and its accessors), `coverage.ts` (the shared per-frame
+scan), one folder per variant holding `object-model.ts` and `preview.tsx`, plus
+`appStoreSlice.ts`. **Adding a brush is a folder plus one line in `DOMINO_BRUSHES`** — the toolbar,
+the hint bar and `DominoEditor` are all driven off the map and none of them names a brush. It is
+built for the ones after these two (an airbrush is the expected next), which is why pencil and quill
+differ in only two members of substance — `contains`, the shape that is *tested*, and `Preview`, the
+shape that is *drawn*. **Those two must agree**, for the reason `dominoes/expansion.ts` documents
+one level down: if the nib is drawn bigger than it paints, the user sees the shape pass over a
+domino it never takes.
+
+**It is deliberately not another entry in `SHAPE_SELECTS`**, and the four differences are what
+justify the separate subsystem rather than four optional members only brushes would ever set. A
+brush has no gesture *stages* — nothing is dragged out, so there is no `nextStep`, no state object
+and no control points (nothing extends a Shift+Arrow out of a stroke). A brush follows the cursor,
+so it never snaps to the element's grid. A brush **writes**, where a shape only ever changes which
+dominoes are selected. And a brush carries a size menu.
+
+`DominoBrushDefinition` is correspondingly small: `label`, `hint`, `contains(sizeMm, dx, dy)`,
+`Preview`, plus `sizeMm` and `sizeIcons` (below). `contains` is a **midpoint test on the domino's
+own centre**, exactly as shape-select's is and for the same reason — Expand changes how big a
+domino is *drawn*, not where its centre sits, so a brush takes the same dominoes with it on or off.
+`coverage.ts`'s `indicesUnderBrush` is a second copy of `shape-select/dispatcher.ts`'s
+`indicesInShape` loop rather than a shared generic: the two registries erase different definition
+types and their `contains` signatures differ, so sharing would cost more machinery than the eight
+lines it saves. Both must stay **ascending**, since `DominoEditor` compares frames elementwise.
+A future airbrush will want a per-domino *strength* (`0..1`) here rather than an in/out answer,
+since it lays down density; widen `contains` when that lands and can exercise it, not before.
+
+**Millimetres are per brush, and that reverses an earlier decision.** `DOMINO_BRUSH_SIZES` holds
+only the size *identity* — which three there are, their order, their labels — because that is what
+the store records and what the menu iterates, neither of which needs to know a brush's reach. The
+magnitude lives on the definition as `sizeMm: Record<DominoBrushSizeId, number>`: pencil 20/60/120,
+quill 60/100/140. The array once carried the millimetres itself, arguing that "Medium" ought to mean
+a comparable mark whichever nib drew it. Using it disproved that. 20mm is a useful single-domino dot
+for a round nib, but the quill's is fixed at `QUILL_NIB_WIDTH_MM` across, so a 20mm *length* is a
+squat blob — too short to show the thick/thin contrast the tool exists for, and barely distinct from
+a small circle. The quill's floor sits about where the pencil's middle does. There is no global
+`dominoBrushSizeMm` lookup any more, and reintroducing one would re-import the assumption.
+
+**One stroke is one undo entry, and that inverts the rule every other colour write follows.** All
+of those write and record in the same breath — which is exactly why `DominoEditor` never applies a
+locked colour inside a pointermove. A stroke must write live, so paint appears under the nib, yet
+record once, so Ctrl+Z takes back the whole stroke rather than one flick of it. Four actions in
+`dominoes/appStoreSlice.ts` do it, over `dominoStroke` (the dominoes painted so far and the colour
+each had *before*):
+
+- **`paintDominoStroke`** resolves the locked swatch through the shared `swatchTargets` and calls
+  `commitDominoColors` like everything else, inheriting the in-place column write, the version bump
+  the modeller redraws on, and the `colorByCell` sync. The one difference is the last step: the
+  operation it hands back is **folded into `dominoStroke` instead of being pushed**. First value
+  seen per domino wins — a nib passing twice over the same domino would otherwise remember what its
+  *first* pass left, and undoing the stroke would leave it painted. Safe to call every frame with a
+  set the previous frame already covered, since `commitDominoColors` drops any domino already at the
+  target colour and returns `null`.
+- **`endDominoStroke`** builds one `"dominoColors"` operation from the map and pushes it. Built by
+  hand rather than through `commitDominoColors`, because the columns are already written and the
+  memory already synced; only the history entry is left.
+- **`cancelDominoStroke`** feeds the map straight back through `commitDominoColors` and drops the
+  operation on the floor — the same idiom `restoreDominoColorSnapshot` uses, and the reason the
+  revert re-syncs colour memory too. Without that, a later regenerate would repaint the very colours
+  the cancel discarded.
+- **`beginDominoStroke`** opens the map. It and `paintDominoStroke` both bail with no
+  `dominoColorLockedId`.
+
+`designer/DominoEditor.tsx` drives all of it, and a brush is the **first gesture in the file that
+acts with no button down**. Its branch therefore sits *above* the `if (!g) return` in
+`onPointerMove` — that one line is what makes every other gesture a no-op until a press. One
+function, `trackBrush`, handles a frame whether hovering or painting: it draws the nib, selects what
+the nib covers, and, when a stroke is open, paints it. Load-bearing details:
+
+- **The paint call goes before the `sameIndices` redraw guard, never after.** The first frame of a
+  stroke usually covers exactly what the last hovering frame covered, so a guarded paint would skip
+  the press itself.
+- **Nothing in the brush path calls `applyLockedColorIfAny`,** and the selection is written straight
+  to `useDominoSelectionStore` rather than through the store's `writeDominoSelection` — that one
+  applies the locked swatch, which here would push an undo entry per frame, the exact hazard the
+  stroke exists to avoid. The two corner indices carry no meaning for a brush; the ends of the
+  covered range stand in because the entry requires real indices.
+- **`resetBrushView` runs off `[brushId, brushCanPaint]`, and the derived boolean is why that is one
+  effect rather than two.** Arming, disarming, swapping brushes, and the lock coming or going are
+  all "what the brush should be showing changed wholesale". Depending on `dominoColorLockedId`
+  *directly* would be too permissive twice over: locking a different colour mid-drawing would reset
+  needlessly, and an unlock with no brush armed would clear the user's own selection. Once a guard
+  inside the effect filters those out you can no longer tell which dependency fired, which is what
+  forced two effects before.
+- **`onPointerLeave` commits a stroke rather than ignoring it.** Nothing captures the pointer, so a
+  button released outside the canvas never reaches this component; an earlier version bailed out
+  while painting and the brush stayed in painting mode, silently resuming the moment the pointer
+  came back with the button long since up. This was a real bug — do not "considerately" re-add a
+  guard against interrupting a stroke here. Leaving also clears the hover selection, which is
+  equally load-bearing: a swatch click applies to whatever is *selected*, and under a brush that is
+  the nib's last footprint, so a residue there would be recoloured by the very click the user makes
+  to pick their next colour.
+- **The nib preview sits in world coordinates**, unlike a shape variant's `Preview`, which is
+  wrapped in a `<group>` at the edited DDObject's origin. A shape works in parent-relative mm; a nib
+  just follows the pointer and is as happy off the field as on it.
+
+**A brush arms with or without a locked swatch, and is simply inert without one** — no nib, no hover
+selection, nothing paintable, with `ModeHintBar` saying why. The button carries **no disabled
+state**, and that is not laziness: swapping the locked colour by double-clicking another swatch goes
+red → **null** → blue, because `DominoColorPanel`'s `onSwatchClick` unlocks the old swatch first and
+the browser fires `click` before `dblclick`. Anything hung off "the lock went away" — a disable, or
+a disarm — therefore fires during the very gesture a user uses to change colour mid-drawing. Don't
+add one.
+
+`designer/DominoBrushButton.tsx` is one control per brush, and **the button only opens the size
+menu; the menu arms the brush.** Clicking an armed brush is therefore not a disarm — it just reopens
+the menu, matching every other tool in this toolbar, none of which turns itself off. It borrows
+`Toolbar.module.css`'s `.iconBtn`/`.active` rather than keeping a byte-identical copy; what it can't
+borrow is `ToolButton`, which takes no ref to anchor a popup to and emits no
+`aria-haspopup`/`aria-expanded`. The popup follows `NewElementMenu`'s pattern, and adds one thing:
+an effect that claims **Escape in the capture phase while open**, so closing a menu never also runs
+`DominoEditor`'s ladder and disarms the tool underneath. Same answer `ConfirmDialog` uses against
+the same window listeners, but for that one key only — a menu is a popup, not a modal, and has no
+business swallowing the rest.
+
+**`sizeIcons` is one hand-drawn glyph per brush per size, and every one renders at a single pixel
+size.** The drawing carries the size, so scaling a glyph to imply one would double the cue and fight
+it — a Small icon rendered small would shrink its own droplet too. There is deliberately no generic
+per-tool glyph on the definition: the button shows the size-specific drawing, so one would have no
+consumer. See *Hand-drawn icons* for the shared-viewBox rule those six drawings depend on.
 
 ### The clipboard
 
@@ -1117,9 +1275,12 @@ a permanent sentence.
 #### One tool for every element type
 
 `ToolId` is `"select" | "newElement" | "editDominoes"`. It deliberately does **not** carry a
-member per placeable type (it once carried `"field"`), for the same reason `dominoShapeSelectId`
-is not a `ToolId`: `activeTool` answers *which mode am I in*, and the variant chosen within that
-mode is a separate value. The pieces:
+member per placeable type (it once carried `"field"`), for the same reason neither
+`dominoShapeSelectId` nor `dominoBrushId` is a `ToolId`: `activeTool` answers *which mode am I in*,
+and the variant chosen within that mode is a separate value. Note those last two are sub-modes of
+the *same* mode and are mutually exclusive with each other, which is expressed by each slice's
+setter clearing the other's field — a cross-slice write needing no import either way, since `set`
+is typed against the whole `AppState`. The pieces:
 
 - **`newElementType: DDObjectType | null`** in `store.ts` holds the armed type, and is null
   whenever `activeTool` isn't `"newElement"`. Every write that leaves the tool maintains that —
@@ -1295,6 +1456,13 @@ adds no undo entry. Cancel (`cancelProperties`) and Escape-mid-drag were already
 self-healing before undo/redo existed and still need no entries: nothing was ever pushed for a
 cancelled session, so there is nothing to invert.
 
+**A paint stroke is the one commit point that separates writing from recording** rather than
+deferring both. Every other colour write records where it writes; a stroke writes on every frame
+(the user has to see paint appear under the nib) and records once, at `endDominoStroke` on
+pointerup. Escape mid-stroke is then the same self-healing story as Escape-mid-drag — nothing was
+pushed, so `cancelDominoStroke` has only colours to put back and no operation to invert. See
+*Paint brushes* for how the per-frame operations are folded into the one that lands.
+
 **Re-entrancy is the load-bearing constraint**: applying history (`undo()`/`redo()`) must never
 itself record a new operation, or inverting a `create` would push a `delete`, corrupting the
 stacks. The fix is a raw/public split, not a suppression flag — `removeDDObject` is a thin
@@ -1434,6 +1602,11 @@ otherwise "correct" backwards:
   for later. Its only caller is `enterDominoEditing`; a plain single click still doesn't move the
   camera, deliberately, since selection happens constantly and a moving viewport would fight the
   user. The row ⋯ menu continues to act on its own DDObject independently of what is selected.
+- **Freehand painting exists now** (`paint-brush/`, see *Paint brushes*) alongside the
+  select-then-apply and lock-then-select routes. It is the only route that writes continuously while
+  recording a single undo entry, and the only sub-mode whose *size* is a per-variant number rather
+  than a shared one — "Medium" is a different reach for the pencil than for the quill, which testing
+  established and a shared table would quietly undo.
 - **There is one generic modal, `components/ConfirmDialog.tsx`**, raised today only by
   ModeHintBar's Cancel. It is owned by whoever raises it (local state, mounted inline) rather
   than by the store — unlike `PropertiesDialog` there is no shared editing session behind it,
@@ -1476,11 +1649,31 @@ turned out to say more than any stock icon anyway. `src/icons/` holds the ones d
   the `.svg`, and nothing checks it.** TypeScript cannot see inside the file and the build passes
   either way; the only symptom is an icon sitting slightly off-centre or at the wrong size. This
   has already drifted once. Re-check line 1 after every re-export.
-- **Ids are the hazard to watch as more icons land.** PowerPoint emits them for gradients, picture
-  fills, shadows and clipping, numbered from zero *within each file* — and an inlined icon's ids
-  belong to the whole page. Two drawings both carrying `clip0` collide, and one gets clipped by the
-  other's rectangle. No icon has an id today. The fix, when one turns up, is recorded in
-  `vite.config.ts`; note it is SVGO's `prefixIds` that does the work, not the default preset.
+- **A *family* of icons whose relative sizes matter breaks that rule on purpose, and shares one
+  viewBox.** The six paint-brush size glyphs (`PAINT_BRUSH_VIEW_BOX`) are all
+  `paddedViewBox(828, 826)` — the largest of them — rather than each file's own numbers, and the
+  comment there says so because the next reader will otherwise "fix" it back. Two things make it
+  necessary. Per-file boxes *normalise* the drawings, so the nib would grow far less than it should
+  while the shared droplet in every one of them visibly **shrank** as the size went up, partly
+  inverting the cue. And a shared box that *centred* each drawing would fix the scale but move the
+  droplet, because these drawings are anchored at their origin rather than their centre — only one
+  identical viewBox string holds it still. The rule generalises: **the exception applies whenever
+  several drawings must be compared to each other, and then all of them must share the box.**
+  Note the glyphs are indicative, not to scale — drawn at the true millimetre ratios a Small nib
+  would be nearly invisible at 20px, so don't "correct" them to match.
+- **Id collisions are handled, by SVGO's `prefixIds` — don't remove it.** PowerPoint emits ids for
+  gradients, picture fills, shadows and clipping, numbered from zero *within each file*, so almost
+  every export that has one calls it `clip0`; an inlined icon's ids then belong to the whole page
+  rather than to its own file. Two drawings both carrying `clip0` put two `<clipPath id="clip0">`
+  into one document, every `url(#clip0)` resolves to whichever came first in DOM order, and one
+  icon is clipped by the other's rectangle. `vite.config.ts` therefore runs `@svgr/plugin-svgo`
+  ahead of `@svgr/plugin-jsx` with `["preset-default", "prefixIds"]`, which renames each id to
+  `<Filename>_svg__a`. This stopped being hypothetical the moment the six `Paint-Circle-*` /
+  `Paint-Quill-*` exports landed — every one of them carries a clip path. Two traps recorded in
+  full at that config: `preset-default` alone does **not** fix it (its `cleanupIds` only shortens
+  ids within one file, so two files both end up with an id named `a`), and there is deliberately
+  **no top-level `svgo` dependency**, because `@svgr/plugin-svgo` pins svgo 3.x itself and adding
+  svgo would only install an unused 4.x alongside it.
 
 The three rules below apply to **code and comments you write or change from now on**. They are
 not a licence to go reformat what is already here — existing names and comments are only worth

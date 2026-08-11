@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { hasOperationsSinceBarrier } from "../history/appStoreSlice";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { getDominoBrush } from "../paint-brush/registry";
 import { placementToolFor } from "./toolConfig";
 import styles from "./ModeHintBar.module.css";
 
@@ -49,6 +50,10 @@ export default function ModeHintBar() {
   // gesture state lives in a ref inside the <Canvas>. A string, so it's safe to
   // read straight out of a selector.
   const dominoShapeSelectHint = useStore((s) => s.dominoShapeSelectHint);
+  // Which paint brush is armed, if any. Unlike a shape's, a brush's hint has no
+  // stages, so it comes straight off the registry rather than needing a store
+  // field DominoEditor writes.
+  const dominoBrushId = useStore((s) => s.dominoBrushId);
   // The root BuildPlane always exists and always has a children array — this
   // is "are there any DDObjects yet" for the Select-mode idle hint below.
   const hasElements = useStore((s) => {
@@ -87,6 +92,12 @@ export default function ModeHintBar() {
         </button>
         {dominoShapeSelectHint ? (
           <span>{dominoShapeSelectHint}</span>
+        ) : dominoBrushId ? (
+          <span>
+            {dominoColorLockedId
+              ? getDominoBrush(dominoBrushId).hint
+              : "Paint brushes require locking a color swatch before painting."}
+          </span>
         ) : dominoColorLockedId ? (
           <span>Select dominoes to change to the locked color, ESC to exit.</span>
         ) : (

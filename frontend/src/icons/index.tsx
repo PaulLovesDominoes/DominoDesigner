@@ -2,6 +2,13 @@ import AngledRectangleSelectSvg from "../assets/Angled-Rectangle.svg?react";
 import CircleByDiameterSelectSvg from "../assets/Circle-by-Diameter.svg?react";
 import CircleSelectSvg from "../assets/Circle-by-Radius.svg?react";
 import OvalSelectSvg from "../assets/Oval-Select.svg?react";
+import PaintCircleLargeSvg from "../assets/Paint-Circle-Large.svg?react";
+import PaintCircleMediumSvg from "../assets/Paint-Circle-Medium.svg?react";
+import PaintCircleSmallSvg from "../assets/Paint-Circle-Small.svg?react";
+import PaintQuillLargeSvg from "../assets/Paint-Quill-Large.svg?react";
+import PaintQuillMediumSvg from "../assets/Paint-Quill-Medium.svg?react";
+import PaintQuillSmallSvg from "../assets/Paint-Quill-Small.svg?react";
+import QuillNibSvg from "../assets/Quill-nib.svg?react";
 import TriangleSelectSvg from "../assets/Triangle.svg?react";
 import { createSvgIcon, paddedViewBox } from "./createSvgIcon";
 
@@ -50,3 +57,49 @@ export const AngledRectangleSelectIcon = createSvgIcon(
   AngledRectangleSelectSvg,
   paddedViewBox(852, 834),
 );
+
+/**
+ * The quill brush's nib on its own — a thin bar lying lower-left to upper-right,
+ * at the exact angle the brush paints at. Nothing consumes it since the six
+ * per-size paint icons below took over the quill's size menu; kept because the
+ * drawing exists and a plain nib glyph is an obvious thing to want again.
+ */
+export const QuillNibIcon = createSvgIcon(QuillNibSvg, paddedViewBox(824, 824));
+
+/**
+ * The paint brushes' size icons: one drawing per brush per size, each showing a
+ * paint droplet with the mark that brush makes coming off its tip — a round dot
+ * for the pencil, an angled bar for the quill. The toolbar button and the size
+ * menu both just draw these at 20px; the *drawing* carries the size, so nothing
+ * scales a glyph to imply one.
+ *
+ * **All six deliberately share ONE viewBox, and it is NOT each file's own
+ * width/height** — which is the rule paddedViewBox otherwise documents. That is
+ * load-bearing, so don't "fix" it back to a call per file.
+ *
+ * What makes one shared box work: every one of the six lands with its top-left
+ * at (0,0), every one carries an identical 378-unit droplet anchored at that
+ * origin, and the nib grows out of the droplet's tip toward the lower right, the
+ * file's declared size growing with it. Sizing the box on the largest of them
+ * therefore pins the droplet in place while the nib alone grows — circle nibs
+ * 154 -> 367 -> 525 units, quill bars 244 -> 708 -> 1034.
+ *
+ * Per-file boxes break that two separate ways. They *normalise* the drawings, so
+ * at 20px the nib would grow only 1 : 1.74 : 2.12 rather than 1 : 2.38 : 3.41
+ * while the shared droplet visibly *shrank* (12.3 -> 9.0 -> 7.6px) — partly
+ * inverting the very cue these icons exist to give. And a shared box that
+ * *centred* each drawing would fix the scale but move the droplet, since the
+ * droplet sits at the drawing's origin rather than its centre. Only one
+ * identical viewBox string holds it still.
+ *
+ * The nibs are indicative, not to scale: drawn at the true millimetre ratios
+ * (1 : 3 : 6 for the pencil) a Small nib would be nearly invisible at 20px.
+ */
+const PAINT_BRUSH_VIEW_BOX = paddedViewBox(828, 826);
+
+export const PaintCircleSmallIcon = createSvgIcon(PaintCircleSmallSvg, PAINT_BRUSH_VIEW_BOX);
+export const PaintCircleMediumIcon = createSvgIcon(PaintCircleMediumSvg, PAINT_BRUSH_VIEW_BOX);
+export const PaintCircleLargeIcon = createSvgIcon(PaintCircleLargeSvg, PAINT_BRUSH_VIEW_BOX);
+export const PaintQuillSmallIcon = createSvgIcon(PaintQuillSmallSvg, PAINT_BRUSH_VIEW_BOX);
+export const PaintQuillMediumIcon = createSvgIcon(PaintQuillMediumSvg, PAINT_BRUSH_VIEW_BOX);
+export const PaintQuillLargeIcon = createSvgIcon(PaintQuillLargeSvg, PAINT_BRUSH_VIEW_BOX);

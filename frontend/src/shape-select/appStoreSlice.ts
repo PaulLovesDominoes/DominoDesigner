@@ -30,6 +30,11 @@ export interface ShapeSelectSlice {
    * Arms a shape, or returns to the rectangle band with null. Radio semantics:
    * the toolbar's Rectangle button is how a shape is left, so a shape's own
    * button never turns itself off.
+   *
+   * Also disarms any armed paint brush, since both interpret canvas drags and
+   * only one can own them; paint-brush's setDominoBrush clears this in turn.
+   * Neither slice imports the other — `set` is typed against the whole AppState,
+   * so each can see the other's members.
    */
   setDominoShapeSelect: (id: ShapeSelectId | null) => void;
 
@@ -55,6 +60,7 @@ export const createShapeSelectSlice: StateCreator<AppState, [], [], ShapeSelectS
       dominoShapeSelectHint: dominoShapeSelectId
         ? getShapeSelect(dominoShapeSelectId).hint(undefined)
         : null,
+      dominoBrushId: null,
     }),
 
   dominoShapeSelectHint: null,

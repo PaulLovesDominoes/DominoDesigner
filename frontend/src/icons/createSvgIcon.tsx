@@ -55,11 +55,11 @@ export const paddedViewBox = (drawingWidth: number, drawingHeight: number): stri
  *
  * The first is scaling at all. PowerPoint writes `width` and `height` and no
  * viewBox, which pins a drawing to one fixed size — asking for it at 20px would
- * crop it rather than shrink it. Nothing upstream fills that in: the svgr
- * plugin runs no SVGO (see vite.config.ts), so this is the only place a viewBox
- * can come from. Requiring it rather than defaulting is what turns forgetting
- * it into a compile error instead of an icon that quietly renders at the wrong
- * size.
+ * crop it rather than shrink it. Nothing upstream fills that in: SVGO does run
+ * (see vite.config.ts) but only to keep ids from colliding, and it cannot invent
+ * a viewBox that was never there. So this is the only place one can come from,
+ * and requiring it rather than defaulting is what turns forgetting it into a
+ * compile error instead of an icon that quietly renders at the wrong size.
  *
  * The second is the margin around the drawing, which is what makes a custom
  * icon sit at the same visual weight as the Remixicon ones beside it. That is

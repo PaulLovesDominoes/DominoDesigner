@@ -3,7 +3,7 @@ import type { StateCreator } from "zustand";
 import type { AppState } from "../store";
 import type { DDObject } from "../object-types/registry";
 import type { DDObjectId } from "../object-types/base";
-import type { InventoryEntryId } from "../domino-inventory/object-model";
+import type { InventoryEntry, InventoryEntryId } from "../domino-inventory/object-model";
 import { pushOperation, type Operation } from "../history/appStoreSlice";
 import { useDominoSelectionStore } from "./selectionStore";
 import { useDominoDataStore } from "./store";
@@ -87,6 +87,14 @@ function writeDominoSelection(
 }
 
 /**
+ * The one variant of Operation this file produces. Named so commitDominoColors
+ * can return it precisely rather than as the whole union — a paint stroke reads
+ * the indices/before columns straight off what it returns, which the union
+ * cannot answer for.
+ */
+type DominoColorsOperation = Extract<Operation, { kind: "dominoColors" }>;
+
+/**
  * The one write path for a batch of domino color changes — shared by the color
  * swatches, cut, and paste, all of which need the identical sequence: filter to
  * the dominoes that actually change, mutate the colorIds column in place,
@@ -106,7 +114,7 @@ function commitDominoColors(
   ddObject: DDObject | undefined,
   data: DominoData,
   targets: Iterable<[index: number, colorId: number]>,
-): Operation | null {
+): DominoColorsOperation | null {
   const indices: number[] = [];
   const before: number[] = [];
   const after: number[] = [];
@@ -133,6 +141,73 @@ function commitDominoColors(
     before: Uint32Array.from(before),
     after: afterArray,
   };
+}
+
+/**
+ * The (index, colorId) pairs a swatch implies over `indices` — the one place
+ * that answers "what does this swatch mean as a colour write", shared by the
+ * swatch clicks, the Delete/Backspace keys and a paint brush's stroke.
+ *
+ * Returns undefined only for an inventory swatch that no longer exists, which
+ * every caller treats as "nothing to do".
+ *
+ * Hide is the reason this takes `data`: hiding is a flag added to whatever
+ * colour the domino will return to, so its target depends on the domino, where
+ * the other two are the same value for every index (see CLAUDE.md's note on
+ * HIDDEN_COLOR_FLAG).
+ */
+function swatchTargets(
+  swatchId: DominoSwatchId,
+  inventoryEntries: readonly InventoryEntry[],
+  data: DominoData,
+  indices: Iterable<number>,
+): [number, number][] | undefined {
+  let targetFor: (index: number) => number;
+  if (swatchId === HIDE_SWATCH_ID) {
+    targetFor = (i) => withHiddenColorId(data.colorIds[i]);
+  } else if (swatchId === UNASSIGNED_SWATCH_ID) {
+    // 0 is the unpainted sentinel, the same clear a cut performs — minus the
+    // clipboard write, which is the whole reason that isn't just Ctrl+X.
+    targetFor = () => 0;
+  } else {
+    const entry = inventoryEntries.find((e) => e.id === swatchId);
+    if (!entry) return undefined;
+    targetFor = () => entry.numericId;
+  }
+
+  const targets: [number, number][] = [];
+  for (const i of indices) targets.push([i, targetFor(i)]);
+  return targets;
+}
+
+/** The `set`/`get` this slice's creator is handed, so the helpers below can take them. */
+type SliceSet = Parameters<StateCreator<AppState, [], [], DominoColorSlice>>[0];
+type SliceGet = () => AppState;
+
+/**
+ * Apply one swatch to whatever is selected, as a single undo step. The shared
+ * body of the three swatch actions, which differ only in which swatch they name:
+ * the guard prologue (in the mode, something selected, dominoes exist) and the
+ * commit-then-push tail were identical in all three.
+ *
+ * A paint brush's stroke deliberately does NOT come through here — it needs the
+ * same swatch resolution but must not push per frame. It shares swatchTargets
+ * instead.
+ */
+function applySwatchToSelection(set: SliceSet, get: SliceGet, swatchId: DominoSwatchId) {
+  const s = get();
+  const parentId = s.dominoEditingId;
+  if (!parentId) return;
+  const selected = useDominoSelectionStore.getState().get(parentId)?.selected;
+  if (!selected || selected.size === 0) return;
+  const data = useDominoDataStore.getState().get(parentId);
+  if (!data) return;
+
+  const targets = swatchTargets(swatchId, s.inventoryEntries, data, selected);
+  if (!targets) return;
+
+  const op = commitDominoColors(parentId, s.ddObjects[parentId], data, targets);
+  if (op) set((st) => pushOperation(st.undoStack, op));
 }
 
 export interface DominoColorSlice {
@@ -192,6 +267,37 @@ export interface DominoColorSlice {
   // select-all, which is the right reading of the set operation and needs no
   // special case.
   invertDominoSelection: () => void;
+
+  // ---- Paint brush strokes ----
+  // One freehand stroke in progress: the dominoes it has recolored so far, and
+  // the color each of them had *before* the stroke started. Null between
+  // strokes. See paint-brush/base.ts for the tools that drive it.
+  //
+  // This exists because a stroke inverts the rule every other color write in the
+  // app follows. All of those write and record in the same breath — which is
+  // exactly why DominoEditor is careful never to apply a locked color inside a
+  // pointermove (it would push an undo entry per frame). A stroke has to write
+  // live, so the user sees paint appear under the nib, but record only once, so
+  // Ctrl+Z takes back the whole stroke rather than one flick of it.
+  //
+  // The map is what makes both halves of that work: `end` reads it to build one
+  // operation covering everything painted, and `cancel` feeds it straight back
+  // through the same write path to undo the stroke with nothing recorded.
+  dominoStroke: { parentId: DDObjectId; before: Map<number, number> } | null;
+  // Opens a stroke. No-op outside the mode or with no swatch locked — a brush
+  // with nothing to lay down has nothing to do.
+  beginDominoStroke: () => void;
+  // Paints `indices` with the locked swatch, folding them into the open stroke
+  // rather than recording anything. Safe to call every frame with a set the
+  // previous frame already covered: the shared write path skips any domino
+  // already at the target color.
+  paintDominoStroke: (indices: Iterable<number>) => void;
+  // Closes the stroke, pushing everything it painted as ONE undoable operation.
+  // Pushes nothing if the stroke touched no dominoes.
+  endDominoStroke: () => void;
+  // Abandons the stroke, putting every domino it painted back to the color it
+  // had before, and records nothing — Escape mid-stroke.
+  cancelDominoStroke: () => void;
 
   // ---- Domino editing mode's cancel snapshot ----
   // The edited DDObject's whole colorIds column as of entering the mode, and the
@@ -259,67 +365,15 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
     else s.applyColorToSelectedDominoes(swatchId);
   },
 
-  applyColorToSelectedDominoes: (entryId) => {
-    const s = get();
-    const parentId = s.dominoEditingId;
-    if (!parentId) return;
-    const entry = s.inventoryEntries.find((e) => e.id === entryId);
-    if (!entry) return;
-    const targetId = entry.numericId;
-    const selected = useDominoSelectionStore.getState().get(parentId)?.selected;
-    if (!selected || selected.size === 0) return;
-    const data = useDominoDataStore.getState().get(parentId);
-    if (!data) return;
+  applyColorToSelectedDominoes: (entryId) => applySwatchToSelection(set, get, entryId),
 
-    const op = commitDominoColors(
-      parentId,
-      s.ddObjects[parentId],
-      data,
-      [...selected].map((i) => [i, targetId] as [number, number]),
-    );
-    if (op) set((st) => pushOperation(st.undoStack, op));
-  },
+  // 0 is the unpainted sentinel — see swatchTargets.
+  clearSelectedDominoColors: () => applySwatchToSelection(set, get, UNASSIGNED_SWATCH_ID),
 
-  clearSelectedDominoColors: () => {
-    const s = get();
-    const parentId = s.dominoEditingId;
-    if (!parentId) return;
-    const selected = useDominoSelectionStore.getState().get(parentId)?.selected;
-    if (!selected || selected.size === 0) return;
-    const data = useDominoDataStore.getState().get(parentId);
-    if (!data) return;
-
-    const op = commitDominoColors(
-      parentId,
-      s.ddObjects[parentId],
-      data,
-      // 0 is the unpainted sentinel, the same clear a cut performs — minus the
-      // clipboard write, which is the whole reason this isn't just Ctrl+X.
-      [...selected].map((i) => [i, 0] as [number, number]),
-    );
-    if (op) set((st) => pushOperation(st.undoStack, op));
-  },
-
-  hideSelectedDominoes: () => {
-    const s = get();
-    const parentId = s.dominoEditingId;
-    if (!parentId) return;
-    const selected = useDominoSelectionStore.getState().get(parentId)?.selected;
-    if (!selected || selected.size === 0) return;
-    const data = useDominoDataStore.getState().get(parentId);
-    if (!data) return;
-
-    // withHiddenColorId leaves an already-hidden domino alone, and
-    // commitDominoColors then drops it as a no-op recolor — so hiding an
-    // all-hidden selection records nothing rather than an empty undo step.
-    const op = commitDominoColors(
-      parentId,
-      s.ddObjects[parentId],
-      data,
-      [...selected].map((i) => [i, withHiddenColorId(data.colorIds[i])] as [number, number]),
-    );
-    if (op) set((st) => pushOperation(st.undoStack, op));
-  },
+  // withHiddenColorId leaves an already-hidden domino alone, and
+  // commitDominoColors then drops it as a no-op recolor — so hiding an
+  // all-hidden selection records nothing rather than an empty undo step.
+  hideSelectedDominoes: () => applySwatchToSelection(set, get, HIDE_SWATCH_ID),
 
   unhideSelectedDominoes: () => {
     const s = get();
@@ -408,6 +462,98 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
     const selected = new Set<number>();
     for (let i = 0; i < data.count; i++) if (!previous?.has(i)) selected.add(i);
     writeDominoSelection(get, parentId, selected);
+  },
+
+  dominoStroke: null,
+
+  beginDominoStroke: () => {
+    const s = get();
+    if (!s.dominoEditingId || !s.dominoColorLockedId) return;
+    set({ dominoStroke: { parentId: s.dominoEditingId, before: new Map() } });
+  },
+
+  paintDominoStroke: (indices) => {
+    const s = get();
+    const stroke = s.dominoStroke;
+    const swatchId = s.dominoColorLockedId;
+    if (!stroke || !swatchId) return;
+    const data = useDominoDataStore.getState().get(stroke.parentId);
+    if (!data) return;
+
+    const targets = swatchTargets(swatchId, s.inventoryEntries, data, indices);
+    if (!targets || targets.length === 0) return;
+
+    // The same write path every other colour change uses, so the stroke inherits
+    // the in-place column write, the version bump the modeller redraws on, and
+    // the cross-regenerate colour memory sync. What is different is the last
+    // line: the operation it hands back is folded into the stroke instead of
+    // being pushed, which is the whole of "one undo entry per stroke".
+    const op = commitDominoColors(stroke.parentId, s.ddObjects[stroke.parentId], data, targets);
+    if (!op) return; // every domino was already this colour
+
+    for (let k = 0; k < op.indices.length; k++) {
+      const index = op.indices[k];
+      // First value seen wins. A domino the nib passes over twice would
+      // otherwise remember the colour the *first* pass left, and undoing the
+      // stroke would leave it painted.
+      if (!stroke.before.has(index)) stroke.before.set(index, op.before[k]);
+    }
+    // The map is mutated in place; nothing subscribes to it, and the live
+    // redraw comes from the data store's version bump above.
+  },
+
+  endDominoStroke: () => {
+    const s = get();
+    const stroke = s.dominoStroke;
+    if (!stroke) return;
+    set({ dominoStroke: null });
+    if (stroke.before.size === 0) return;
+
+    const data = useDominoDataStore.getState().get(stroke.parentId);
+    if (!data) return;
+
+    const indices: number[] = [];
+    const before: number[] = [];
+    const after: number[] = [];
+    for (const [index, priorColorId] of stroke.before) {
+      if (index >= data.count) continue;
+      const currentColorId = data.colorIds[index];
+      if (currentColorId === priorColorId) continue; // painted, then painted back
+      indices.push(index);
+      before.push(priorColorId);
+      after.push(currentColorId);
+    }
+    if (indices.length === 0) return;
+
+    // Built by hand rather than through commitDominoColors, because the columns
+    // are already written — every frame of the stroke wrote them, and syncing
+    // colour memory along the way. All that is left is the history entry.
+    set((st) =>
+      pushOperation(st.undoStack, {
+        kind: "dominoColors",
+        parentId: stroke.parentId,
+        indices: Uint32Array.from(indices),
+        before: Uint32Array.from(before),
+        after: Uint32Array.from(after),
+      }),
+    );
+  },
+
+  cancelDominoStroke: () => {
+    const s = get();
+    const stroke = s.dominoStroke;
+    if (!stroke) return;
+    set({ dominoStroke: null });
+
+    const data = useDominoDataStore.getState().get(stroke.parentId);
+    if (!data) return;
+
+    // Back through commitDominoColors, exactly as restoreDominoColorSnapshot
+    // below does, so the restore re-syncs colour memory too — without that a
+    // later regenerate would repaint the very colours this just discarded. The
+    // operation it returns is dropped: an abandoned stroke records no history,
+    // the same way a cancelled properties dialog records none.
+    commitDominoColors(stroke.parentId, s.ddObjects[stroke.parentId], data, stroke.before);
   },
 
   dominoEditingColorSnapshot: null,

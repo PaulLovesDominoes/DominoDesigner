@@ -173,6 +173,69 @@ Some ideas on how to use these features:
     -  Selected dominoes become de-selected and vice-versa
 
 
+## Painting with the pencil and the quill
+
+The **Pencil** and **Quill** at the right-hand end of the toolbar are freehand painting
+tools. Instead of selecting dominoes and then choosing a color, you drag a small shape
+across the build plane and the dominoes it passes over are painted as you go - just like
+a brush in a drawing program.
+
+**Both tools need a locked color to paint with** (see *Locked Color mode* above). The
+color they paint is simply whatever is locked, so locking **Hide** turns the pencil into
+an eraser that hides dominoes, and locking **Unassigned** turns it into one that clears
+them back to unpainted. You can pick up a brush before locking anything - it just will
+not show or paint until you do, and the hint bar reminds you.
+
+The two differ only in the shape of the nib:
+
+- **Pencil** - a circle, so it paints the same width whichever way you drag.
+- **Quill** - a thin bar held at an angle, running from lower-left to upper-right. Drag
+  *along* that angle and you leave a hairline; drag *across* it and you leave a broad
+  mark. This is how a real calligraphy pen behaves.
+
+### Choosing a brush and its size
+
+Each brush is a single toolbar button, and the icon on it *is* the nib at the size
+currently chosen - so you can see which size you are holding without opening anything.
+**Clicking the button opens that brush's size menu**, and picking Small, Medium or Large
+from the menu is what picks up the brush.
+
+The two brushes do not use the same measurements, because they do not stay useful over
+the same range:
+
+- **Pencil** - Small 20mm, Medium 60mm, Large 120mm, measured across the circle. Small is
+  roughly one domino, which is the size to reach for when placing single dominoes.
+- **Quill** - Small 60mm, Medium 100mm, Large 140mm, measured along the nib's *length*.
+  Its width never changes, which is what keeps the thick/thin contrast at every size -
+  and it is also why the quill starts at 60 rather than 20. A nib barely longer than it
+  is wide is just a blob, with no angle left to draw with.
+
+Clicking a brush you are already holding just reopens the menu, so you can change size
+without putting the brush down. As with every other tool in this toolbar, the way to put
+it down is to pick up a different tool - a shape, or plain Rectangle select - or to press
+ESC.
+
+### How painting works
+
+1. **Pick up the brush**, by choosing a size from its menu. Any dominoes you had selected
+   are de-selected, so you start with a clean build plane.
+2. **Hover.** Move the pointer over the build plane and you will see a faint shape
+   following it, with no outline. The dominoes underneath it are outlined in white to
+   show what you *would* paint. Nothing is changed yet.
+3. **Press and drag.** The shape gains a white outline, and every domino it passes over
+   is painted with the locked color immediately.
+4. **Release.** The stroke is finished and the selection clears.
+
+### Undoing a stroke
+
+**A whole stroke undoes as one step.** However many dominoes you painted between pressing
+and releasing, a single Ctrl+Z takes them all back - individual dominoes within a stroke
+cannot be undone separately.
+
+If you change your mind part-way through, **press ESC before releasing the mouse**. Every
+domino painted since you pressed goes back to the color it had, the tool leaves painting
+mode, and nothing is recorded in the undo history at all.
+
 ## Copying and pasting colors
 
 Colors can be copied from one group of dominoes to another, including between two
@@ -203,10 +266,14 @@ Press the "ESC" key, repeatedly, to return the system to its default state.
 
 Pressing ESC multiple times will (in order):
 
-1. Cancel any range (click-drag) or shape selection which is in-progress
+1. Cancel any range (click-drag) or shape selection which is in-progress, or any paint
+   stroke in progress
     -  If your shape is not looking like you want, use ESC to cancel it so you can try again
+    -  A cancelled paint stroke puts back every domino it had painted
 2. De-select all dominoes
-3. Return to the default simple Rectangle selection mode
+    -  Skipped when a pencil or quill is armed, since what is "selected" there is just
+       whatever the nib is hovering over
+3. Return to the default simple Rectangle selection mode, putting away any pencil or quill
 4. Unlock any locked domino colors
 
 ### Hidden and Unassigned Dominoes

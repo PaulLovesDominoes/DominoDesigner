@@ -28,6 +28,10 @@ import {
   createShapeSelectSlice,
   type ShapeSelectSlice,
 } from "./shape-select/appStoreSlice";
+import {
+  createPaintBrushSlice,
+  type PaintBrushSlice,
+} from "./paint-brush/appStoreSlice";
 import { applyRemoveDDObject, ddObjectsEqual } from "./ddObjectOps";
 
 /**
@@ -77,7 +81,8 @@ export interface AppState
   extends InventorySlice,
     HistorySlice,
     DominoColorSlice,
-    ShapeSelectSlice {
+    ShapeSelectSlice,
+    PaintBrushSlice {
   // Which screen is showing.
   screen: ScreenId;
   setScreen: (screen: ScreenId) => void;
@@ -277,6 +282,13 @@ export const useStore = create<AppState>()((set, get, api) => ({
         // default rectangle rubber band.
         dominoShapeSelectId: null,
         dominoShapeSelectHint: null,
+        // And for an armed paint brush. Its *size* deliberately survives, in
+        // dominoBrushSizes — that is a preference the user set once, not
+        // per-session state. dominoStroke should already be null (a stroke ends
+        // on pointerup, and Done is a button click), but clearing it here means
+        // no half-finished stroke can outlive the mode it belongs to.
+        dominoBrushId: null,
+        dominoStroke: null,
       };
     }),
   cancelDominoEditing: () => {
@@ -475,4 +487,5 @@ export const useStore = create<AppState>()((set, get, api) => ({
   ...createHistorySlice(set, get, api),
   ...createDominoColorSlice(set, get, api),
   ...createShapeSelectSlice(set, get, api),
+  ...createPaintBrushSlice(set, get, api),
 }));
