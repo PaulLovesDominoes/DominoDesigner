@@ -9,13 +9,13 @@ import { triangleSelectDefinition } from "./triangle/object-model";
 //
 // Adding a shape: create shape-select/<name>/object-model.ts exporting a
 // ShapeSelectDefinition (plus its preview.tsx), then add one line here. That is
-// the only central edit — the toolbar, the hint bar and DominoEditTool are all
+// the only central edit — the toolbar, the hint bar and DominoEditor are all
 // driven off this map, and none of them names a variant. Order is toolbar
 // order.
 //
 // The rectangle rubber band is deliberately NOT here and never will be: it is
 // domino editing mode's *default* gesture, active whenever nothing is armed. It
-// has a toolbar button of its own (see DominoModeTools), but that button means
+// has a toolbar button of its own (see DominoEditingTools), but that button means
 // "arm nothing" — giving it a registry entry would make "nothing armed" and
 // "rectangle armed" two encodings of one state.
 export const SHAPE_SELECTS = {

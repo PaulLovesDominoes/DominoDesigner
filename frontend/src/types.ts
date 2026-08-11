@@ -1,9 +1,15 @@
 export type ScreenId = "dominoInventory" | "designer";
 
+// "newElement" is the single element-placement tool, whatever type is being
+// placed: *which* type that is lives beside it in the store (newElementType),
+// not in this union. So registering a placeable type adds nothing here — the
+// same split shape-select uses, where dominoShapeSelectId picks a gesture
+// within "editDominoes" rather than being a ToolId of its own.
+//
 // "editDominoes" has no toolbar entry — it's entered only via double-click on a
 // domino-editable DDObject (see registry.ts's isDominoEditable), never chosen
-// from the toolbar's TOOLS list.
-export type ToolId = "select" | "field" | "editDominoes";
+// from the toolbar.
+export type ToolId = "select" | "newElement" | "editDominoes";
 
 /**
  * Imperative bridge to the three.js camera, registered from inside the R3F

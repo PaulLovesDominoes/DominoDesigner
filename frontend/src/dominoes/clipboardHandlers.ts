@@ -12,7 +12,7 @@ function hasSelection(): boolean {
 }
 
 /**
- * The domino-editing context's clipboard handlers, registered by DominoEditTool
+ * The domino-editing context's clipboard handlers, registered by DominoEditor
  * for as long as the mode is active (see clipboard/object-model.ts for the
  * registration seam).
  *
@@ -20,7 +20,7 @@ function hasSelection(): boolean {
  * undo stack anyway. These read live state through getState() rather than
  * closing over it, so a handler instance stays correct for as long as it's
  * registered — its identity only needs to change to signal *enablement* may
- * have changed, which is DominoEditTool's useMemo deps' job.
+ * have changed, which is DominoEditor's useMemo deps' job.
  */
 export function makeDominoColorClipboardHandlers(): {
   cutCopy: CutCopyHandler;

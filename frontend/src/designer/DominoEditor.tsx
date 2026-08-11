@@ -364,7 +364,7 @@ const DIRECTION_KEYS: Record<string, Direction> = {
  * revert; the store write pattern deliberately mirrors that (every gesture
  * calls replace()/clear() directly, no staging).
  */
-export default function DominoEditTool() {
+export default function DominoEditor() {
   const dominoEditingId = useStore((s) => s.dominoEditingId);
   // useShallow: getDDObjectBounds allocates a fresh object per call (see
   // CLAUDE.md's React #185 note — SelectionTool.tsx and CameraRig.tsx hit the
@@ -943,14 +943,36 @@ export default function DominoEditTool() {
         if (entry) selectionStore.replace(dominoEditingId, entry);
         applyLockedColorIfAny();
       } else if (g.selectionGestureMode === "remove") {
-        // Alt was held, but this was a click rather than a drag. Alt is a
-        // drag-only modifier, so nothing happens at all.
+        // Alt was held, but this was a click rather than a drag. If the domino
+        // clicked on was selected, take it back out of the selection; do
+        // nothing otherwise.
         //
-        // Deliberately an empty branch rather than letting it fall through: the
-        // branches below would replace the whole selection with the single
-        // domino under the cursor, which is the opposite of what someone
-        // holding Alt is asking for. Catches a click on empty space too, which
-        // would otherwise clear the selection outright.
+        // Deliberately its own branch rather than falling through to the click
+        // branches below: those would replace the whole selection with the
+        // single domino under the cursor, and an Alt+click on empty space would
+        // clear the selection outright — both the opposite of what someone
+        // holding Alt is asking for.
+        //
+        // Nothing to do at all when there is no selection entry for this field
+        // yet, which is also what keeps the two corner reads below safe. Note
+        // the index test is against undefined, not truthiness: index 0 is the
+        // field's first domino, not a missing one.
+        const prevEntry = selectionStore.get(dominoEditingId);
+        if (prevEntry && g.startIndex !== undefined && prevEntry.selected.has(g.startIndex)) {
+          const selected = new Set(prevEntry.selected);
+          selected.delete(g.startIndex);
+
+          // The two corners carry over untouched: nothing was *added* for a
+          // following Shift+Arrow to extend from, and pointing a corner at the
+          // domino that just left the selection would be meaningless. No locked
+          // color to apply either — a remove paints nothing.
+          selectionStore.replace(dominoEditingId, {
+            selected,
+            baseSelection: new Set(selected),
+            selectionFixedCornerIndex: prevEntry.selectionFixedCornerIndex,
+            selectionMovingCornerIndex: prevEntry.selectionMovingCornerIndex,
+          });
+        }
       } else if (g.startIndex === undefined) {
         // Click on empty space.
         if (g.selectionGestureMode !== "add") selectionStore.clear(dominoEditingId);
@@ -958,11 +980,13 @@ export default function DominoEditTool() {
         // Toggle in/out of the current selection. The corners only reseed on
         // toggle-on — pointing them at a domino that just got deselected would
         // be meaningless for a future Shift+Arrow.
+
         const prevEntry = selectionStore.get(dominoEditingId);
         const selected = new Set(prevEntry?.selected ?? []);
         const wasSelected = selected.has(g.startIndex);
         if (wasSelected) selected.delete(g.startIndex);
         else selected.add(g.startIndex);
+
         selectionStore.replace(dominoEditingId, {
           selected,
           baseSelection: new Set(selected),

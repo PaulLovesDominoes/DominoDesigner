@@ -37,10 +37,10 @@ export interface ShapeSelectSlice {
    * What ModeHintBar shows for the armed shape, including any mid-sequence
    * stage text a variant's hint() produces.
    *
-   * Written by DominoEditTool rather than derived, because the live gesture
+   * Written by DominoEditor rather than derived, because the live gesture
    * state lives in a ref inside the <Canvas> while the hint bar is ordinary
    * DOM. A plain string (never an object) so a selector reading it can't trip
-   * React #185, and DominoEditTool writes it only when it actually changes, so
+   * React #185, and DominoEditor writes it only when it actually changes, so
    * a per-pointermove step costs a string compare rather than a store write.
    */
   dominoShapeSelectHint: string | null;

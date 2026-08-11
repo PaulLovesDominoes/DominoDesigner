@@ -6,15 +6,15 @@ import { useStore } from "../store";
 import styles from "./DominoInventoryScreen.module.css";
 
 export default function DominoInventoryScreen() {
-  const addEntry = useStore((s) => s.addInventoryEntry);
+  const addInventoryEntry = useStore((s) => s.addInventoryEntry);
   const removeEntries = useStore((s) => s.removeInventoryEntries);
   const selectedIds = useStore((s) => s.inventorySelectedIds);
   const ids = Object.keys(selectedIds) as InventoryEntryId[];
 
-  const onDelete = () => {
+  const onDeleteInventoryEntry = () => {
     if (ids.length === 0) return;
-    const noun = ids.length === 1 ? "entry" : "entries";
-    if (window.confirm(`Delete ${ids.length} selected ${noun}? This cannot be undone.`)) {
+    const entryNoun = ids.length === 1 ? "entry" : "entries";
+    if (window.confirm(`Delete ${ids.length} selected ${entryNoun}? This cannot be undone.`)) {
       removeEntries(ids);
     }
   };
@@ -22,12 +22,12 @@ export default function DominoInventoryScreen() {
   return (
     <div className={styles.screen}>
       <div className={styles.toolbar}>
-        <button className={styles.newButton} onClick={addEntry}>
+        <button className={styles.newButton} onClick={addInventoryEntry}>
           <RiAddLine size={16} /> New
         </button>
         <button
           className={styles.deleteButton}
-          onClick={onDelete}
+          onClick={onDeleteInventoryEntry}
           disabled={ids.length === 0}
           aria-label="Delete selected"
           title="Delete selected"

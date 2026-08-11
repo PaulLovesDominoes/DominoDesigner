@@ -20,7 +20,7 @@ import type { AnyShapeSelectDefinition, SelectionGestureMode, ShapePoint } from 
  * centre is what achieves that. Requiring a domino to be fully enclosed, or
  * accepting any domino the outline merely touches, both give unnecessarily
  * jagged edges. Do not "correct" this to an intersection test against
- * DominoEditTool's `footprint()`.
+ * DominoEditor's `footprint()`.
  *
  * This is also why the Expand toggle (dominoes/expansion.ts) — which draws
  * dominoes oversized so tightly-spaced ones are easier to hit — is correctly
@@ -29,7 +29,7 @@ import type { AnyShapeSelectDefinition, SelectionGestureMode, ShapePoint } from 
  * is on or off. The rectangle band's predicates do consult it, because they
  * test against a domino's drawn footprint rather than its centre.
  *
- * Ascending order matters: DominoEditTool's sameIndices redraw guard is a plain
+ * Ascending order matters: DominoEditor's sameIndices redraw guard is a plain
  * elementwise compare over these lists.
  */
 export function indicesInShape(
@@ -85,9 +85,9 @@ export function nearestToPoint(
 }
 
 /**
- * Turns a set of covered domino indices into a selection entry: the covered
- * dominoes combined with the pre-gesture selection however
- * `selectionGestureMode` says, plus the two corner indices a following
+ * Turns a set of newly covered domino indices into a selection set: the 
+* dominoes by the gesture combined with the pre-gesture selection however
+ * `selectionGestureMode` says, also recalculates the two corner indices that a following
  * Shift+Arrow will extend from. Shared verbatim by the rectangle rubber band
  * and every shape, which is what stops the two drifting.
  *

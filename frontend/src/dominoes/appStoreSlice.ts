@@ -47,7 +47,7 @@ import type { DominoColorClipboardItem } from "./clipboardItem";
 /**
  * The one write path for *which dominoes are selected*, shared by every command
  * that produces a whole selection at once (select-by-swatch, select all, invert).
- * The canvas gestures in DominoEditTool don't come through here — they build
+ * The canvas gestures in DominoEditor don't come through here — they build
  * their corners from where the pointer actually was — but they end the same way,
  * which is why applyLockedSwatchIfAny is an action rather than living in either
  * place.
@@ -60,7 +60,7 @@ import type { DominoColorClipboardItem } from "./clipboardItem";
  *   All would reliably crash.
  * - Both selection corners seed a following Shift+Arrow, which needs a defined
  *   corner to extend from; baseSelection preserves everything produced here
- *   beneath that rectangle. Same shape as DominoEditTool's Ctrl+click branch.
+ *   beneath that rectangle. Same shape as DominoEditor's Ctrl+click branch.
  * - An empty result clears instead of replacing, and applies no lock — there is
  *   nothing to apply it to, the same rule a clearing gesture already follows.
  */
@@ -138,14 +138,14 @@ function commitDominoColors(
 export interface DominoColorSlice {
   // The swatch currently locked (null = none) — an inventory color, or Hide, or
   // Unassigned. While locked, every newly-selected domino (by any means) has it
-  // applied immediately; see DominoEditTool.tsx's applyLockedColorIfAny.
+  // applied immediately; see DominoEditor.tsx's applyLockedColorIfAny.
   // Cleared on exiting domino editing mode.
   dominoColorLockedId: DominoSwatchId | null;
   toggleDominoColorLock: (swatchId: DominoSwatchId) => void;
   // Applies the locked swatch, if any, to whatever is selected right now.
   // Called after every gesture and command that *changes* which dominoes are
   // selected — that is the whole meaning of locking, and it lives here rather
-  // than in DominoEditTool so the store's own selection commands (select all,
+  // than in DominoEditor so the store's own selection commands (select all,
   // invert, the swatch menus) reach it too. A no-op when nothing is locked.
   applyLockedSwatchIfAny: () => void;
   // The in-progress shortcut being typed to pick a color (see the domino

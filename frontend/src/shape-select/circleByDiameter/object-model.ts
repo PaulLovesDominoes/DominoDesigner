@@ -74,7 +74,7 @@ export const circleByDiameterSelectDefinition: ShapeSelectDefinition<CircleByDia
     // oval documents: with both ends on the lattice the span between them is a
     // whole number of half-pitches, so a drag the user meant to be straight
     // across comes out exactly straight across rather than a degree or two off.
-    // `origin` is held fixed at the sequence's first press by DominoEditTool, so
+    // `origin` is held fixed at the sequence's first press by DominoEditor, so
     // it stays the near end however far the drag wanders.
     const snappedStart = snapPoint(selectionGestureEvent.origin);
     const snappedEnd = snapPoint(selectionGestureEvent.point);
@@ -117,7 +117,7 @@ export const circleByDiameterSelectDefinition: ShapeSelectDefinition<CircleByDia
 
   hint: (state) =>
     state
-      ? "Release to select every domino whose centre is inside the circle. Esc to start over."
+      ? "Release to select every domino inside the circle. Esc to start over."
       : "Drag from one side of the circle to the other. Ctrl+drag adds to the selection, Alt+drag removes from it.",
 
   Preview: CircleSelectPreview,

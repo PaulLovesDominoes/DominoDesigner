@@ -1,23 +1,10 @@
 import { useState, type ReactNode } from "react";
 
 import { useStore } from "../store";
-import { useClipboardStore } from "../clipboard/store";
 import { hasOperationsSinceBarrier } from "../history/appStoreSlice";
-import { getDDObjectDefaultName } from "../object-types/registry";
 import ConfirmDialog from "../components/ConfirmDialog";
-import type { ToolId } from "../types";
+import { placementToolFor } from "./toolConfig";
 import styles from "./ModeHintBar.module.css";
-
-/**
- * What each placement tool asks the user to do. Adding a placement tool means
- * adding an entry here, not editing this component's markup. Two ToolIds are
- * deliberately absent: "select" gets its own idle hint below (depends on
- * whether any DDObjects exist yet, not a fixed string), and "editDominoes"
- * gets its own richer, button-bearing bar instead of a plain hint string.
- */
-const HINTS: Partial<Record<ToolId, string>> = {
-  field: "Drag on the build plane to place a field",
-};
 
 /**
  * A permanently-visible strip in the toolbar's old spot, telling the user what
@@ -33,9 +20,15 @@ const HINTS: Partial<Record<ToolId, string>> = {
  */
 export default function ModeHintBar() {
   const activeTool = useStore((s) => s.activeTool);
+  // Which element type the "newElement" tool is armed with, so its prompt can
+  // name it. Adding a placeable type means adding its placementHint to
+  // PLACEMENT_TOOLS, not editing this component's markup.
+  const newElementType = useStore((s) => s.newElementType);
   // While the properties dialog is open the drag is disarmed, so prompting for
   // one would be a lie.
   const editing = useStore((s) => s.editingDDObjectId !== null);
+
+  const selectedDDObjectId = useStore((s) => s.selectedDDObjectId);
 
   const dominoEditingId = useStore((s) => s.dominoEditingId);
   const dominoEditingObject = useStore((s) =>
@@ -52,13 +45,10 @@ export default function ModeHintBar() {
   const openHelpTopic = useStore((s) => s.openHelpTopic);
   const dominoColorLockedId = useStore((s) => s.dominoColorLockedId);
   // What the armed shape-select gesture is asking for, if any — written by
-  // DominoEditTool, since a variant's hint can vary by stage and the live
+  // DominoEditor, since a variant's hint can vary by stage and the live
   // gesture state lives in a ref inside the <Canvas>. A string, so it's safe to
   // read straight out of a selector.
   const dominoShapeSelectHint = useStore((s) => s.dominoShapeSelectHint);
-  // The color clipboard is otherwise invisible, so say what's in it. Survives
-  // leaving domino editing mode, which is what makes field-to-field paste work.
-  const clipboardItem = useClipboardStore((s) => s.item);
   // The root BuildPlane always exists and always has a children array — this
   // is "are there any DDObjects yet" for the Select-mode idle hint below.
   const hasElements = useStore((s) => {
@@ -69,9 +59,6 @@ export default function ModeHintBar() {
   let content: ReactNode;
 
   if (!editing && dominoEditingId && dominoEditingObject) {
-    // defaultName is the registry's only human-readable type label
-    // (getDDObjectDefaultName), doubling as one here.
-    const typeLabel = getDDObjectDefaultName(dominoEditingObject.type);
     // Locking a color swaps the sentence but keeps the same escape hatches —
     // "ESC to exit" here means exit the lock, not the mode; Done/Cancel stay
     // the only way to leave domino editing mode entirely.
@@ -82,16 +69,6 @@ export default function ModeHintBar() {
     // by displacing the lock sentence — the lock stays badged on its swatch.
     content = (
       <>
-        {dominoShapeSelectHint ? (
-          <span>{dominoShapeSelectHint}</span>
-        ) : dominoColorLockedId ? (
-          <span>Select dominoes to change to the locked color, ESC to exit.</span>
-        ) : (
-          <span>
-            Editing dominoes in "{typeLabel}" "{dominoEditingObject.name}".
-          </span>
-        )}
-        {clipboardItem && <span>{clipboardItem.label} copied — Ctrl+V to paste.</span>}
         {/* Done commits; Cancel rolls the mode's edits back. Cancel only warns
             when there is actually something to lose — with nothing recorded
             since entry the two are indistinguishable to the user, and a prompt
@@ -108,11 +85,20 @@ export default function ModeHintBar() {
         <button className={styles.textBtn} onClick={() => openHelpTopic("domino-editing")}>
           Help
         </button>
+        {dominoShapeSelectHint ? (
+          <span>{dominoShapeSelectHint}</span>
+        ) : dominoColorLockedId ? (
+          <span>Select dominoes to change to the locked color, ESC to exit.</span>
+        ) : (
+          <span>
+            Select dominoes then click on a swatch in the sidebar to set the color.
+          </span>
+        )}
         {confirmingCancel && (
           <ConfirmDialog
-            message="Are you sure you wish to cancel your edits?"
-            confirmLabel="Yes, Cancel my edits"
-            cancelLabel="No, Continue editing"
+            message="Are you sure you wish to cancel your edits? Note! This can not be undone."
+            confirmLabel="Yes, cancel my edits"
+            cancelLabel="No, continue editing"
             onConfirm={() => {
               setConfirmingCancel(false);
               cancelDominoEditing();
@@ -123,7 +109,10 @@ export default function ModeHintBar() {
       </>
     );
   } else {
-    const hint = editing ? undefined : HINTS[activeTool];
+    // "select" is deliberately absent from PLACEMENT_TOOLS and gets its own
+    // idle hint below (it depends on whether any DDObjects exist yet, rather
+    // than being one fixed string), and "editDominoes" took the branch above.
+    const hint = editing ? undefined : placementToolFor(newElementType)?.placementHint;
     if (hint) {
       content = (
         <>
@@ -137,8 +126,9 @@ export default function ModeHintBar() {
       content = (
         <span>
           {hasElements
-            ? 'Click on an element to select it, click "New" to add more elements, right-click to pan.'
-            : 'Click "New" to add an element to your build plane.'}
+            ? (selectedDDObjectId ? 'Use handles to resize selected element, click-drag to move, double-click to edit colors, DEL to delete.' :
+              'Click on an element to select it, double-click to edit colors, right-click to pan.')
+            : 'Click "New" to add an element to your build plane, right-click to pan.'}
         </span>
       );
     } else {

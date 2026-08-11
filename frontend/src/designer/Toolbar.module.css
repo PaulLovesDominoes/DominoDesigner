@@ -25,7 +25,7 @@
   gap: 12px;
 }
 
-/* Divides one .group into sub-clusters — used by DominoModeTools to separate
+/* Divides one .group into sub-clusters — used by DominoEditingTools to separate
    the selection modes from the commands that act on a selection. Sits inside a
    .group, so the 4px gap either side of it comes from there. */
 .separator {

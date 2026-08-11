@@ -65,6 +65,16 @@
   margin-top: 0;
 }
 
+/* Markdown wraps a list item's text in a <p> whenever any two items in that list
+   are separated by a blank line (a "loose" list, in Markdown's terms). A <p> has
+   a default top and bottom margin, so a blank line left between two bullets ends
+   up putting a gap under every bullet in the list, including above its own
+   sub-bullets. Leaving that blank line is a natural way to write Markdown, so
+   drop the margins here rather than asking help authors to avoid it. */
+.body li > p {
+  margin: 0;
+}
+
 .body a {
   color: var(--color-accent);
 }

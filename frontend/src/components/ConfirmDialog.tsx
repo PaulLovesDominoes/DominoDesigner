@@ -31,7 +31,7 @@ export default function ConfirmDialog({
   onCancel,
 }: Props) {
   // Swallows *every* keydown in the capture phase, not just Escape: the window
-  // listeners behind this (DominoEditTool's Delete, its colour shortcuts, and
+  // listeners behind this (DominoEditors's Delete, its colour shortcuts, and
   // DesignerScreen's Ctrl chords) would otherwise keep editing the very thing
   // the user is being asked about. stopPropagation alone doesn't disturb the
   // dialog's own keyboard use — Tab moves focus and Enter/Space activate the

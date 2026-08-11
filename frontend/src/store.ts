@@ -100,7 +100,29 @@ export interface AppState
   // Currently selected designer tool (single-select). "editDominoes" has no
   // toolbar entry — see enterDominoEditing.
   activeTool: ToolId;
-  setTool: (tool: ToolId) => void;
+  /**
+   * Switch tools. It deliberately cannot arm "newElement": that tool means
+   * nothing without an element type alongside it, so startNewElement below is
+   * its only way in, and excluding it here is what keeps "placing, but with
+   * nothing to place" from being representable at all. ("editDominoes" is
+   * likewise only entered through enterDominoEditing, which sets activeTool
+   * itself rather than going through this.)
+   */
+  setTool: (tool: Exclude<ToolId, "newElement">) => void;
+
+  /**
+   * Which DDObject type the "newElement" tool is about to place, and null
+   * whenever any other tool is active — an invariant every write below
+   * maintains, so a reader can treat a non-null value as live.
+   *
+   * This is what used to be said by a per-type ToolId ("field"). Holding it
+   * here instead means registering a placeable type adds no ToolId member and
+   * no per-type comparison anywhere; see designer/toolConfig.ts's
+   * PLACEMENT_TOOLS.
+   */
+  newElementType: DDObjectType | null;
+  /** Arm placement of `type` — the only way into the "newElement" tool. */
+  startNewElement: (type: DDObjectType) => void;
 
   // The DDObject the user has selected for direct manipulation on the canvas /
   // in the hierarchy (null = nothing selected). Distinct from `activeTool`,
@@ -112,7 +134,7 @@ export interface AppState
   // domino editing mode). The mode is fully modal — activeTool becomes
   // "editDominoes", which is enough on its own to disarm SelectionTool,
   // CreateByRegionTool and DesignerCanvas's onPointerMissed (none of them match
-  // "select" or an elementType-bearing tool anymore); Toolbar/Sidebar disable
+  // "select" or "newElement" anymore); Toolbar/Sidebar disable
   // the rest of the UI by reading activeTool directly. The two actions below are
   // the only ways out, wired to ModeHintBar's Done and Cancel respectively.
   dominoEditingId: DDObjectId | null;
@@ -189,7 +211,10 @@ export const useStore = create<AppState>()((set, get, api) => ({
   openHelpTopic: (id) => set({ helpOpen: true, helpTopicOverride: id }),
 
   activeTool: "select",
-  setTool: (activeTool) => set({ activeTool }),
+  setTool: (activeTool) => set({ activeTool, newElementType: null }),
+
+  newElementType: null,
+  startNewElement: (newElementType) => set({ activeTool: "newElement", newElementType }),
 
   selectedDDObjectId: null,
   selectDDObject: (selectedDDObjectId) => set({ selectedDDObjectId }),
@@ -207,6 +232,10 @@ export const useStore = create<AppState>()((set, get, api) => ({
       dominoEditingId: id,
       selectedDDObjectId: id,
       activeTool: "editDominoes" as ToolId,
+      // Reachable while placement is armed — the sidebar row's double-click
+      // works whatever tool is active — so this keeps newElementType's "null
+      // unless the tool is newElement" invariant.
+      newElementType: null,
       // Undefined on an empty stack, normalised to null = no clamp needed.
       dominoEditingUndoBarrier: s.undoStack[s.undoStack.length - 1] ?? null,
       // Closes the mode's history: undo is clamped at the barrier, but redo
@@ -231,7 +260,7 @@ export const useStore = create<AppState>()((set, get, api) => ({
       // and shortcut buffer below: it holds a snapshot of its source element, so
       // it stays valid after leaving the mode and lets a pattern copied in one
       // field be pasted into another. Only the handlers unregister (that's
-      // DominoEditTool's doing), not the buffer.
+      // DominoEditor's doing), not the buffer.
       return {
         dominoEditingId: null,
         selectedDDObjectId: s.dominoEditingId,
@@ -349,7 +378,9 @@ export const useStore = create<AppState>()((set, get, api) => ({
         creatingDDObjectId: null,
         // Finishing a creation ends the tool's placement mode. A plain edit
         // leaves whatever tool is active alone.
-        ...(s.creatingDDObjectId ? { activeTool: "select" as ToolId } : {}),
+        ...(s.creatingDDObjectId
+          ? { activeTool: "select" as ToolId, newElementType: null }
+          : {}),
       };
 
       // A creation's "before" state is "didn't exist" — always record, and
@@ -404,6 +435,7 @@ export const useStore = create<AppState>()((set, get, api) => ({
           ...(result?.patch ?? {}),
           creatingDDObjectId: null,
           activeTool: "select" as ToolId,
+          newElementType: null,
         };
       });
       return;

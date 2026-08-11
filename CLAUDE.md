@@ -507,7 +507,7 @@ its row in the sidebar's `DDObjectsPanel.tsx`) to enter it — `store.ts`'s `ent
 sets `dominoEditingId` and switches `activeTool` to `"editDominoes"`, a `ToolId` with **no
 toolbar entry** (entry is exclusively by double-click). That one value is deliberately enough on
 its own to disarm `SelectionTool`/`CreateByRegionTool`/`onPointerMissed` (none of them match
-`"select"` or an `elementType`-bearing tool anymore) and to swap `Sidebar.tsx`'s child from
+`"select"` or `"newElement"` anymore) and to swap `Sidebar.tsx`'s child from
 `DDObjectsPanel` to `DominoColorPanel` — no scattered `dominoEditingId` checks needed in those
 files, and calls `cameraApi.frameDDObject(id)` to fit the field to the canvas (see *three.js /
 R3F boundary*) — the one imperative step, hence outside the `set`. The mode is **fully modal**:
@@ -517,11 +517,11 @@ the sidebar swaps and the toolbar's Select/New are *replaced* (not disabled) via
 though it clears a lot of in-mode state (see below). Undo/redo stay enabled, clamped by the
 barrier rather than disabled.
 
-`designer/DominoModeTools.tsx` is that replacement group, dropped into `Toolbar.tsx`'s left
+`designer/DominoEditingTools.tsx` is that replacement group, dropped into `Toolbar.tsx`'s left
 `.group` the way `NewElementMenu` is — so `Toolbar.tsx` stays a layout file rather than growing a
-branch per mode-specific button. It holds the selection-mode buttons (**Rectangle** plus one per
-registered shape — see *Shape select*), a `.separator`, then **Select All**, **Invert** and the
-**Expand** toggle (below). Note Select All and Invert are raw `<button>`s while the modes and
+branch per mode-specific button. It holds **Select All**, **Invert** and the **Expand** toggle
+(below), a `.separator`, then the selection-mode buttons (**Rectangle** plus one per registered
+shape — see *Shape select*). Note Select All and Invert are raw `<button>`s while the modes and
 Expand are `ToolButton`s: `ToolButton` always emits `aria-pressed`, which is right for a toggle or
 a mode and wrong for a command — the same split `Toolbar.tsx` already makes between its zoom/undo
 buttons and the Select tool.
@@ -537,7 +537,7 @@ tightly-spaced ones are easier to hit. Four things about it are deliberate:
   disables the toolbar button — one member is deliberately both the amount and the capability
   flag, so a new type needs no second declaration.
 - **`dominoes/expansion.ts`'s `resolveDominoExpansion` is the single answer** both consumers read:
-  `dominoes/modeller.tsx`, which draws the domino, and `designer/DominoEditTool.tsx`, which
+  `dominoes/modeller.tsx`, which draws the domino, and `designer/DominoEditor.tsx`, which
   hit-tests it. They *must* agree — if the render grows and the rect predicates don't, a rubber
   band visibly cuts through a domino without taking it, and a direct click (which raycasts the
   real, drawn mesh) picks a domino that a drag over the same spot misses. It returns a zeroed
@@ -577,8 +577,11 @@ color their domino DDObject.
 Meanwhile, a domino's *unselected* outline (`OUTLINE_COLOR`) is a fourth, darker grey, chosen to clearly
 outline the dominoes but to be less intrusive than a fully black outline.
 
-`designer/DominoEditTool.tsx` is the canvas tool owning everything once inside the mode:
-per-domino selection (click / Ctrl+click / drag-rubberband / Ctrl+drag / Alt+drag / arrow-keys /
+`designer/DominoEditor.tsx` is the canvas tool owning everything once inside the mode. **It was
+called `DominoEditTool.tsx`, and the rename is worth keeping**: it has tools of its own — the
+selection modes in `DominoEditingTools.tsx` and every shape-select variant — so "the tools of the
+domino edit tool" had become an unreadable sentence. It owns per-domino selection
+(click / Ctrl+click / Alt+click / drag-rubberband / Ctrl+drag / Alt+drag / arrow-keys /
 Shift+arrow-keys, stored in `dominoes/selectionStore.ts`'s `DominoSelectionEntry` — `selected`,
 plus `selectionFixedCornerIndex`/`selectionMovingCornerIndex`/`baseSelection` for Shift+Arrow's
 Excel-style rectangle grow/shrink/cross-the-fixed-corner behavior) and, layered on top of that,
@@ -611,11 +614,16 @@ at the sequence's first press and threaded to `selectionFrom`. Four decisions he
   redraw guard, since the same covered indices would no longer imply the same result.
 - **Alt is tested before Ctrl**, so both held gives `"remove"`. They ask for opposite things, and
   the preview colour has to agree with whichever wins.
-- **Alt is drag-only.** `onPointerUp`'s non-drag path has a deliberately *empty* `"remove"` branch
-  ahead of the three click branches. Letting it fall through would replace the whole selection
-  with the single domino under the cursor — the opposite of the ask. It catches a click on empty
-  space too, which would otherwise clear the selection. The shape path needs no equivalent: a
-  click while a shape is armed is a zero-radius circle, and removing nothing changes nothing.
+- **Alt+click removes exactly the domino under the cursor, and nothing else.**
+  `onPointerUp`'s non-drag path has its own `"remove"` branch ahead of the three other click
+  branches, and that branch must stay separate rather than falling through: the branches below
+  would replace the whole selection with the single domino clicked — the opposite of what
+  someone holding Alt is asking for — and an Alt+click on empty space would clear the selection
+  outright instead of doing nothing. Only the clicked domino leaves the selection; the two
+  selection corners are carried over unchanged, since nothing was added for a following
+  Shift+Arrow to extend from, and no locked colour is applied, since a remove paints nothing.
+  The shape path needs no equivalent: a click while a shape is armed is a zero-radius circle,
+  and removing nothing changes nothing.
 - **A remove does not change the two selection corners.** `nearestToPoint` picks from `indices`,
   which in a remove are exactly the dominoes that just *left* the selection. It also sets
   `baseSelection` to the surviving set rather than to `before.selected`, or the next Shift+Arrow
@@ -663,10 +671,10 @@ erasure), `registry.ts` (the `SHAPE_SELECTS` map and its accessors), `dispatcher
 algorithm every variant's output flows through), and one folder per variant holding
 `object-model.ts` (state shape + pure maths + the definition) and `preview.tsx` (its R3F nodes).
 **Adding a shape is a new folder plus one line in `SHAPE_SELECTS`** — the toolbar, the hint bar
-and `DominoEditTool` are all driven off the map and none of them names a variant.
+and `DominoEditor` are all driven off the map and none of them names a variant.
 
 **Oval is the worked example of a multi-press sequence, and it landed without one line changing in
-`DominoEditTool.tsx`, `dispatcher.ts` or `base.ts`.** That is the claim the whole subsystem was
+`DominoEditor.tsx`, `dispatcher.ts` or `base.ts`.** That is the claim the whole subsystem was
 built to make good on, so it is worth naming the three things that made it true, since a later
 refactor could break any of them without an obvious symptom: `onPointerDown`'s `live?.shape` branch
 routes a press into a sequence that is already open rather than starting a new one (which is also
@@ -759,14 +767,14 @@ Decisions a fresh session would plausibly reverse:
 
 - **The rectangle rubber band is deliberately not a registered shape**, and never will be. It is
   the mode's *default* gesture, active whenever nothing is armed, and it stays in
-  `DominoEditTool.tsx` where it always was. Its toolbar button means "arm nothing"; registering
+  `DominoEditor.tsx` where it always was. Its toolbar button means "arm nothing"; registering
   it would make `dominoShapeSelectId === null` and `=== "rectangle"` two encodings of one state.
 - **`dominoShapeSelectId` is not a `ToolId`.** `activeTool` is a single slot already held by
   `"editDominoes"` for the whole mode, and seven files gate on that exact value. This is a
   sub-mode *within* it, so it lives in `shape-select/appStoreSlice.ts` and is cleared by
   `exitDominoEditing` alongside `dominoExpanded` — view state, never document state, never
   undoable.
-- **Parent-relative mm is the only space a variant sees.** `DominoEditTool` converts world →
+- **Parent-relative mm is the only space a variant sees.** `DominoEditor` converts world →
   parent-relative once (`toLocal`) and re-applies the same offset once, as a
   `<group position={[fieldBounds.x, fieldBounds.y, 0]}>` around the variant's `Preview`. That
   makes the drawn shape and the tested shape *the same numbers* rather than two computations
@@ -781,7 +789,7 @@ Decisions a fresh session would plausibly reverse:
   consult expansion, because they test against a drawn footprint. Don't unify the two.
 - **Snapping is declared by the DDObject and *applied by the variant*.** A type with a grid
   declares `snapShapePoint(ddObject, x, y)` (`object-types/base.ts`); omitting it is the whole of
-  "this type has no grid", resolved through `getSnapShapePoint`. `DominoEditTool` falls that back
+  "this type has no grid", resolved through `getSnapShapePoint`. `DominoEditor` falls that back
   to `NO_SNAP` and passes it into `nextStep` as a third argument, so a variant calls it
   unconditionally — the same branch-free reasoning as `dominoes/expansion.ts`'s zeroed record.
   It is deliberately **not** pre-applied to `ShapeSelectEvent`'s coordinates: *which* points snap
@@ -797,7 +805,7 @@ Decisions a fresh session would plausibly reverse:
   the counts match at **every** radius — which is why snapping the centre alone is sufficient and
   the radius needs no quantising.
 - **A click behaves the same whatever is armed, and the tool enforces that — not the variants.**
-  `DominoEditTool` does not start a shape on the press: it waits until the pointer has travelled
+  `DominoEditor` does not start a shape on the press: it waits until the pointer has travelled
   `DRAG_THRESHOLD_MM`, then feeds the variant a `"press"` whose `origin` is still where the user
   actually pressed. So a press that never moves never opens a sequence, falls through to the same
   plain click / Ctrl+click branches the rectangle band uses, and selects the domino under it —
@@ -872,7 +880,7 @@ The toolbar shows the commands first and the modes inline after them (`[Select A
 `Toolbar.module.css`'s `.separator`). **The modes go last because that is the group that grows** —
 every shape registered lengthens it, and anything after it would slide along each time. At six or
 seven a `NewElementMenu`-style popup becomes right; the buttons are already registry-driven and confined to
-`DominoModeTools.tsx`, so that swap is one file. The part to plan for is that a popup hides
+`DominoEditingTools.tsx`, so that swap is one file. The part to plan for is that a popup hides
 *which* mode is armed, which matters more here than for New — an armed shape changes what every
 drag does — so its trigger should render the armed mode's own icon.
 
@@ -906,7 +914,7 @@ not baked-in RGB):
 - **Select dominoes, then choose a color** — click a swatch, or type its `shortcut` (matches
   narrow live as you type; a unique match applies immediately; Space applies the *exact* match
   when a longer one is also a valid prefix, e.g. disambiguating "B" from "B1"). Shortcut state
-  (`dominoColorShortcut`) and its ~1.2s inactivity auto-clear live in `DominoEditTool.tsx`'s
+  (`dominoColorShortcut`) and its ~1.2s inactivity auto-clear live in `DominoEditor.tsx`'s
   keyboard handler, reusing its existing typing-guard and Escape/pointer-gesture cleanup. That
   handler returns early on any Ctrl/Cmd+key combo before reaching the shortcut-typing branch, so
   Ctrl+Z/Ctrl+Y (undo/redo), Ctrl+C/X/V (the clipboard) and Ctrl+A (select all) all reach
@@ -915,9 +923,10 @@ not baked-in RGB):
   that one place, which is why both the clipboard and Ctrl+A needed no change to this file's
   keyboard handling at all. Ctrl+A is additionally gated on `dominoEditingId` *there*, so outside
   the mode it falls through without `preventDefault` and the browser's own select-all still works.
-- **Choose a color first, then select dominoes** — double-click a swatch to lock it
+- **Choose a color first, then select dominoes** — double-click a swatch to lock it, or pick
+  **Lock** from its caret menu, which calls the same `toggleDominoColorLock` action
   (`dominoColorLockedId`, badge via `RiLockFill`); every domino selected afterward, by any
-  method, is recolored to it immediately (`DominoEditTool.tsx`'s `applyLockedColorIfAny`, called
+  method, is recolored to it immediately (`DominoEditor.tsx`'s `applyLockedColorIfAny`, called
   after every selection-setting gesture). Locking also colors whatever's already selected at
   that moment, since a double-click's first `click` already applies the color before `dblclick`
   fires the lock — not a special case, just how the browser sequences the two events. Clicking a
@@ -936,21 +945,29 @@ the `colorByCell` sync and the empty-selection no-op rather than restating any o
 labels are *not* typeable: the shortcut buffer only ever matches inventory entries' own
 `shortcut`, so typing D-E-L does nothing.
 
-**Every swatch carries a caret opening `DominoSwatchMenu`** — Select / Add Select / Deselect /
-Deselect others over the dominoes matching it (`DominoSelectMode`'s
-`replace`/`add`/`remove`/`intersect`), plus `Unhide` at the top for Hide alone. Two things about
-it:
+**Every swatch carries a caret opening `DominoSwatchMenu`** — `Lock`/`Unlock`, then Select /
+Add Select / Deselect / Deselect others over the dominoes matching it (`DominoSelectMode`'s
+`replace`/`add`/`remove`/`intersect`), plus `Unhide` at the very top for Hide alone. Three
+things about it:
 
 - **Matching is plain equality on the stored `colorId`**, which is exactly why a color swatch
   selects only *visible* dominoes of that color and Hide selects exactly the hidden ones (see
   *Domino data*). There is no filter on top of the predicate and there must not be one.
+- **The menu's Lock is the double-click's twin, not a second mechanism** — same
+  `toggleDominoColorLock` call, same one-lock-at-a-time rule, and it colors whatever is selected
+  at that moment just as the double-click does. It has to ask for that half explicitly
+  (`applyLockedSwatchIfAny` right after the toggle) where the double-click gets it free: the
+  browser fires `click` before `dblclick`, so the swatch has already been applied by the time
+  the lock is set, but opening the caret menu never fires a click on the swatch at all. Running
+  it on the *un*lock is harmless — with nothing locked `applyLockedSwatchIfAny` does nothing,
+  which is the point of it being a no-op rather than a caller's branch.
 - **The matching set is built in one pass and then combined**, rather than the modes mutating the
   previous selection inside the loop. `intersect` is why: it has to drop selected dominoes the
   loop never visits, which an in-loop `add`/`delete` cannot express.
 
 **`applyLockedSwatchIfAny` runs after every selection change, from anywhere.** It is a store
-action rather than a `DominoEditTool` local specifically so the store's own commands reach it;
-`DominoEditTool`'s `applyLockedColorIfAny` is now a one-line delegate kept only for its five
+action rather than a `DominoEditor` local specifically so the store's own commands reach it;
+`DominoEditor`'s `applyLockedColorIfAny` is now a one-line delegate kept only for its five
 gesture call sites. This is the documented lock rule ("every domino selected afterward, by any
 method") holding literally, and it has teeth: with Red locked, Ctrl+A paints the entire field red
 in one undoable step, and `Select` from any swatch's menu repaints what it selected. `Unhide`
@@ -989,10 +1006,10 @@ in that folder. Two seams do the work:
   wipe the newer registration.
 - **One keyboard dispatcher, in `DesignerScreen.tsx`,** alongside the Ctrl+Z/Y handler that was
   already there — and Ctrl+A since. Tools do not bind Ctrl chords themselves. This is why
-  `DominoEditTool.tsx`'s keydown handler still returns early on *every* Ctrl/Cmd chord and
+  `DominoEditor.tsx`'s keydown handler still returns early on *every* Ctrl/Cmd chord and
   needed no change when either the clipboard or Ctrl+A landed; it is also what makes a future
   clipboard client zero keyboard code. Note this handler has no INPUT/TEXTAREA/contentEditable
-  guard of its own (unlike `DominoEditTool`'s), so it suppresses native Ctrl+C/X/V in any text
+  guard of its own (unlike `DominoEditor`'s), so it suppresses native Ctrl+C/X/V in any text
   field outside the properties dialog — latent today, since the only such fields are in the
   dialog, which it already excludes.
 
@@ -1060,10 +1077,13 @@ only the registry — which makes it the pattern to copy alongside `Scene.tsx` a
   which would opt it out of raycasting entirely. It is sized and clamped to the root's
   footprint via `getDDObjectBounds` — the same accessor `CameraRig` uses — never a cast to any
   concrete root type.
-- It arms only when the **active tool declares a target type** and **no properties dialog is
-  open**. A tool declares its target via `elementType` on its `ToolDef`
-  ([toolConfig.ts](frontend/src/designer/toolConfig.ts)) — the one place the binding between a
-  tool and the type it places lives, declaratively. The dialog guard is load-bearing: the
+- It arms only when the **placement tool is active with a type armed** and **no properties
+  dialog is open**. There is exactly one placement `ToolId`, `"newElement"`, and *which* type it
+  places is `newElementType` beside it in the store — so `PLACEMENT_TOOLS`
+  ([toolConfig.ts](frontend/src/designer/toolConfig.ts)) is the one place a placeable type is
+  named, and registering another adds no `ToolId` member and no comparison anywhere. See *One
+  tool for every element type* below for why it is split this way. The dialog guard is
+  load-bearing: the
   dialog is modeless and the canvas stays interactive above its scrim, so without it a user
   could drag behind the open dialog and two Escape handlers would fight.
 - Drag state is component-local; only the finished rectangle reaches `createElement`. Escape
@@ -1079,8 +1099,47 @@ only the registry — which makes it the pattern to copy alongside `Scene.tsx` a
   richer create/update/finalize protocol**: the
   drag preview is already generic (a plain rectangle), and the DDObject isn't created until
   mouse-up, so nothing today needs a live type-specific preview mid-drag.
-- `designer/ModeHintBar.tsx` prompts the user. Adding a placement tool means adding an entry to
-  its `HINTS` map, not editing its markup.
+- `designer/ModeHintBar.tsx` prompts the user, reading the armed type's `placementHint` off its
+  `PLACEMENT_TOOLS` entry. Adding a placement tool means filling that field in, not editing the
+  hint bar's markup — it names no type.
+
+The hint bar has three other states besides a placement prompt, and they are ordered
+most-specific-first in one `if`/`else` chain: domino editing mode's own bar (Done / Cancel /
+Help plus a sentence, see *Domino editing mode*), then the placement prompt, then Select's idle
+hint. **The idle hint splits on `selectedDDObjectId`** — with something selected it names what
+can be done to it (handles resize, drag moves, double-click edits colors, Delete deletes), with
+nothing selected it says how to select, and with an empty build plane it points at New. That is
+three sentences from one store read, and it is the only place the app tells a user that the
+selection overlay's handles are draggable at all. Note the in-mode bar no longer reports what is
+on the color clipboard; the clipboard is invisible in the UI now, by choice, rather than costing
+a permanent sentence.
+
+#### One tool for every element type
+
+`ToolId` is `"select" | "newElement" | "editDominoes"`. It deliberately does **not** carry a
+member per placeable type (it once carried `"field"`), for the same reason `dominoShapeSelectId`
+is not a `ToolId`: `activeTool` answers *which mode am I in*, and the variant chosen within that
+mode is a separate value. The pieces:
+
+- **`newElementType: DDObjectType | null`** in `store.ts` holds the armed type, and is null
+  whenever `activeTool` isn't `"newElement"`. Every write that leaves the tool maintains that —
+  `setTool`, `enterDominoEditing` (reachable while placement is armed, since the sidebar row's
+  double-click works whatever tool is active), and the creating branches of `saveProperties` and
+  `cancelProperties`.
+- **`setTool` cannot arm it.** Its parameter is `Exclude<ToolId, "newElement">`, so
+  `startNewElement(type)` is the only way in and "placing, but with nothing to place" is not
+  representable. That type-level guard is why the invariant above is worth trusting; don't widen
+  the signature back.
+- **`PLACEMENT_TOOLS` carries no `id`** — the element type *is* each entry's identity, so there
+  is no second name to keep in step. It supplies only what the registry can't: a short menu
+  `label` (deliberately shorter than the type's `defaultName`) and the `placementHint`. The menu
+  icon comes from `getDDObjectIcon`, so a type can't appear under one glyph in the New menu and
+  another in the hierarchy panel.
+
+What this bought, concretely: `DesignerScreen`'s placement crosshair was `activeTool === "field"`
+and would silently not have appeared for a second placeable type; `ModeHintBar`'s hint was a
+`Partial<Record<ToolId, string>>` with the same failure. Both are now type-driven and correct for
+a type nobody has written yet.
 
 Creation itself is registry-driven: `store.createElement(type, patch)` mints the DDObject under
 the root and opens its properties in **creating** mode, tracked by `creatingDDObjectId`. That
@@ -1187,7 +1246,10 @@ through unrelated DDObject-level history too.
 **The barrier has a second reader: `cancelDominoEditing`.** Where Done (`exitDominoEditing`)
 commits, Cancel discards, restoring the field to its state at entry. `ModeHintBar` prompts for
 confirmation first (via `components/ConfirmDialog.tsx`), and only when
-`hasOperationsSinceBarrier` says there is something to lose. Three parts, each load-bearing:
+`hasOperationsSinceBarrier` says there is something to lose. **Its wording says the cancel
+itself cannot be undone**, which is not a scare quote but literally the third bullet below: the
+in-mode history is truncated rather than inverted, so once the user confirms, Ctrl+Z has nothing
+left to walk back to. Three parts, each load-bearing:
 
 - **The rollback is a snapshot restore, not a replay of the undo stack.** `restoreDominoColorSnapshot`
   writes back the `colorIds` column captured by `captureDominoColorSnapshot` at entry.
@@ -1266,6 +1328,20 @@ than where they are: keyed on screen alone, opening help inside domino editing m
 `home`, since `SCREEN_TOPIC` is empty. `activeTool` is only consulted on the designer screen —
 a `ToolId` means nothing elsewhere, and the store keeps the last one selected across a screen
 switch, so without that guard leaving the designer mid-tool would carry its help page along.
+On the designer screen with no tool-specific topic, it returns `designer` **directly rather than
+through `SCREEN_TOPIC`** — so a `designer` entry added to that map would never be read. If a
+second screen ever wants a default page, move this one into `SCREEN_TOPIC` rather than adding a
+second hard-coded return.
+
+The topics themselves are ordinary prose, but two conventions have settled in and are worth
+keeping: a topic other than `home` opens with a breadcrumb line of links back up
+(`[Home](home) > Build Designer`), and links between topics are written as bare topic ids —
+though a `.md` suffix works too, since `HelpPanel` strips it before looking the topic up.
+`HelpPanel.module.css` zeroes the margins on a `<p>` inside an `<li>`, because Markdown wraps
+every item of a list in a paragraph as soon as any two of its items are separated by a blank
+line, which would otherwise put a gap under every bullet in that list. That is a fix for how
+people naturally write Markdown, not for one topic's formatting — don't ask help authors to
+close up their lists instead.
 
 ## Current state and direction
 
@@ -1340,7 +1416,7 @@ otherwise "correct" backwards:
   **Never call `pitchX`/`pitchY`/`fitCount`/`signedFitCount`/`normalizeSize`/
   `fitCountsThenSize`/`normalizeField`/`createFromRegion`/`setBounds` at module scope.**
 - **`extent()` in `dominoes/object-model.ts` has exactly one caller: the mode outline**
-  (`DominoEditTool`'s `modeOutlineRect`, see *Domino editing mode*). It is **not**
+  (`DominoEditor`'s `modeOutlineRect`, see *Domino editing mode*). It is **not**
   interchangeable with a type's `bounds()`, and never will be. A field's `bounds()` reports its
   **boundary rectangle**, which needs no generated dominoes and is always defined; `extent`
   reports where the dominoes actually are. The two are *expected* to differ after a resize, by
@@ -1363,7 +1439,7 @@ otherwise "correct" backwards:
   than by the store — unlike `PropertiesDialog` there is no shared editing session behind it,
   just a question and two callbacks. It is a *true* modal, in contrast to the properties dialog:
   its scrim dims the canvas too, and it swallows every keydown in the capture phase so the
-  window-level handlers behind it (`DominoEditTool`'s Delete and colour shortcuts,
+  window-level handlers behind it (`DominoEditor`'s Delete and colour shortcuts,
   `DesignerScreen`'s Ctrl chords) can't keep editing the thing being asked about.
 
 ## Code style0

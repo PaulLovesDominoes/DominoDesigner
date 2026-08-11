@@ -198,7 +198,7 @@ export const ovalSelectDefinition: ShapeSelectDefinition<OvalSelectState> = {
     const { x, y } = selectionGestureEvent.point;
 
     // Both ends of the opening drag snap. `origin` is the sequence's first
-    // press, held fixed by DominoEditTool for the whole sequence, so it stays
+    // press, held fixed by DominoEditor for the whole sequence, so it stays
     // the near end however far the drag wanders. Snapping both is what makes an
     // oval span exactly from one chosen domino to another.
     //
@@ -263,7 +263,7 @@ export const ovalSelectDefinition: ShapeSelectDefinition<OvalSelectState> = {
           };
         }
         // The release that follows the closing press. The sequence is already
-        // finished by then, so this is unreachable in practice — DominoEditTool
+        // finished by then, so this is unreachable in practice — DominoEditor
         // has cleared its gesture ref. Handed back unchanged rather than
         // committing a second time.
         return { status: "active", state };

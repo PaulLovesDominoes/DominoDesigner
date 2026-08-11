@@ -2,13 +2,9 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { RiArrowDownSLine } from "@remixicon/react";
 
 import { useStore } from "../store";
-import { TOOLS } from "./toolConfig";
+import { getDDObjectIcon } from "../object-types/registry";
+import { PLACEMENT_TOOLS } from "./toolConfig";
 import styles from "./NewElementMenu.module.css";
-
-// Element-creation tools only ("select" is the sole non-creation entry in
-// TOOLS) — sourced from the registry-driven toolConfig, not hardcoded, so a
-// second placeable type needs no changes here to appear in this menu.
-const CREATION_TOOLS = TOOLS.filter((t) => t.elementType);
 
 /**
  * Replaces the old single "Field" toolbar button. Follows DDObjectMenu.tsx's
@@ -18,14 +14,15 @@ const CREATION_TOOLS = TOOLS.filter((t) => t.elementType);
  * offset), and a transparent full-viewport backdrop that closes it.
  */
 export default function NewElementMenu() {
-  const activeTool = useStore((s) => s.activeTool);
-  const setTool = useStore((s) => s.setTool);
+  const startNewElement = useStore((s) => s.startNewElement);
 
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ left: 0, top: 0 });
 
-  const active = CREATION_TOOLS.some((t) => t.id === activeTool);
+  // Every entry in this menu arms the one "newElement" tool, so the trigger's
+  // active state is that single comparison rather than a search of the list.
+  const active = useStore((s) => s.activeTool === "newElement");
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -53,20 +50,25 @@ export default function NewElementMenu() {
         <>
           <div className={styles.backdrop} onClick={() => setOpen(false)} />
           <div className={styles.menu} style={pos} role="menu">
-            {CREATION_TOOLS.map((tool) => (
-              <button
-                key={tool.id}
-                className={styles.item}
-                role="menuitem"
-                onClick={() => {
-                  setTool(tool.id);
-                  setOpen(false);
-                }}
-              >
-                <tool.Icon size={16} />
-                {tool.label}
-              </button>
-            ))}
+            {PLACEMENT_TOOLS.map((tool) => {
+              // The type's own icon, so a type is never shown under one glyph
+              // here and a different one in the hierarchy panel.
+              const Icon = getDDObjectIcon(tool.elementType);
+              return (
+                <button
+                  key={tool.elementType}
+                  className={styles.item}
+                  role="menuitem"
+                  onClick={() => {
+                    startNewElement(tool.elementType);
+                    setOpen(false);
+                  }}
+                >
+                  <Icon size={16} />
+                  {tool.label}
+                </button>
+              );
+            })}
           </div>
         </>
       )}

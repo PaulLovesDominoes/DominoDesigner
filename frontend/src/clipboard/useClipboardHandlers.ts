@@ -7,7 +7,7 @@ import type { CutCopyHandler, PasteHandler } from "./object-model";
 /**
  * Register this component as the active cut/copy source for as long as it's
  * mounted. Pass null to register nothing (a component that's mounted but not
- * currently the active context — DominoEditTool outside domino editing mode).
+ * currently the active context — DominoEditor outside domino editing mode).
  *
  * Callers must memoize `handler`, or it re-registers every render. The memo's
  * deps double as the reactivity signal for enablement — see

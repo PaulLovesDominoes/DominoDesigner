@@ -6,7 +6,7 @@ import { rectangleCorners, type AngledRectangleSelectState } from "./object-mode
 
 /**
  * The angled rectangle the gesture is currently describing, in parent-relative
- * mm — its caller (DominoEditTool) wraps it in a <group> at the edited
+ * mm — its caller (DominoEditor) wraps it in a <group> at the edited
  * DDObject's origin, so these coordinates land where DominoData.positions do.
  *
  * The corners come from rectangleCorners, the same function controlPoints uses,

@@ -14,7 +14,7 @@ import type { ShapePreviewStyle } from "./preview";
  *
  * The rectangle rubber band is deliberately NOT one of these. It is the mode's
  * *default* gesture, active whenever no shape is armed, and it lives in
- * DominoEditTool.tsx where it always has.
+ * DominoEditor.tsx where it always has.
  */
 
 /**
@@ -23,7 +23,7 @@ import type { ShapePreviewStyle } from "./preview";
  *
  * This is the only coordinate space a variant ever sees. The dispatcher
  * converts world -> parent-relative once on the way in, and re-applies the same
- * offset once on the way out (DominoEditTool wraps a variant's Preview in a
+ * offset once on the way out (DominoEditor wraps a variant's Preview in a
  * <group> at the DDObject's origin), so a variant never holds two
  * representations of one shape and they can never drift apart.
  */
@@ -134,7 +134,7 @@ export interface ShapeSelectEvent {
  *   Note this no longer carries the *click* case, and it once did. Preserving
  *   single-domino clicking while a shape was armed used to be each variant's own
  *   decision, and none of them chose to — so clicking a domino did nothing
- *   useful whenever anything was armed. DominoEditTool now applies one rule for
+ *   useful whenever anything was armed. DominoEditor now applies one rule for
  *   every shape instead: a press that never travels DRAG_THRESHOLD_MM never
  *   opens a sequence at all, so it stays an ordinary click. That belongs in one
  *   place because a user cannot be expected to remember which shapes allow a
@@ -220,7 +220,7 @@ export interface ShapeSelectDefinition<TState> {
    * growing disc for a circle, and whatever the equivalent is for a future
    * shape. It returns three.js scene objects (a filled `<mesh>` plus a
    * `<lineLoop>` border, in circle's case), positioned in parent-relative mm;
-   * DominoEditTool wraps them in a <group> that moves them into world
+   * DominoEditor wraps them in a <group> that moves them into world
    * coordinates. Only ever mounted with a live state, so it needs no undefined
    * branch.
    *

@@ -6,7 +6,7 @@ import type { DDObjectId, DominoExpansion } from "../object-types/base";
  * Resolves domino editing mode's Expand toggle against the element type's own
  * `dominoExpansion` (object-types/base.ts), so the two consumers that must agree
  * about how big a domino currently is — dominoes/modeller.tsx, which draws it,
- * and designer/DominoEditTool.tsx, which hit-tests it — read the answer from one
+ * and designer/DominoEditor.tsx, which hit-tests it — read the answer from one
  * place. If they disagreed, a rubber band would visibly cut through a domino
  * without taking it, and a direct click (which raycasts the real, drawn mesh)
  * would pick a domino a drag over the same spot would miss.

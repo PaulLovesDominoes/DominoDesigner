@@ -26,6 +26,7 @@ export function topicForContext(screen: ScreenId, activeTool: ToolId): string {
   if (screen === "designer") {
     const byTool = TOOL_TOPIC[activeTool];
     if (byTool) return byTool;
+    else return "designer";
   }
   return SCREEN_TOPIC[screen] ?? HOME_TOPIC;
 }

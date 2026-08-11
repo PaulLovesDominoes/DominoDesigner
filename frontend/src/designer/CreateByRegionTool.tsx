@@ -4,7 +4,6 @@ import { useShallow } from "zustand/shallow";
 
 import { useStore } from "../store";
 import { getDDObjectBounds, getDDObjectCreateFromRegion } from "../object-types/registry";
-import { TOOLS } from "./toolConfig";
 
 // Just above the build plane, and the preview just above that, so neither
 // z-fights the surface it sits on.
@@ -45,7 +44,6 @@ const clamp = (v: number, lo: number, hi: number) =>
  * the store.
  */
 export default function CreateByRegionTool() {
-  const activeTool = useStore((s) => s.activeTool);
   const editing = useStore((s) => s.editingDDObjectId !== null);
   const setTool = useStore((s) => s.setTool);
   const createElement = useStore((s) => s.createElement);
@@ -58,7 +56,12 @@ export default function CreateByRegionTool() {
   );
   const invalidate = useThree((s) => s.invalidate);
 
-  const elementType = TOOLS.find((t) => t.id === activeTool)?.elementType;
+  // The type to place, or null when the placement tool isn't active. The store
+  // already keeps newElementType null unless activeTool is "newElement", so the
+  // tool check here is belt-and-braces rather than the thing doing the work.
+  const elementType = useStore((s) =>
+    s.activeTool === "newElement" ? s.newElementType : null,
+  );
 
   // Where the drag began; null means no drag in flight. A ref because
   // onPointerUp must see the value written by onPointerDown in the same gesture,

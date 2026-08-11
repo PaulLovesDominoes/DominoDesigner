@@ -19,7 +19,7 @@ import styles from "./Toolbar.module.css";
  * NewElementMenu, so Toolbar stays a layout file rather than growing a branch
  * per mode-specific button.
  */
-export default function DominoModeTools() {
+export default function DominoEditingTools() {
   const dominoEditingId = useStore((s) => s.dominoEditingId);
   const ddObject = useStore((s) => (s.dominoEditingId ? s.ddObjects[s.dominoEditingId] : undefined));
   const dominoExpanded = useStore((s) => s.dominoExpanded);

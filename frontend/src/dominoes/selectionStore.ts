@@ -7,7 +7,7 @@ import type { DDObjectId } from "../object-types/base";
  * Per-parent domino selection state for domino editing mode. Kept in its own
  * small store, separate from both the main copy-on-write store and the bulk
  * per-domino columns in dominoes/store.ts, since this is UI/gesture state that
- * a whole selection-defining gesture replaces wholesale (see DominoEditTool.tsx)
+ * a whole selection-defining gesture replaces wholesale (see DominoEditor.tsx)
  * rather than something mutated column-by-column.
  *
  * The two corner indices and baseSelection are domino *indices* and physical
@@ -16,7 +16,7 @@ import type { DDObjectId } from "../object-types/base";
  * means it needs no rework when a future domino-producing type isn't a grid at
  * all.
  *
- * The two corners exist for exactly one consumer: DominoEditTool's runShiftArrow,
+ * The two corners exist for exactly one consumer: DominoEditor's runShiftArrow,
  * which walks the moving corner one domino per press and refills the selection
  * from the rectangle spanning the two. Every other write site merely seeds them
  * so that a *following* Shift+Arrow has somewhere to extend from — nothing else

@@ -9,13 +9,9 @@ import {
 import { useStore } from "../store";
 import ToolButton from "./ToolButton";
 import NewElementMenu from "./NewElementMenu";
-import DominoModeTools from "./DominoModeTools";
-import { TOOLS } from "./toolConfig";
+import DominoEditingTools from "./DominoEditingTools";
+import { SELECT_TOOL } from "./toolConfig";
 import styles from "./Toolbar.module.css";
-
-// The sole non-creation tool. Element-creation tools (TOOLS entries with an
-// elementType) live in NewElementMenu's popup instead of their own buttons.
-const SELECT_TOOL = TOOLS.find((t) => !t.elementType)!;
 
 // Zoom step for the +/- buttons (±5%).
 const ZOOM_IN = 1.05;
@@ -60,7 +56,7 @@ export default function Toolbar() {
           they'd only ever be shown disabled. */}
       <div className={styles.group}>
         {editingDominoes ? (
-          <DominoModeTools />
+          <DominoEditingTools />
         ) : (
           <>
             <ToolButton

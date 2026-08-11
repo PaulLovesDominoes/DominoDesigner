@@ -11,7 +11,7 @@ import { radiusSquared, type CircleSelectState } from "./object-model";
 
 /**
  * The circle a drag is currently sweeping out, in parent-relative mm — its
- * caller (DominoEditTool) wraps it in a <group> at the edited DDObject's
+ * caller (DominoEditor) wraps it in a <group> at the edited DDObject's
  * origin, so these coordinates land where DominoData.positions do.
  *
  * depthTest off, like the rectangle band, so it floats over the standing

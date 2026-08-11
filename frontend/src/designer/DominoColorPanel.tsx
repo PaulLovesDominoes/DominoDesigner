@@ -19,7 +19,7 @@ import styles from "./DominoColorPanel.module.css";
  * The domino-editing-mode sidebar: a grid of swatches replacing the object
  * hierarchy (DDObjectsPanel) for the duration of the mode (see Sidebar.tsx).
  * Click applies a swatch to the current domino selection; double-click locks it
- * (DominoEditTool.tsx then auto-applies it to every newly-selected domino); the
+ * (DominoEditor.tsx then auto-applies it to every newly-selected domino); the
  * caret opens per-swatch selection commands; and the highlighted swatch tracks
  * either the selection's shared state or, while a shortcut is being typed, every
  * candidate it could resolve to.

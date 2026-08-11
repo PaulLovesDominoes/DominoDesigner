@@ -186,7 +186,7 @@ export const angledRectangleSelectDefinition: ShapeSelectDefinition<AngledRectan
           return { status: "active", state };
         }
         // Opens the rectangle with no length and no width. This press only
-        // arrives once the pointer has travelled — DominoEditTool holds it back
+        // arrives once the pointer has travelled — DominoEditor holds it back
         // until then, so a press that never moves stays an ordinary click.
         const snappedOrigin = snapPoint(selectionGestureEvent.origin);
         return {
@@ -262,7 +262,7 @@ export const angledRectangleSelectDefinition: ShapeSelectDefinition<AngledRectan
 
   hint: (state) => {
     if (!state) {
-      return "Drag out one side of the rectangle to set its length and angle. Ctrl+drag adds to the selection, Alt+drag removes from it.";
+      return "Drag out one side of the rectangle to set its start and angle. Ctrl+drag adds to the selection, Alt+drag removes from it.";
     }
     return state.stage === "side"
       ? "Release to fix that side of the rectangle. Esc to start over."

@@ -6,7 +6,7 @@ import type { TriangleSelectState } from "./object-model";
 
 /**
  * The triangle the gesture is currently describing, in parent-relative mm — its
- * caller (DominoEditTool) wraps it in a <group> at the edited DDObject's origin,
+ * caller (DominoEditor) wraps it in a <group> at the edited DDObject's origin,
  * so these coordinates land where DominoData.positions do.
  *
  * All of the drawing is PolygonPreview's; this only names the corners. During

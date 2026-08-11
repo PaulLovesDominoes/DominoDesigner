@@ -110,7 +110,7 @@ outlineMaterial.onBeforeCompile = (shader) => {
 //     InstancedMesh's instances, reads each instanceMatrix, and does
 //     ray-versus-triangle maths against this geometry's vertex positions. It
 //     never asks the GPU anything and has no idea a shader exists — so a
-//     discarded domino is still fully hittable by DominoEditTool's
+//     discarded domino is still fully hittable by DominoEditor's
 //     hitDominoIndex, which is what lets an invisible domino be clicked and
 //     unhidden.
 //   - Collapsing a hidden domino's *matrix* to zero scale would be simpler and
@@ -362,7 +362,7 @@ export function DominoModeller({
         key={`fill-${capacity}`}
         ref={meshRef}
         args={[undefined, undefined, capacity]}
-        // Lets DominoEditTool identify which field an intersected instance
+        // Lets DominoEditor identify which field an intersected instance
         // belongs to via e.intersections (its raycast hits the whole scene).
         userData={{ ddObjectId }}
         geometry={fillGeometry}

@@ -6,7 +6,7 @@ import type { SelectionGestureMode } from "./base";
  * The drag-preview layer: the depth ordering and the colours a region gesture
  * paints itself with while it is being drawn.
  *
- * Shared by the rectangle rubber band (DominoEditTool.tsx) and every
+ * Shared by the rectangle rubber band (DominoEditor.tsx) and every
  * shape-select variant's Preview, so that every region gesture in the mode
  * looks like the same feature. If each variant hard-coded its own fill colour
  * and opacity they would drift apart as shapes are added, and nobody would
@@ -18,7 +18,7 @@ import type { SelectionGestureMode } from "./base";
  * dominoes/modeller.tsx and is not affected by any of this.
  *
  * CATCH_Z, OUTLINE_Z and MODE_OUTLINE_COLOR deliberately stay in
- * DominoEditTool: those are the tool's own layering and chrome (its
+ * DominoEditor: those are the tool's own layering and chrome (its
  * pointer-catching plane and the frame round the edited DDObject), not the
  * preview's.
  */
@@ -87,7 +87,7 @@ const SEGMENTS = 64;
  * Built once for the whole app and scaled per use, NOT rebuilt per frame as
  * `<circleGeometry args={[r, SEGMENTS]} />` would be — that would upload a
  * fresh 64-segment geometry to the GPU on every pointermove. Scaling one shared
- * shape is already this codebase's idiom (DominoEditTool's and SelectionTool's
+ * shape is already this codebase's idiom (DominoEditor's and SelectionTool's
  * unitEdges).
  *
  * Module-level rather than useMemo'd inside a component, because a Preview

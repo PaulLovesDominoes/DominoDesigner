@@ -77,7 +77,7 @@ export default function FieldElementEditor({
           the current spacing, so typing a value below flips this to match (or to
           "Custom"). Choosing "Custom" is a no-op — it only ever displays. */}
       <SelectField
-        label="Spacing preset"
+        label="Template"
         value={presetFor(ddObject.domino_spacing)}
         options={PRESET_OPTIONS}
         onChange={(name) => {

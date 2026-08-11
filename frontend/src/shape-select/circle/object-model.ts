@@ -39,7 +39,7 @@ export const circleSelectDefinition: ShapeSelectDefinition<CircleSelectState> = 
     switch (event.kind) {
       case "press": {
         // Opens the circle at zero radius. This press only arrives once the
-        // pointer has already travelled: DominoEditTool holds a shape back
+        // pointer has already travelled: DominoEditor holds a shape back
         // until then, so a press that never moves stays an ordinary click and
         // selects the domino under it. Single-domino click and Ctrl+click both
         // work with this armed.
@@ -83,8 +83,8 @@ export const circleSelectDefinition: ShapeSelectDefinition<CircleSelectState> = 
 
   hint: (s) =>
     s
-      ? "Release to select every domino whose centre is inside the circle. Esc to start over."
-      : "Drag from the centre of the circle out to its edge. Ctrl+drag adds to the selection, Alt+drag removes from it.",
+      ? "Release to select every domino inside the circle. Esc to start over."
+      : "Drag from the center of the circle out to its edge. Ctrl+drag adds to the selection, Alt+drag removes from it.",
 
   Preview: CircleSelectPreview,
 };

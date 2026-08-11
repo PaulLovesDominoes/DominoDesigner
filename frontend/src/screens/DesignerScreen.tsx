@@ -13,7 +13,10 @@ export default function DesignerScreen() {
   const editing = useStore((s) => s.editingDDObjectId !== null);
   // Placement mode gets a crosshair — but not while the dialog has the drag
   // disarmed, or the cursor would promise an interaction that won't happen.
-  const placing = useStore((s) => s.activeTool === "field") && !editing;
+  // One tool covers every element type (which one is being placed is
+  // newElementType, not the tool id), so this is right for a type added later
+  // without anyone remembering to come back here.
+  const placing = useStore((s) => s.activeTool === "newElement") && !editing;
 
   // Undo/redo and clipboard shortcuts. Scoped to this screen (rather than
   // App.tsx) because both are designer-only — the toolbar's Undo/Redo buttons
@@ -31,7 +34,7 @@ export default function DesignerScreen() {
   // than by whichever tool is active: the clipboard store dispatches to
   // whatever handler the current context has registered, so a new clipboard
   // client (DDObject cut/paste next) adds no keyboard code at all. This is
-  // also why DominoEditTool's own keydown handler can keep returning early on
+  // also why DominoEditor's own keydown handler can keep returning early on
   // every Ctrl/Cmd chord — they all belong to this handler, Ctrl+A included.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

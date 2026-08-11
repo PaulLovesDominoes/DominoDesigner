@@ -127,7 +127,7 @@ export const triangleSelectDefinition: ShapeSelectDefinition<TriangleSelectState
         }
         // Opens the triangle with all three corners on the same point, so there
         // is no area and nothing is selected yet. This press only arrives once
-        // the pointer has travelled — DominoEditTool holds it back until then,
+        // the pointer has travelled — DominoEditor holds it back until then,
         // so a press that never moves stays an ordinary click.
         return { status: "active", state: buildTriangleState(origin, origin, origin, "side") };
       }
@@ -177,7 +177,7 @@ export const triangleSelectDefinition: ShapeSelectDefinition<TriangleSelectState
           };
         }
         // The release after the closing press. The sequence is already over by
-        // then, so this is unreachable in practice — DominoEditTool has cleared
+        // then, so this is unreachable in practice — DominoEditor has cleared
         // its gesture ref. Handed back rather than committing twice.
         return { status: "active", state };
       }
@@ -219,7 +219,7 @@ export const triangleSelectDefinition: ShapeSelectDefinition<TriangleSelectState
 
   hint: (state) => {
     if (!state) {
-      return "Drag out one side of the triangle. Ctrl+drag adds to the selection, Alt+drag removes from it.";
+      return "Click-drag to draw one side of the triangle. Ctrl+drag adds to the selection, Alt+drag removes from it.";
     }
     return state.stage === "side"
       ? "Release to fix that side of the triangle. Esc to start over."

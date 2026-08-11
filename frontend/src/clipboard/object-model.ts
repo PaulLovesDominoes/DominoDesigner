@@ -40,7 +40,7 @@ export type ClipboardItem = DominoColorClipboardItem;
 
 /**
  * What the currently-active context can put on the clipboard, registered by
- * whichever component owns the current selection (DominoEditTool in domino
+ * whichever component owns the current selection (DominoEditor in domino
  * editing mode; SelectionTool for DDObjects, later).
  *
  * Implementations read live state imperatively via getState(), like every other
