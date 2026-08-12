@@ -24,8 +24,8 @@ import { resolveDominoColorPaste } from "./rowColPaste";
 import type { DominoColorClipboardItem } from "./clipboardItem";
 
 /**
- * Per-domino colour editing: the swatch/shortcut/lock state of domino editing
- * mode, and the five writes that change a domino's colour. Domino editing mode's
+ * Per-domino colour editing: the selected-swatch and shortcut state of domino
+ * editing mode, and the five writes that change a domino's colour. Domino editing mode's
  * other transient view state (the Expand toggle) rides along at the bottom —
  * same lifetime, same clear-on-exit.
  *
@@ -47,28 +47,26 @@ import type { DominoColorClipboardItem } from "./clipboardItem";
 /**
  * The one write path for *which dominoes are selected*, shared by every command
  * that produces a whole selection at once (select-by-swatch, select all, invert).
- * The canvas gestures in DominoEditor don't come through here — they build
- * their corners from where the pointer actually was — but they end the same way,
- * which is why applyLockedSwatchIfAny is an action rather than living in either
- * place.
+ * The canvas gestures in DominoEditor don't come through here — they build their
+ * corners from where the pointer actually was.
  *
- * Three details, each of which was a bug or nearly one:
+ * Two details, each of which was a bug or nearly one:
  *
  * - **The lowest index is found by iterating, never `Math.min(...selected)`.**
  *   Spreading a Set creates one argument per element, and V8 exhausts the call
  *   stack somewhere around 65k — a 250x250 field is 62,500 dominoes, so Select
  *   All would reliably crash.
- * - Both selection corners seed a following Shift+Arrow, which needs a defined
- *   corner to extend from; baseSelection preserves everything produced here
- *   beneath that rectangle. Same shape as DominoEditor's Ctrl+click branch.
- * - An empty result clears instead of replacing, and applies no lock — there is
- *   nothing to apply it to, the same rule a clearing gesture already follows.
+ * - Both selection corners are set for a following Shift+Arrow, which needs a
+ *   defined corner to extend from; baseSelection preserves everything produced
+ *   here beneath that rectangle. Same shape as DominoEditor's Ctrl+click branch.
+ *
+ * Note that selecting dominoes never changes their colour. It used to: while a
+ * swatch was *locked*, every command that came through here repainted whatever
+ * it had just selected, which made Ctrl+A a one-keystroke way to overwrite a
+ * whole field. Locking is gone; the only thing that paints without an explicit
+ * swatch click now is a paint brush, and only while its button is down.
  */
-function writeDominoSelection(
-  get: () => AppState,
-  parentId: DDObjectId,
-  selected: Set<number>,
-) {
+function writeDominoSelection(parentId: DDObjectId, selected: Set<number>) {
   const store = useDominoSelectionStore.getState();
   if (selected.size === 0) {
     store.clear(parentId);
@@ -83,7 +81,6 @@ function writeDominoSelection(
     selectionFixedCornerIndex: lowest,
     selectionMovingCornerIndex: lowest,
   });
-  get().applyLockedSwatchIfAny();
 }
 
 /**
@@ -211,18 +208,18 @@ function applySwatchToSelection(set: SliceSet, get: SliceGet, swatchId: DominoSw
 }
 
 export interface DominoColorSlice {
-  // The swatch currently locked (null = none) — an inventory color, or Hide, or
-  // Unassigned. While locked, every newly-selected domino (by any means) has it
-  // applied immediately; see DominoEditor.tsx's applyLockedColorIfAny.
-  // Cleared on exiting domino editing mode.
-  dominoColorLockedId: DominoSwatchId | null;
-  toggleDominoColorLock: (swatchId: DominoSwatchId) => void;
-  // Applies the locked swatch, if any, to whatever is selected right now.
-  // Called after every gesture and command that *changes* which dominoes are
-  // selected — that is the whole meaning of locking, and it lives here rather
-  // than in DominoEditor so the store's own selection commands (select all,
-  // invert, the swatch menus) reach it too. A no-op when nothing is locked.
-  applyLockedSwatchIfAny: () => void;
+  // The swatch the user has picked in the sidebar (null = none) — an inventory
+  // color, or Hide, or Unassigned. Written only by pickDominoSwatch below, so
+  // every route that picks a colour records it the same way; there is
+  // deliberately no bare setter, since choosing a swatch without going through
+  // that action has no caller and would skip its rules.
+  //
+  // Purely a stored choice: nothing is written because of it. Its one consumer
+  // is a paint brush, which lays it down while the button is held; the panel
+  // draws the accent outline round it. Cleared only on leaving domino editing
+  // mode — not by Escape, and deliberately not by picking up a brush, so a
+  // brush is usable the moment it is chosen.
+  dominoSelectedSwatchId: DominoSwatchId | null;
   // The in-progress shortcut being typed to pick a color (see the domino
   // inventory's own `shortcut` column) — e.g. "B" while narrowing toward
   // "B1"/"B2". Cleared on a unique match, Space-disambiguation, Escape, a
@@ -233,12 +230,36 @@ export interface DominoColorSlice {
   // labels, not sequences this buffer can ever match.
   dominoColorShortcut: string;
   setDominoColorShortcut: (buffer: string) => void;
-  // The one entry point for "apply a swatch to the selection", used by the color
-  // panel, the lock, and the Delete/Backspace keys alike, so all three can't
-  // drift. Dispatches to the three writes below; each pushes at most one
-  // undoable "dominoColors" operation covering exactly the dominoes that
-  // actually changed, and no-ops on an empty selection.
-  applyDominoSwatch: (swatchId: DominoSwatchId) => void;
+  // The swatch to draw as pressed for a moment, so picking one from the keyboard
+  // looks like the click it stands in for. Pure view state, never undoable; the
+  // timer that clears it lives in DominoEditor beside the shortcut buffer's.
+  //
+  // A bare setter is right here where it would be wrong for
+  // dominoSelectedSwatchId: this carries no rules to skip, and a mouse click
+  // never uses it at all (CSS :active already does that job).
+  dominoPressedSwatchId: DominoSwatchId | null;
+  setDominoPressedSwatch: (swatchId: DominoSwatchId | null) => void;
+  // The one entry point for "the user picked this swatch", used by the color
+  // panel's click, the shortcut keys and the Delete/Backspace keys alike, so
+  // none of them can drift. It does two things:
+  //
+  //  - Always makes `swatchId` the selected swatch, whichever route got here.
+  //    That is what makes Delete and Backspace ordinary swatch picks rather than
+  //    a separate mechanism.
+  //  - Applies it to the current selection, in every mode. Dispatches to the
+  //    three writes below; each pushes at most one undoable "dominoColors"
+  //    operation covering exactly the dominoes that actually changed, and no-ops
+  //    on an empty selection.
+  //
+  // **It applies with a paint brush in hand too, and there is no guard against
+  // that.** There briefly was one, because a brush's hover footprint used to be
+  // written into the selection itself, so a shortcut key pressed mid-drawing
+  // painted whatever the nib happened to be over and left smears. The hover is
+  // its own set now (dominoes/selectionStore.ts) and this only ever sees a
+  // selection the user built, so the guard was removed rather than kept: it
+  // would now block exactly the thing it should allow — Ctrl+A then Backspace to
+  // clear a field you have just painted.
+  pickDominoSwatch: (swatchId: DominoSwatchId) => void;
   // Recolors every currently-selected domino (in the field currently being
   // domino-edited) to `entryId`'s color. Note this *unhides* any hidden domino
   // it touches, for free: it writes a raw numericId, which is below
@@ -250,9 +271,9 @@ export interface DominoColorSlice {
   clearSelectedDominoColors: () => void;
   // Hides every currently-selected domino, leaving its color underneath to
   // return to. Deliberately never a toggle — clicking Hide is "make these
-  // hidden" the way clicking Red is "make these red", which is also what lets
-  // the Hide swatch be locked without flip-flopping. unhideSelectedDominoes is
-  // the swatch menu's separate Unhide command.
+  // hidden" the way clicking Red is "make these red", which is also what lets a
+  // paint brush use Hide as an eraser rather than flip-flopping as it passes
+  // over. unhideSelectedDominoes is the swatch menu's separate Unhide command.
   hideSelectedDominoes: () => void;
   unhideSelectedDominoes: () => void;
   // Selects the dominoes matching a swatch, combined with the live selection per
@@ -274,20 +295,19 @@ export interface DominoColorSlice {
   // strokes. See paint-brush/base.ts for the tools that drive it.
   //
   // This exists because a stroke inverts the rule every other color write in the
-  // app follows. All of those write and record in the same breath — which is
-  // exactly why DominoEditor is careful never to apply a locked color inside a
-  // pointermove (it would push an undo entry per frame). A stroke has to write
-  // live, so the user sees paint appear under the nib, but record only once, so
-  // Ctrl+Z takes back the whole stroke rather than one flick of it.
+  // app follows: all of those write and record in the same breath, which would
+  // mean an undo entry per frame here. A stroke has to write live, so the user
+  // sees paint appear under the nib, but record only once, so Ctrl+Z takes back
+  // the whole stroke rather than one flick of it.
   //
   // The map is what makes both halves of that work: `end` reads it to build one
   // operation covering everything painted, and `cancel` feeds it straight back
   // through the same write path to undo the stroke with nothing recorded.
   dominoStroke: { parentId: DDObjectId; before: Map<number, number> } | null;
-  // Opens a stroke. No-op outside the mode or with no swatch locked — a brush
+  // Opens a stroke. No-op outside the mode or with no swatch selected — a brush
   // with nothing to lay down has nothing to do.
   beginDominoStroke: () => void;
-  // Paints `indices` with the locked swatch, folding them into the open stroke
+  // Paints `indices` with the selected swatch, folding them into the open stroke
   // rather than recording anything. Safe to call every frame with a set the
   // previous frame already covered: the shared write path skips any domino
   // already at the target color.
@@ -348,18 +368,16 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
   set,
   get,
 ) => ({
-  dominoColorLockedId: null,
-  toggleDominoColorLock: (swatchId) =>
-    set((s) => ({ dominoColorLockedId: s.dominoColorLockedId === swatchId ? null : swatchId })),
-  applyLockedSwatchIfAny: () => {
-    const lockedId = get().dominoColorLockedId;
-    if (lockedId) get().applyDominoSwatch(lockedId);
-  },
+  dominoSelectedSwatchId: null,
   dominoColorShortcut: "",
   setDominoColorShortcut: (buffer) => set({ dominoColorShortcut: buffer }),
+  dominoPressedSwatchId: null,
+  setDominoPressedSwatch: (swatchId) => set({ dominoPressedSwatchId: swatchId }),
 
-  applyDominoSwatch: (swatchId) => {
+  pickDominoSwatch: (swatchId) => {
     const s = get();
+    set({ dominoSelectedSwatchId: swatchId });
+
     if (swatchId === HIDE_SWATCH_ID) s.hideSelectedDominoes();
     else if (swatchId === UNASSIGNED_SWATCH_ID) s.clearSelectedDominoColors();
     else s.applyColorToSelectedDominoes(swatchId);
@@ -438,7 +456,7 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
       for (const i of previous) if (matching.has(i)) selected.add(i);
     }
 
-    writeDominoSelection(get, parentId, selected);
+    writeDominoSelection(parentId, selected);
   },
 
   selectAllDominoes: () => {
@@ -449,7 +467,7 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
 
     const selected = new Set<number>();
     for (let i = 0; i < data.count; i++) selected.add(i);
-    writeDominoSelection(get, parentId, selected);
+    writeDominoSelection(parentId, selected);
   },
 
   invertDominoSelection: () => {
@@ -461,21 +479,21 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
     const previous = useDominoSelectionStore.getState().get(parentId)?.selected;
     const selected = new Set<number>();
     for (let i = 0; i < data.count; i++) if (!previous?.has(i)) selected.add(i);
-    writeDominoSelection(get, parentId, selected);
+    writeDominoSelection(parentId, selected);
   },
 
   dominoStroke: null,
 
   beginDominoStroke: () => {
     const s = get();
-    if (!s.dominoEditingId || !s.dominoColorLockedId) return;
+    if (!s.dominoEditingId || !s.dominoSelectedSwatchId) return;
     set({ dominoStroke: { parentId: s.dominoEditingId, before: new Map() } });
   },
 
   paintDominoStroke: (indices) => {
     const s = get();
     const stroke = s.dominoStroke;
-    const swatchId = s.dominoColorLockedId;
+    const swatchId = s.dominoSelectedSwatchId;
     if (!stroke || !swatchId) return;
     const data = useDominoDataStore.getState().get(stroke.parentId);
     if (!data) return;

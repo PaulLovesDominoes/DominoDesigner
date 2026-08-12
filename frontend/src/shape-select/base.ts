@@ -124,9 +124,8 @@ export interface ShapeSelectEvent {
  *   rectangle band does) and keeps the sequence open. Note the dispatcher does
  *   not close a sequence on pointer release — the variant does, which is how a
  *   multi-click variant spans several press/release pairs.
- * - **done** — the shape is finished. The dispatcher commits the selection,
- *   applies the locked swatch (once, here, never per frame) and ends the
- *   sequence. The tool stays armed for the next shape.
+ * - **done** — the shape is finished. The dispatcher commits the selection and
+ *   ends the sequence. The tool stays armed for the next shape.
  * - **ignore** — this event isn't part of a shape gesture; the dispatcher falls
  *   back to the tool's plain click / Ctrl+click semantics. Only legal before a
  *   sequence's first "active".

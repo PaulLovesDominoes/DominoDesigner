@@ -44,7 +44,9 @@ export default function ModeHintBar() {
   );
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const openHelpTopic = useStore((s) => s.openHelpTopic);
-  const dominoColorLockedId = useStore((s) => s.dominoColorLockedId);
+  // Whether a colour has been chosen at all. Only a brush's sentence depends on
+  // it: a brush with nothing to lay down draws no nib, and this is what says so.
+  const dominoSelectedSwatchId = useStore((s) => s.dominoSelectedSwatchId);
   // What the armed shape-select gesture is asking for, if any — written by
   // DominoEditor, since a variant's hint can vary by stage and the live
   // gesture state lives in a ref inside the <Canvas>. A string, so it's safe to
@@ -64,14 +66,13 @@ export default function ModeHintBar() {
   let content: ReactNode;
 
   if (!editing && dominoEditingId && dominoEditingObject) {
-    // Locking a color swaps the sentence but keeps the same escape hatches —
-    // "ESC to exit" here means exit the lock, not the mode; Done/Cancel stay
-    // the only way to leave domino editing mode entirely.
+    // The sentence at the end is chosen most-specific-first: an armed shape,
+    // then an armed brush, then the standing advice. What the user is *doing*
+    // outranks where they are, the same rule help/registry.ts applies when it
+    // consults TOOL_TOPIC before SCREEN_TOPIC.
     //
-    // An armed shape-select gesture outranks both: what the user is *doing* is
-    // more specific than the standing mode state, the same rule help/registry.ts
-    // applies when it consults TOOL_TOPIC before SCREEN_TOPIC. Nothing is lost
-    // by displacing the lock sentence — the lock stays badged on its swatch.
+    // Done/Cancel are the only ways out of domino editing mode; nothing in this
+    // bar ever means "press ESC to leave".
     content = (
       <>
         {/* Done commits; Cancel rolls the mode's edits back. Cancel only warns
@@ -94,12 +95,10 @@ export default function ModeHintBar() {
           <span>{dominoShapeSelectHint}</span>
         ) : dominoBrushId ? (
           <span>
-            {dominoColorLockedId
+            {dominoSelectedSwatchId
               ? getDominoBrush(dominoBrushId).hint
-              : "Paint brushes require locking a color swatch before painting."}
+              : "Click a color swatch in the sidebar to choose what this brush paints."}
           </span>
-        ) : dominoColorLockedId ? (
-          <span>Select dominoes to change to the locked color, ESC to exit.</span>
         ) : (
           <span>
             Select dominoes then click on a swatch in the sidebar to set the color.

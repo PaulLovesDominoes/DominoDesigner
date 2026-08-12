@@ -39,6 +39,13 @@ export interface PaintBrushSlice {
    *
    * That cross-slice write needs no import either way — `set` is typed against
    * the whole AppState, so each slice can see the other's members.
+   *
+   * It deliberately does NOT touch dominoSelectedSwatchId, so a brush picked up
+   * while a colour is already chosen paints straight away. Clearing it here is
+   * the obvious-looking addition and it is a trap: DominoBrushButton's size menu
+   * calls this again for a brush already in hand, so a clear would take the
+   * user's colour away on every size change, and again on every swap between
+   * brushes.
    */
   setDominoBrush: (id: DominoBrushId | null) => void;
   setDominoBrushSize: (id: DominoBrushId, size: DominoBrushSizeId) => void;

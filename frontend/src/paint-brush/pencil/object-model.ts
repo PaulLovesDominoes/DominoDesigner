@@ -14,14 +14,14 @@ import PencilBrushPreview from "./preview";
  */
 export const pencilBrushDefinition: DominoBrushDefinition = {
   id: "pencil",
-  label: "Pencil (for locked colors)",
+  label: "Paint with Circle (selected color)",
   sizeMm: { small: 20, medium: 60, large: 120 },
   sizeIcons: {
     small: PaintCircleSmallIcon,
     medium: PaintCircleMediumIcon,
     large: PaintCircleLargeIcon,
   },
-  hint: "Drag to paint the locked color. Esc during a stroke undoes it.",
+  hint: "Click then drag to paint the selected color. ESC during a stroke undoes it.",
 
   contains: (sizeMm, dx, dy) => {
     const radius = sizeMm / 2;

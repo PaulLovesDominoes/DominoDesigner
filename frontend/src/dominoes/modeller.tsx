@@ -220,6 +220,10 @@ export function DominoModeller({
   // click/drag/arrow-key gestures never touch positions/colors/hidden), so this
   // needs its own version subscription to trigger the copy effect below.
   const selectionVersion = useDominoSelectionStore((s) => s.versions[ddObjectId]);
+  // A paint brush's hover footprint is drawn the same white but is counted
+  // separately, so it needs its own version subscription — see the store for why
+  // the two counters are not one.
+  const brushHoverVersion = useDominoSelectionStore((s) => s.hoverVersions[ddObjectId]);
   // Resolves a domino's colorId to actual RGB; changes reference whenever the
   // inventory does (colorLookupStore.ts), so editing or deleting an
   // inventory color redraws every domino painted with it.
@@ -252,6 +256,7 @@ export function DominoModeller({
     const d = useDominoDataStore.getState().get(ddObjectId);
     if (!d) return;
     const selection = useDominoSelectionStore.getState().get(ddObjectId);
+    const brushHover = useDominoSelectionStore.getState().getBrushHover(ddObjectId);
 
     const aOffset = outlineGeometry.getAttribute("aOffset") as THREE.InstancedBufferAttribute;
     const aScale = outlineGeometry.getAttribute("aScale") as THREE.InstancedBufferAttribute;
@@ -278,7 +283,12 @@ export function DominoModeller({
       // the element grew downward, or an expanded domino sinks through the plane.
       const z = d.positions[3 * i + 2] + (DOMINO_SIZE.length + e.z1 - e.z0) / 2;
 
-      const isSelected = selection?.selected.has(i) ?? false;
+      // White outline for a domino the user selected *or* one under a paint
+      // brush's nib right now. The two are separate sets and mean different
+      // things (see selectionStore), but they look identical on purpose: both
+      // say "this is a domino you are about to act on".
+      const isHighlighted =
+        (selection?.selected.has(i) ?? false) || (brushHover?.has(i) ?? false);
       const colorId = d.colorIds[i];
       const isHidden = isHiddenColorId(colorId);
 
@@ -291,13 +301,17 @@ export function DominoModeller({
       mesh.setMatrixAt(i, scratchMatrix);
       aVisible.setX(i, isHidden ? 0 : 1);
 
-      // A hidden domino keeps its outline only while selected — that white box
-      // over nothing is the sole way to see what you're about to unhide.
-      const outlineScale = isHidden && !isSelected ? NO_OUTLINE_SCALE : { x: sx, y: sy, z: sz };
+      // A hidden domino keeps its outline only while highlighted — that white box
+      // over nothing is the sole way to see what you're about to unhide, and it
+      // is equally the warning that a brush passing over is about to unhide and
+      // paint it.
+      const outlineScale = isHidden && !isHighlighted ? NO_OUTLINE_SCALE : { x: sx, y: sy, z: sz };
       aScale.setXYZ(i, outlineScale.x, outlineScale.y, outlineScale.z);
-      // The outline alone takes the selection bias; the fill stays put, so a
-      // selected domino is never drawn at a different height than its neighbours.
-      aOffset.setXYZ(i, x, y, isSelected ? z + SELECTED_OUTLINE_Z_BIAS : z);
+      // The outline alone takes the bias; the fill stays put, so a highlighted
+      // domino is never drawn at a different height than its neighbours. A hover
+      // box needs it as much as a selection box does: without it the neighbours
+      // above and right win the depth tie and the box renders as an "L".
+      aOffset.setXYZ(i, x, y, isHighlighted ? z + SELECTED_OUTLINE_Z_BIAS : z);
       // colorIds[i] is a live reference into the inventory (0 = unpainted);
       // rgbById[...] is undefined for both the sentinel and a since-deleted
       // entry, so both cases share the same DEFAULT_DOMINO_COLOR fallback.
@@ -317,7 +331,7 @@ export function DominoModeller({
       scratchColor.setRGB(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, THREE.SRGBColorSpace);
       mesh.setColorAt(i, scratchColor);
 
-      const outline = isSelected ? SELECTED_OUTLINE_COLOR : OUTLINE_COLOR;
+      const outline = isHighlighted ? SELECTED_OUTLINE_COLOR : OUTLINE_COLOR;
       aOutlineColor.setXYZ(i, outline.r, outline.g, outline.b);
     }
 
@@ -340,6 +354,7 @@ export function DominoModeller({
     ddObjectId,
     version,
     selectionVersion,
+    brushHoverVersion,
     rgbById,
     invalidate,
     outlineGeometry,

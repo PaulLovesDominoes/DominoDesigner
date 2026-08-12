@@ -12,12 +12,11 @@ import type { RemixiconComponentType } from "@remixicon/react";
  *
  * - A brush has no gesture *stages*. There is nothing to drag out and no
  *   multi-press sequence, so there is no `nextStep`, no state object and no
- *   control points (nothing seeds a Shift+Arrow from a stroke).
+ *   control points (nothing extends a Shift+Arrow out of a stroke).
  * - A brush follows the cursor, so it never snaps to the element's grid.
  * - A brush *writes*. A shape only ever changes which dominoes are selected;
- *   this lays down the locked swatch as it goes.
- * - A brush cannot be armed at all without a locked swatch, and it carries a
- *   size menu.
+ *   this lays down the selected swatch as it goes.
+ * - A brush carries a size menu.
  *
  * Registering these in SHAPE_SELECTS would have meant three or four optional
  * members on ShapeSelectDefinition that only brushes ever set.
@@ -60,9 +59,11 @@ export interface DominoBrushDefinition {
   /** Registry key; must match the key this definition is registered under. */
   id: string;
   /**
-   * Toolbar tooltip and aria-label. Every brush names the lock, because a brush
-   * with nothing to lay down draws no nib and paints nothing — the label is what
-   * tells the user that is a missing colour rather than a broken tool.
+   * Toolbar tooltip and aria-label. Every brush names the selected colour,
+   * because a brush with none draws no nib and paints nothing — the label is
+   * what tells the user that is a colour they have yet to pick rather than a
+   * broken tool. It also names the nib's *shape* rather than a drawing
+   * implement, since the icons show a circle and a bar.
    */
   label: string;
   /** How far the nib reaches on the build plane, per size, in mm. */
@@ -77,7 +78,7 @@ export interface DominoBrushDefinition {
    * consumer.
    */
   sizeIcons: Record<DominoBrushSizeId, RemixiconComponentType>;
-  /** ModeHintBar's sentence while this brush is armed and a swatch is locked. */
+  /** ModeHintBar's sentence while this brush is armed and a swatch is selected. */
   hint: string;
   /**
    * Is a point `dx`/`dy` mm from the nib's centre inside it, at this size?

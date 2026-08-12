@@ -33,7 +33,7 @@ export const QUILL_NIB_ANGLE = Math.PI / 4;
  */
 export const quillBrushDefinition: DominoBrushDefinition = {
   id: "quill",
-  label: "Quill (for locked colors)",
+  label: "Paint with Bar (selected color)",
   // Nib *length*; the width above stays put. Starts at 60 because shorter than
   // that stopped reading as a nib in use — see QUILL_NIB_WIDTH_MM and the note
   // on DOMINO_BRUSH_SIZES.
@@ -43,7 +43,7 @@ export const quillBrushDefinition: DominoBrushDefinition = {
     medium: PaintQuillMediumIcon,
     large: PaintQuillLargeIcon,
   },
-  hint: "Drag to paint the locked color — the nib is widest across its angle. Esc during a stroke undoes it.",
+  hint: "Click then drag paint the selected color. ESC during a stroke undoes it.",
 
   contains: (sizeMm, dx, dy) => {
     const along = (dx + dy) * Math.SQRT1_2;

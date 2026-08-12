@@ -24,8 +24,27 @@
   min-width: 0;
 }
 
+/*
+ * The selected swatch — the colour a paint brush lays down. Also borrowed while
+ * a shortcut is being typed, to mark every candidate the buffer could still
+ * resolve to; see DominoColorPanel.tsx.
+ *
+ * On the *row*, so it rings the swatch and its caret together. On the swatch
+ * alone the outline-offset put its right-hand edge underneath the caret, which
+ * paints over it — so the ring came out visibly open on one side.
+ *
+ * The radius is here rather than inherited because .swatchRow is a plain flex
+ * box with square corners; its two children carry the rounding. An outline
+ * follows its own element's radius, so without this the ring would be a sharp
+ * rectangle around two rounded ends.
+ */
+.swatchRow.highlighted {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
 .swatch {
-  position: relative;
   flex: 1;
   min-width: 0;
   height: 48px;
@@ -41,9 +60,29 @@
   font-weight: 600;
 }
 
-.swatch.highlighted {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
+/*
+ * Pressed-in feedback, so a click that changes nothing visible on the build
+ * plane — re-applying the colour the selected dominoes already have — still
+ * reads as a click that landed.
+ *
+ * `:active` is the mouse; `.pressed` is a brief flash driven from the store when
+ * a swatch is picked from the keyboard instead, which has no `:active` of its
+ * own. One declaration, two ways in, so the two can't drift apart.
+ *
+ * Two inset shadows, because a swatch can be any colour the user has in their
+ * inventory and neither alone works on all of them:
+ *   - The first is the overlay-tint trick: a spread wide enough to cover the
+ *     whole face darkens it uniformly, which is the part that shows on a pale
+ *     swatch and reads as pressure.
+ *   - The second is a soft shadow cast from the top edge inward, which is what
+ *     gives the sense of depth, and is the part still visible on a dark swatch
+ *     where the tint alone would be lost.
+ */
+.swatch:active,
+.swatch.pressed {
+  box-shadow:
+    inset 0 0 0 100px rgba(0, 0, 0, 0.2),
+    inset 0 3px 6px rgba(0, 0, 0, 0.45);
 }
 
 /*
@@ -72,19 +111,6 @@
   color: var(--color-text);
 }
 
-/*
- * Top-*left*, deliberately: the caret owns the right edge, and a badge there
- * would sit under it.
- */
-.lockBadge {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  color: inherit;
-}
-
 .label {
   font-size: 11px;
   color: var(--color-text-dim);
@@ -98,7 +124,6 @@
 /*
  * The swatch's hover text lives in components/FloatingTip, not here: an
  * absolutely positioned tip is clipped by the sidebar's overflow on both axes,
- * and this one is wider than the sidebar. .swatch keeps position: relative for
- * .lockBadge's sake. DominoSwatchMenu's popup escapes the same way, and for the
- * same reason.
+ * and this one is wider than the sidebar. DominoSwatchMenu's popup escapes the
+ * same way, and for the same reason.
  */

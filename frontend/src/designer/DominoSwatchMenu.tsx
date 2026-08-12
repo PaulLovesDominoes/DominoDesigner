@@ -23,9 +23,6 @@ interface Props {
 export default function DominoSwatchMenu({ swatch, anchor, onClose }: Props) {
   const selectDominoesBySwatch = useStore((s) => s.selectDominoesBySwatch);
   const unhideSelectedDominoes = useStore((s) => s.unhideSelectedDominoes);
-  const dominoColorLockedId = useStore((s) => s.dominoColorLockedId);
-  const toggleDominoColorLock = useStore((s) => s.toggleDominoColorLock);
-  const applyLockedSwatchIfAny = useStore((s) => s.applyLockedSwatchIfAny);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: anchor.left, top: anchor.bottom + 4 });
@@ -56,7 +53,11 @@ export default function DominoSwatchMenu({ swatch, anchor, onClose }: Props) {
       <div ref={menuRef} className={styles.menu} style={pos} role="menu">
         {/* Hide only. Acts on the selection rather than on every hidden domino,
             so it pairs with this menu's own Select: select the hidden ones,
-            then unhide them. */}
+            then unhide them.
+
+            The separator is inside this block so it comes and goes with Unhide.
+            Left outside, a colour swatch's menu would open with a rule floating
+            above Select and nothing at all above the rule. */}
         {swatch.canUnhide && (
           <>
             <button
@@ -67,20 +68,9 @@ export default function DominoSwatchMenu({ swatch, anchor, onClose }: Props) {
               <RiEyeLine size={16} />
               Unhide
             </button>
+            <div className={styles.separator} />
           </>
         )}
-        {/* The same action the swatch's double-click runs, so only *this*
-            swatch being the locked one makes it an unlock — with another swatch
-            locked this still reads "Lock", and clicking it moves the lock here
-            (toggleDominoColorLock replaces whatever was locked before). */}
-        <button
-          className={styles.item}
-          role="menuitem"
-          onClick={run(() => {toggleDominoColorLock(swatch.id); applyLockedSwatchIfAny();} )}
-        >
-          {dominoColorLockedId === swatch.id ? "Unlock" : "Lock"}
-        </button>
-        <div className={styles.separator} />
         <button
           className={styles.item}
           role="menuitem"

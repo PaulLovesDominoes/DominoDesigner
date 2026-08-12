@@ -44,6 +44,30 @@ interface DominoSelectionStore {
   replace: (parentId: DDObjectId, entry: DominoSelectionEntry) => void;
   /** Discard a parent's selection (e.g. on exiting domino editing mode) and signal. */
   clear: (parentId: DDObjectId) => void;
+
+  /**
+   * parent element id -> the dominoes under a paint brush's nib right now.
+   *
+   * **This is not a selection, and keeping the two apart is load-bearing.** The
+   * hover is drawn the same white, but it is transient feedback that follows the
+   * pointer, where `entries` above is what the user deliberately picked out. They
+   * used to be the same set, and every awkward rule the brush needed came from
+   * that: a hover wiped a real selection on the next mouse move, Escape could not
+   * offer "clear the selection" under a brush, and a shortcut key painted
+   * whatever the nib happened to be over. Do not merge them back.
+   */
+  brushHover: Map<DDObjectId, Set<number>>;
+  /**
+   * Bumped on any change to `brushHover`, and deliberately **separate** from
+   * `versions`. A brush rewrites its hover on almost every pointermove, and
+   * DominoEditor subscribes to `versions` to rebuild the clipboard handlers
+   * whose enablement depends on the selection — sharing one counter would
+   * rebuild and re-register those handlers at pointer-event rate.
+   */
+  hoverVersions: Record<DDObjectId, number>;
+  getBrushHover: (parentId: DDObjectId) => Set<number> | undefined;
+  setBrushHover: (parentId: DDObjectId, indices: Iterable<number>) => void;
+  clearBrushHover: (parentId: DDObjectId) => void;
 }
 
 export const useDominoSelectionStore = create<DominoSelectionStore>((set, get) => ({
@@ -63,6 +87,30 @@ export const useDominoSelectionStore = create<DominoSelectionStore>((set, get) =
       if (!s.entries.has(parentId)) return {};
       s.entries.delete(parentId);
       return { versions: { ...s.versions, [parentId]: (s.versions[parentId] ?? 0) + 1 } };
+    }),
+
+  brushHover: new Map(),
+  hoverVersions: {},
+
+  getBrushHover: (parentId) => get().brushHover.get(parentId),
+
+  setBrushHover: (parentId, indices) =>
+    set((s) => {
+      s.brushHover.set(parentId, new Set(indices));
+      return {
+        hoverVersions: { ...s.hoverVersions, [parentId]: (s.hoverVersions[parentId] ?? 0) + 1 },
+      };
+    }),
+
+  // Returning {} on a miss keeps a redundant clear free — the brush calls this
+  // on every frame its nib covers nothing.
+  clearBrushHover: (parentId) =>
+    set((s) => {
+      if (!s.brushHover.has(parentId)) return {};
+      s.brushHover.delete(parentId);
+      return {
+        hoverVersions: { ...s.hoverVersions, [parentId]: (s.hoverVersions[parentId] ?? 0) + 1 },
+      };
     }),
 }));
 
@@ -84,7 +132,8 @@ export const useDominoSelectionStore = create<DominoSelectionStore>((set, get) =
 export function initDominoSelectionPruning() {
   return useStore.subscribe((state, prev) => {
     if (state.ddObjects === prev.ddObjects) return;
-    const { entries, versions } = useDominoSelectionStore.getState();
+    const { entries, versions, brushHover, hoverVersions } = useDominoSelectionStore.getState();
+
     let pruned = false;
     const nextVersions = { ...versions };
     for (const parentId of entries.keys()) {
@@ -95,5 +144,17 @@ export function initDominoSelectionPruning() {
       }
     }
     if (pruned) useDominoSelectionStore.setState({ versions: nextVersions });
+
+    // The brush hover goes the same way, for the same reason.
+    let prunedHover = false;
+    const nextHoverVersions = { ...hoverVersions };
+    for (const parentId of brushHover.keys()) {
+      if (!state.ddObjects[parentId]) {
+        brushHover.delete(parentId);
+        delete nextHoverVersions[parentId];
+        prunedHover = true;
+      }
+    }
+    if (prunedHover) useDominoSelectionStore.setState({ hoverVersions: nextHoverVersions });
   });
 }

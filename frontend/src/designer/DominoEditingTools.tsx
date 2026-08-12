@@ -123,7 +123,7 @@ export default function DominoEditingTools() {
 
       <span className={styles.separator} aria-hidden="true" />
 
-      {/* Paint brushes: freehand tools that lay down the locked colour as you
+      {/* Paint brushes: freehand tools that lay down the selected colour as you
           drag, rather than selecting a region for a swatch click to fill. Same
           radio semantics as the shapes above and mutually exclusive with them —
           both interpret canvas drags, so arming either disarms the other. Each

@@ -32,29 +32,44 @@ Note that each color swatch also contains a pop-up menu of options for selecting
 First, select some dominoes and then use one of the methods below to set the color of the selected dominoes:
 
 1.  Click on a color swatch
-    -  The dominoes will be set to the selected color
+    -  The dominoes will be set to that swatch's color
+    -  The swatch also becomes your **selected color** - see below
 
 2.  Type the "shortcut" key combination shown on the color swatch
     -  For example, if the blue color swatch shows a "B", then typing "B" will change the color of the selected dominoes to blue
+    -  This picks the swatch exactly as clicking it does, including making it your selected color
     -  See "Details on shortcut keys" below for more information
 
 3.  Cut & paste colors from someplace else
 
-### Locked Color mode
+### The selected color
 
-Double-click on a domino color to lock that color. You will see a small lock on the color swatch.
+Whenever you pick a color - by clicking its swatch or by typing its shortcut - that swatch
+stays outlined in blue. That is the **selected color**, and it is what the paint brushes
+paint with.
 
-Once "locked", all dominoes selected will be automatically (and immediately) changed to the locked color. This continues for any dominoes you select until locked color is turned off.
+A few things worth knowing:
 
-To turn off locked color mode:
+-  One click does both jobs. It colors whatever dominoes are selected right now, *and* it
+   becomes the selected color. There is nothing extra to do to pick up a color for a brush.
+-  Clicking the same swatch again does not un-pick it. To change color, click a different
+   swatch.
+-  The selected color stays put. ESC does not clear it, and neither does picking up a
+   brush, so you can choose a color once and keep painting with it. It is cleared only when
+   you leave domino editing mode.
+-  **Hide** and **Unassigned** can be the selected color too, which is what turns a brush
+   into an eraser - see *Hidden and Unassigned Dominoes* below. The **Delete** and
+   **Backspace** keys are simply those two swatches on the keyboard, and behave exactly as
+   clicking them does, selected color included.
+-  Swatches press in like a physical button when you use them - held down under the mouse,
+   or a quick flash when you use a shortcut key. That is there so a click still looks like it
+   landed even when nothing on the build plane changes, for example re-applying red to
+   dominoes that are already red.
+-  This all works the same with a paint brush in hand. Picking a color colors whatever is
+   selected *and* loads the brush, exactly as it does otherwise.
 
-- Double-click on the locked color to turn it off, OR
-- Hit ESC until the lock goes away (see ESC handling below)
-
-WARNING:  Any dominoes selected (by any means) are immediately painted with the lock color!
-
-This includes selecting ranges of dominoes by shape or by color.
-- So use with caution.
+Selecting dominoes never changes their color on its own. Only clicking a swatch, typing a
+shortcut, pasting, or dragging a brush does that.
 
 ### Details on shorcut keys
 
@@ -173,23 +188,23 @@ Some ideas on how to use these features:
     -  Selected dominoes become de-selected and vice-versa
 
 
-## Painting with the pencil and the quill
+## Painting with the Circle and Bar brushes
 
-The **Pencil** and **Quill** at the right-hand end of the toolbar are freehand painting
-tools. Instead of selecting dominoes and then choosing a color, you drag a small shape
-across the build plane and the dominoes it passes over are painted as you go - just like
-a brush in a drawing program.
+The two paint brushes at the right-hand end of the toolbar are freehand painting tools.
+Instead of selecting dominoes and then choosing a color, you drag a small shape across the
+build plane and the dominoes it passes over are painted as you go - just like a brush in a
+drawing program.
 
-**Both tools need a locked color to paint with** (see *Locked Color mode* above). The
-color they paint is simply whatever is locked, so locking **Hide** turns the pencil into
-an eraser that hides dominoes, and locking **Unassigned** turns it into one that clears
-them back to unpainted. You can pick up a brush before locking anything - it just will
-not show or paint until you do, and the hint bar reminds you.
+**Both brushes paint the selected color** (see *The selected color* above). If you have
+not chosen one yet, the brush shows nothing and paints nothing, and the hint bar says so;
+click any swatch and it comes to life. Because the two special swatches can be selected
+too, choosing **Hide** turns a brush into an eraser that hides dominoes, and choosing
+**Unassigned** turns it into one that clears them back to unpainted.
 
 The two differ only in the shape of the nib:
 
-- **Pencil** - a circle, so it paints the same width whichever way you drag.
-- **Quill** - a thin bar held at an angle, running from lower-left to upper-right. Drag
+- **Circle** - paints the same width whichever way you drag.
+- **Bar** - a thin bar held at an angle, running from lower-left to upper-right. Drag
   *along* that angle and you leave a hairline; drag *across* it and you leave a broad
   mark. This is how a real calligraphy pen behaves.
 
@@ -203,11 +218,11 @@ from the menu is what picks up the brush.
 The two brushes do not use the same measurements, because they do not stay useful over
 the same range:
 
-- **Pencil** - Small 20mm, Medium 60mm, Large 120mm, measured across the circle. Small is
+- **Circle** - Small 20mm, Medium 60mm, Large 120mm, measured across the circle. Small is
   roughly one domino, which is the size to reach for when placing single dominoes.
-- **Quill** - Small 60mm, Medium 100mm, Large 140mm, measured along the nib's *length*.
+- **Bar** - Small 60mm, Medium 100mm, Large 140mm, measured along the nib's *length*.
   Its width never changes, which is what keeps the thick/thin contrast at every size -
-  and it is also why the quill starts at 60 rather than 20. A nib barely longer than it
+  and it is also why the bar starts at 60 rather than 20. A nib barely longer than it
   is wide is just a blob, with no angle left to draw with.
 
 Clicking a brush you are already holding just reopens the menu, so you can change size
@@ -217,14 +232,39 @@ ESC.
 
 ### How painting works
 
-1. **Pick up the brush**, by choosing a size from its menu. Any dominoes you had selected
-   are de-selected, so you start with a clean build plane.
+1. **Pick up the brush**, by choosing a size from its menu. Your selected color is kept, so
+   a brush picked up after choosing one is ready to paint immediately. Anything you had
+   selected is kept too - see *Selecting dominoes while painting* below.
 2. **Hover.** Move the pointer over the build plane and you will see a faint shape
    following it, with no outline. The dominoes underneath it are outlined in white to
    show what you *would* paint. Nothing is changed yet.
 3. **Press and drag.** The shape gains a white outline, and every domino it passes over
-   is painted with the locked color immediately.
-4. **Release.** The stroke is finished and the selection clears.
+   is painted with the selected color immediately.
+4. **Release.** The stroke is finished.
+
+To change color part-way through a drawing, click another swatch or type its shortcut -
+the brush stays in your hand either way.
+
+### Selecting dominoes while painting
+
+Selecting still works normally with a brush in hand - Ctrl+A, Invert, and the Select
+commands in each swatch's menu all do what they always do, and what you select **stays**
+selected while you move the pointer around. Clicking a swatch or typing a shortcut colors
+it, just as anywhere else.
+
+So the quickest way to start over is **Ctrl+A** then **Backspace**.
+
+Two things to know:
+
+-  **Pressing the mouse to paint clears the selection.** That is the moment the brush takes
+   over: from then on only what the nib passes over gets painted.
+-  **Selected dominoes and the dominoes under the nib are both outlined in white**, so with
+   a selection standing you cannot tell them apart. If you want to see exactly what the
+   brush would hit, clear the selection first (press ESC).
+
+One thing that can surprise you: if dominoes are selected and you click a swatch just to
+load the brush with a color, that click *also* colors the selection - because that is what
+clicking a swatch means everywhere. Press ESC first if you did not want that.
 
 ### Undoing a stroke
 
@@ -271,10 +311,15 @@ Pressing ESC multiple times will (in order):
     -  If your shape is not looking like you want, use ESC to cancel it so you can try again
     -  A cancelled paint stroke puts back every domino it had painted
 2. De-select all dominoes
-    -  Skipped when a pencil or quill is armed, since what is "selected" there is just
-       whatever the nib is hovering over
-3. Return to the default simple Rectangle selection mode, putting away any pencil or quill
-4. Unlock any locked domino colors
+    -  This works with a paint brush in hand too, and is how you clear a selection so you
+       can see exactly what the nib would paint
+3. Return to the default simple Rectangle selection mode, putting away any paint brush
+4. Clear any partly-typed color shortcut
+
+ESC deliberately never changes your **selected color**. It is a choice rather than a mode,
+and it paints nothing on its own - taking it away would only leave a brush inert for no
+visible reason. Click a different swatch to change it, or leave domino editing mode
+(Done or Cancel) to clear it.
 
 ### Hidden and Unassigned Dominoes
 
@@ -294,6 +339,9 @@ How to hide dominoes:
 1.  Select some dominoes then:
 2.  Press DEL to hide them, OR
         -  Click on the "Hide" color swatch in the left hand sidebar
+        -  These are the same thing: DEL and Backspace are the "Hide" and "Unassigned"
+           swatches on the keyboard, so each also becomes your selected color, which is how
+           a paint brush is turned into an eraser
 
 How to un-hide dominoes:
 1.  Select some hidden dominoes by either:

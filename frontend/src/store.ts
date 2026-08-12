@@ -157,7 +157,7 @@ export interface AppState
   // (`dominoEditingUndoBarrier`, declared in history/appStoreSlice.ts alongside
   // the undo() that enforces it); cancelDominoEditing drains back to it.
 
-  // The domino colour lock, shortcut buffer and the four colour writes come
+  // The selected swatch, the shortcut buffer and the four colour writes come
   // from DominoColorSlice (dominoes/appStoreSlice.ts).
 
   // The build's DDObject hierarchy, indexed by DDObject id. `rootId` is the
@@ -260,19 +260,35 @@ export const useStore = create<AppState>()((set, get, api) => ({
   },
   exitDominoEditing: () =>
     set((s) => {
-      if (s.dominoEditingId) useDominoSelectionStore.getState().clear(s.dominoEditingId);
-      // Note the color clipboard is deliberately NOT cleared alongside the lock
-      // and shortcut buffer below: it holds a snapshot of its source element, so
-      // it stays valid after leaving the mode and lets a pattern copied in one
-      // field be pasted into another. Only the handlers unregister (that's
-      // DominoEditor's doing), not the buffer.
+      if (s.dominoEditingId) {
+        useDominoSelectionStore.getState().clear(s.dominoEditingId);
+        // The brush hover has to be cleared here explicitly, and cannot be left
+        // to DominoEditor's resetBrushView effect: this update nulls
+        // dominoBrushId and dominoEditingId together, so by the time that effect
+        // runs it has no id to clear under and the hover would be stranded —
+        // white boxes left over a field nobody is editing any more.
+        useDominoSelectionStore.getState().clearBrushHover(s.dominoEditingId);
+      }
+      // Note the color clipboard is deliberately NOT cleared alongside the
+      // selected swatch and shortcut buffer below: it holds a snapshot of its
+      // source element, so it stays valid after leaving the mode and lets a
+      // pattern copied in one field be pasted into another. Only the handlers
+      // unregister (that's DominoEditor's doing), not the buffer.
       return {
         dominoEditingId: null,
         selectedDDObjectId: s.dominoEditingId,
         activeTool: "select" as ToolId,
         dominoEditingUndoBarrier: null,
-        dominoColorLockedId: null,
+        // The one place the selected swatch is cleared. Nothing inside the mode
+        // does — not Escape, not picking up a brush — so a colour chosen once
+        // lasts the whole session.
+        dominoSelectedSwatchId: null,
         dominoColorShortcut: "",
+        // A keyboard pick's pressed-button flash normally un-presses itself on a
+        // timer, but DominoEditor's keydown effect clears that timer when it
+        // tears down — which is exactly now. Leaving the mode inside the flash
+        // window would otherwise strand a swatch looking held down for good.
+        dominoPressedSwatchId: null,
         dominoEditingColorSnapshot: null,
         // The Expand toggle is a view aid scoped to the mode, so leaving it
         // restores the dominoes' real size — no separate teardown needed.

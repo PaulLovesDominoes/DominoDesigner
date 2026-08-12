@@ -3,7 +3,7 @@ import type { InventoryEntryId } from "../domino-inventory/object-model";
 /**
  * A *swatch* is anything domino editing mode's sidebar offers as a click target:
  * the inventory colors, plus two that aren't colors at all. Everything
- * downstream — the color lock, the apply, the per-swatch menus, the highlight —
+ * downstream — the selected swatch, the apply, the per-swatch menus, the highlight —
  * is keyed by DominoSwatchId so none of them has to care which kind it holds.
  *
  * InventoryEntryId is `INV-${number}`, so the union discriminates on the string

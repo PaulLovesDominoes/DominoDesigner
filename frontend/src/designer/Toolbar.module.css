@@ -48,6 +48,21 @@
   cursor: pointer;
 }
 
+/*
+ * An .iconBtn that also carries a dropdown caret, so it can't stay a fixed
+ * square. Used by DominoBrushButton, whose whole button opens a size menu.
+ *
+ * It lives here, right after .iconBtn, rather than in DominoBrushButton's own
+ * CSS module: both are single-class selectors, so which one wins `width` would
+ * come down to the order the two stylesheets happen to land in the bundle, and
+ * nothing pins that down. In one file after the rule it overrides, it is certain.
+ */
+.iconBtnWithCaret {
+  width: auto;
+  gap: 2px;
+  padding: 0 4px;
+}
+
 .iconBtn:hover {
   background: var(--color-chrome-2);
   color: var(--color-text);

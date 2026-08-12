@@ -9,7 +9,11 @@ import type { DDObjectBounds, DDObjectId, DominoExpansion } from "../object-type
 import { DOMINO_SIZE } from "../dimensions";
 import { useDominoDataStore } from "../dominoes/store";
 import { resolveDominoExpansion } from "../dominoes/expansion";
-import { HIDE_SWATCH_ID, UNASSIGNED_SWATCH_ID } from "../dominoes/swatches";
+import {
+  HIDE_SWATCH_ID,
+  UNASSIGNED_SWATCH_ID,
+  type DominoSwatchId,
+} from "../dominoes/swatches";
 import {
   extent,
   nearestInDirection,
@@ -92,6 +96,13 @@ const MODE_OUTLINE_MARGIN = 10;
 // click. Small relative to a domino's pitch (tens of mm), so it doesn't feel
 // like a dead zone.
 const DRAG_THRESHOLD_MM = 2;
+
+/**
+ * How long a swatch stays drawn as pressed after being picked from the keyboard.
+ * Long enough to register as a flash, short enough that holding a shortcut key
+ * down doesn't leave a button looking stuck.
+ */
+const SWATCH_PRESS_FLASH_MS = 140;
 
 interface Rect {
   minX: number;
@@ -293,20 +304,6 @@ function hitDominoIndex(
 }
 
 /**
- * Applies whatever swatch is locked, if any, to the current selection. Called
- * after every gesture below that changes which dominoes are selected (but not
- * after clearing a selection — nothing to apply to then).
- *
- * A thin delegate: the real action lives in the store so the selection commands
- * that don't come through this file — select all, invert, the swatch menus —
- * apply the lock the same way. Kept as a local name only because the five
- * gesture call sites read better for it.
- */
-function applyLockedColorIfAny() {
-  useStore.getState().applyLockedSwatchIfAny();
-}
-
-/**
  * One in-progress selection gesture — "sequence" rather than "gesture" because
  * a shape-select variant may span several presses and releases before it calls
  * itself finished. The rectangle band always completes in one press-drag-release.
@@ -416,9 +413,10 @@ export default function DominoEditor() {
     s.dominoBrushId ? s.dominoBrushSizes[s.dominoBrushId] : null,
   );
   const brushSizeMm = brushDefinition && brushSizeId ? brushDefinition.sizeMm[brushSizeId] : 0;
-  // A brush paints the locked swatch, so with nothing locked there is nothing
-  // for it to do — it draws no nib at all rather than hovering uselessly.
-  const dominoColorLockedId = useStore((s) => s.dominoColorLockedId);
+  // A brush paints the selected swatch, so with nothing selected there is
+  // nothing for it to do — it draws no nib at all rather than hovering
+  // uselessly.
+  const dominoSelectedSwatchId = useStore((s) => s.dominoSelectedSwatchId);
 
   // How the edited DDObject's type snaps a point onto its own grid, falling back
   // to NO_SNAP for a type that declares none — so a shape variant can call it
@@ -462,6 +460,8 @@ export default function DominoEditor() {
   // keystroke, cleared (and the timer with it) whenever the buffer resolves
   // or gets abandoned some other way (Escape, Space, a new pointer gesture).
   const shortcutTimerRef = useRef<number | undefined>(undefined);
+  /** Un-presses the swatch a keyboard pick flashed. See pickSwatchFromKeyboard. */
+  const swatchPressTimerRef = useRef<number | undefined>(undefined);
 
   // Unit-square edge geometry shared by the mode outline and the drag
   // rectangle border, scaled per-use — mirrors SelectionTool.tsx's unitEdges.
@@ -532,12 +532,11 @@ export default function DominoEditor() {
   /**
    * Ends a paint stroke — committing everything it painted as one undo entry, or
    * throwing the whole stroke away and putting each domino back to the colour it
-   * had. Both share the same tidy-up: the nib stops being outlined and the
-   * selection goes.
+   * had. Either way the nib stops being outlined.
    *
-   * The selection is cleared rather than kept because under a brush it is
-   * transient hover feedback — the dominoes currently beneath the nib — never
-   * something the user built up and might want to act on next.
+   * Nothing to do about the selection here: the press that opened this stroke
+   * already cleared it. The hover is deliberately left alone too — the pointer is
+   * usually still over the field, so the nib should keep showing what it covers.
    */
   const finishBrushStroke = (commit: boolean) => {
     if (!brushPaintingRef.current) return;
@@ -546,22 +545,24 @@ export default function DominoEditor() {
     if (commit) st.endDominoStroke();
     else st.cancelDominoStroke();
 
-    lastBrushIndicesRef.current = undefined;
     setBrushCursor((cursor) => (cursor ? { ...cursor, painting: false } : cursor));
-    if (dominoEditingId) useDominoSelectionStore.getState().clear(dominoEditingId);
     invalidate();
   };
 
   /**
    * Wipes everything a brush is currently showing: any stroke in flight, the nib
-   * itself, and the hover selection under it. Nothing here is the user's work —
-   * it is all transient feedback that has stopped meaning anything.
+   * itself, and its hover footprint. All transient feedback that has stopped
+   * meaning anything.
+   *
+   * It leaves the *selection* alone, and that is the point: dominoes picked out
+   * before a brush was reached for stay picked out, so arming one is not a way to
+   * lose work. Only a press to paint discards them.
    */
   const resetBrushView = () => {
     finishBrushStroke(false);
     lastBrushIndicesRef.current = undefined;
     setBrushCursor(null);
-    if (dominoEditingId) useDominoSelectionStore.getState().clear(dominoEditingId);
+    if (dominoEditingId) useDominoSelectionStore.getState().clearBrushHover(dominoEditingId);
     invalidate();
   };
 
@@ -570,21 +571,22 @@ export default function DominoEditor() {
    * down. Below it is a dependency rather than a test, which is what lets one
    * effect cover both ways a brush can stop showing something.
    */
-  const brushCanPaint = brushId !== null && dominoColorLockedId !== null;
+  const brushCanPaint = brushId !== null && dominoSelectedSwatchId !== null;
 
   /**
    * The brush starts from a clean build plane whenever what it should be showing
    * changes wholesale — it was armed, disarmed, swapped for the other brush, or
-   * the swatch it paints with was locked or released. Mirrors the shape-select
+   * a colour was chosen when there had been none. Mirrors the shape-select
    * effect below.
    *
-   * Depending on `brushCanPaint` rather than on `dominoColorLockedId` directly is
-   * the whole reason this is one effect and not two. The raw lock changes far
-   * more often than this cares about: locking a *different* colour mid-drawing
-   * leaves brushCanPaint true throughout, so nothing resets and the user keeps
-   * painting — and locking or unlocking with no brush armed never moves it off
-   * false, so an ordinary unlock can't clear the user's selection. Only the
-   * transitions that actually matter to a brush reach the reset.
+   * Depending on `brushCanPaint` rather than on `dominoSelectedSwatchId` directly
+   * is the whole reason this is one effect and not two. The selected swatch
+   * changes far more often than this cares about: choosing a *different* colour
+   * mid-drawing leaves brushCanPaint true throughout, so nothing resets and the
+   * user keeps painting — and choosing one with no brush armed never moves it off
+   * false, so picking a colour for an ordinary swatch click can't clear the
+   * user's selection. Only the transitions that actually matter to a brush reach
+   * the reset.
    *
    * It also runs once at startup, with nothing armed and no DDObject being
    * edited, where every line of the reset is a no-op.
@@ -609,6 +611,25 @@ export default function DominoEditor() {
   // the only thing that needs to be a dependency.
   useEffect(() => {
     if (!dominoEditingId) return;
+
+    /**
+     * Picks a swatch from the keyboard, and makes its button look pressed for a
+     * moment so the keystroke reads as the click it stands in for. Without it a
+     * shortcut that recolours dominoes gives no feedback in the sidebar at all,
+     * and one that recolours nothing looks like it was swallowed.
+     *
+     * A mouse click needs none of this — CSS :active is the browser's own.
+     */
+    const pickSwatchFromKeyboard = (swatchId: DominoSwatchId) => {
+      const st = useStore.getState();
+      st.pickDominoSwatch(swatchId);
+      st.setDominoPressedSwatch(swatchId);
+      window.clearTimeout(swatchPressTimerRef.current);
+      swatchPressTimerRef.current = window.setTimeout(
+        () => useStore.getState().setDominoPressedSwatch(null),
+        SWATCH_PRESS_FLASH_MS,
+      );
+    };
 
     const runPlainArrow = (direction: Direction) => {
       const data = useDominoDataStore.getState().get(dominoEditingId);
@@ -644,16 +665,15 @@ export default function DominoEditor() {
       if (target === undefined) return; // already at the edge
 
       // A plain arrow deliberately ignores the stored corners — it steps from
-      // the extreme domino of the whole selection, found above — and only
-      // reseeds them, so a Shift+Arrow that follows extends from the domino it
-      // just landed on.
+      // the extreme domino of the whole selection, found above — and only moves
+      // them, so a Shift+Arrow that follows extends from the domino it just
+      // landed on.
       useDominoSelectionStore.getState().replace(dominoEditingId, {
         selected: new Set([target]),
         baseSelection: new Set(),
         selectionFixedCornerIndex: target,
         selectionMovingCornerIndex: target,
       });
-      applyLockedColorIfAny();
     };
 
     const runShiftArrow = (direction: Direction) => {
@@ -677,7 +697,6 @@ export default function DominoEditor() {
         selectionFixedCornerIndex: entry.selectionFixedCornerIndex,
         selectionMovingCornerIndex: nextMovingCorner,
       });
-      applyLockedColorIfAny();
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -697,15 +716,17 @@ export default function DominoEditor() {
         //      and put the previous selection back. The armed shape stays
         //      armed, so it can be drawn again from scratch.
         //   2. otherwise, dominoes selected → clear the selection. An armed
-        //      shape stays armed: this rung is about the selection only.
-        //   3. otherwise, a shape armed → disarm back to the default rectangle
-        //      band. Reached only once nothing is selected, so it is Escape
-        //      twice that gets from "circle armed with a selection" back to
-        //      Rectangle.
-        //   4. otherwise → release the color lock and any part-typed shortcut
-        //      buffer. The lock survives every rung above it, so neither
-        //      clearing a selection nor disarming a shape silently unlocks —
-        //      the lock has its own badge and its own way out.
+        //      shape or brush stays armed: this rung is about the selection only.
+        //   3. otherwise, a shape or brush armed → disarm back to the default
+        //      rectangle band. Reached only once nothing is selected, so it is
+        //      Escape twice that gets from "circle armed with a selection" back
+        //      to Rectangle.
+        //   4. otherwise → clear any part-typed shortcut buffer.
+        //
+        // The *selected* swatch is deliberately not on the ladder at all. It is
+        // a choice, not a mode, and it paints nothing by itself; taking it away
+        // would only make a brush inert with no visible reason. Leaving the mode
+        // is what clears it.
         //
         // The order of rungs 2 and 3 is the whole of the rule. Testing the
         // selection *before* the armed shape is what splits them into separate
@@ -726,17 +747,16 @@ export default function DominoEditor() {
           cancelSequence();
           return;
         }
-        // Rung 2 is skipped entirely while a brush is armed: what is selected
-        // there is the nib's own hover footprint, which the next pointermove
-        // would put straight back. A rung that makes no lasting change would
-        // break the one-visible-change-per-press rule the ladder is built on.
+        // Rung 2 applies with a brush in hand exactly as it does without one.
+        // It used to be skipped there, because what was "selected" under a brush
+        // was its own hover footprint and the next pointermove put it straight
+        // back — a rung making no lasting change. Hover is its own set now
+        // (selectionStore), so this only ever sees a selection the user built.
         const st = useStore.getState();
-        if (!st.dominoBrushId) {
-          const entry = useDominoSelectionStore.getState().get(dominoEditingId);
-          if (entry && entry.selected.size > 0) {
-            useDominoSelectionStore.getState().clear(dominoEditingId);
-            return;
-          }
+        const entry = useDominoSelectionStore.getState().get(dominoEditingId);
+        if (entry && entry.selected.size > 0) {
+          useDominoSelectionStore.getState().clear(dominoEditingId);
+          return;
         }
         if (st.dominoBrushId) {
           st.setDominoBrush(null);
@@ -746,22 +766,21 @@ export default function DominoEditor() {
           st.setDominoShapeSelect(null);
           return;
         }
-        if (st.dominoColorLockedId) st.toggleDominoColorLock(st.dominoColorLockedId);
         if (st.dominoColorShortcut) st.setDominoColorShortcut("");
         window.clearTimeout(shortcutTimerRef.current);
         return;
       }
 
       // The two special swatches' keys — the "DEL"/"Bksp" labels the color
-      // panel shows on them name exactly these. Routed through applyDominoSwatch
-      // so they inherit the same undo step, colour memory sync and
-      // empty-selection no-op as clicking the swatch itself.
+      // panel shows on them name exactly these. Routed through pickDominoSwatch
+      // so they behave as clicking those two swatches does in every respect:
+      // the same undo step, the same colour memory sync, the same
+      // empty-selection no-op, they become the selected swatch, and they apply
+      // nothing while a paint brush is armed.
       if (e.key === "Delete" || e.key === "Backspace") {
         // Backspace would otherwise navigate the page back.
         e.preventDefault();
-        useStore
-          .getState()
-          .applyDominoSwatch(e.key === "Delete" ? HIDE_SWATCH_ID : UNASSIGNED_SWATCH_ID);
+        pickSwatchFromKeyboard(e.key === "Delete" ? HIDE_SWATCH_ID : UNASSIGNED_SWATCH_ID);
         return;
       }
 
@@ -781,7 +800,7 @@ export default function DominoEditor() {
           const exact = st.inventoryEntries.find(
             (en) => en.active && en.shortcut.toUpperCase() === st.dominoColorShortcut,
           );
-          if (exact) st.applyColorToSelectedDominoes(exact.id);
+          if (exact) pickSwatchFromKeyboard(exact.id);
           st.setDominoColorShortcut("");
           window.clearTimeout(shortcutTimerRef.current);
         }
@@ -811,7 +830,10 @@ export default function DominoEditor() {
         );
 
         if (matches.length === 1) {
-          st.applyColorToSelectedDominoes(matches[0].id);
+          // Typing a shortcut is the keyboard equivalent of clicking the swatch,
+          // and goes through the same helper to stay that way — same action, same
+          // pressed-button flash.
+          pickSwatchFromKeyboard(matches[0].id);
           st.setDominoColorShortcut("");
           window.clearTimeout(shortcutTimerRef.current);
         }
@@ -822,6 +844,7 @@ export default function DominoEditor() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.clearTimeout(shortcutTimerRef.current);
+      window.clearTimeout(swatchPressTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dominoEditingId]);
@@ -836,20 +859,18 @@ export default function DominoEditor() {
 
   /**
    * One pointer position under an armed brush — the whole of what a brush does
-   * per frame. It draws the nib there, selects whatever the nib covers, and,
-   * while a stroke is open, paints it.
+   * per frame. It draws the nib there, marks whatever the nib covers as hovered,
+   * and, while a stroke is open, paints it.
    *
-   * Hovering and painting deliberately run the same code and select the same
-   * way. The only difference is the paint call, which is also the only thing
-   * that writes anything.
+   * Hovering and painting deliberately run the same code and mark the same way.
+   * The only difference is the paint call, which is also the only thing that
+   * writes anything.
    */
   const trackBrush = (worldPoint: { x: number; y: number }) => {
     if (!brushDefinition) return;
-    // No locked swatch, no nib — the brush shows nothing at all rather than
-    // hovering with nothing to lay down. This is also what stops the two lines
-    // below from drawing during the brief moment a swatch double-click has
-    // unlocked the old colour but not yet locked the new one.
-    if (!useStore.getState().dominoColorLockedId) return;
+    // No selected swatch, no nib — the brush shows nothing at all rather than
+    // hovering with nothing to lay down.
+    if (!useStore.getState().dominoSelectedSwatchId) return;
 
     setBrushCursor({ x: worldPoint.x, y: worldPoint.y, painting: brushPaintingRef.current });
     invalidate();
@@ -869,32 +890,20 @@ export default function DominoEditor() {
     if (lastBrushIndicesRef.current && sameIndices(indices, lastBrushIndicesRef.current)) return;
     lastBrushIndicesRef.current = indices;
 
+    // The hover set, never the selection. Those used to be the same thing, and
+    // it was the cause of nearly every awkward rule this file had about brushes:
+    // a hover wiped whatever the user had selected on the next mouse move, so
+    // Ctrl+A followed by Backspace did nothing, Escape could offer no "clear the
+    // selection" rung, and a shortcut key painted the footprint. Keep them apart.
     const selectionStore = useDominoSelectionStore.getState();
-    if (indices.length === 0) {
-      selectionStore.clear(dominoEditingId);
-      return;
-    }
-    // Written straight to the selection store rather than through the app
-    // store's writeDominoSelection, and that matters: writeDominoSelection
-    // applies the locked swatch, which here would paint and push an undo entry
-    // on every frame of the drag — the very thing the stroke exists to avoid.
-    //
-    // The two corner indices carry no meaning for a brush, since nothing extends
-    // a Shift+Arrow out of a stroke, but the entry needs real indices, so the
-    // ends of the covered range stand in.
-    selectionStore.replace(dominoEditingId, {
-      selected: new Set(indices),
-      baseSelection: new Set(indices),
-      selectionFixedCornerIndex: indices[0],
-      selectionMovingCornerIndex: indices[indices.length - 1],
-    });
+    if (indices.length === 0) selectionStore.clearBrushHover(dominoEditingId);
+    else selectionStore.setBrushHover(dominoEditingId, indices);
   };
 
   /**
    * The nib goes away when the pointer leaves the canvas, and takes its hover
-   * selection with it. Not merely tidy: clicking a sidebar swatch applies it to
-   * whatever is *selected*, so a footprint left behind here would be recoloured
-   * by the very click the user makes to pick their next colour.
+   * footprint with it — there is no nib left for those white boxes to belong to.
+   * The user's own selection stays, untouched.
    *
    * A stroke still in progress is committed rather than carried across the
    * boundary. Nothing captures the pointer, so a button released outside the
@@ -907,7 +916,7 @@ export default function DominoEditor() {
     finishBrushStroke(true);
     lastBrushIndicesRef.current = undefined;
     setBrushCursor(null);
-    useDominoSelectionStore.getState().clear(dominoEditingId);
+    useDominoSelectionStore.getState().clearBrushHover(dominoEditingId);
     invalidate();
   };
 
@@ -971,9 +980,6 @@ export default function DominoEditor() {
     if (st.dominoShapeSelectHint !== nextHint) st.setDominoShapeSelectHint(nextHint);
 
     if (step.status === "done") {
-      // Once, here — never per frame. A locked color applied on every frame of
-      // a sequence would paint, and push an undo entry, on each one.
-      applyLockedColorIfAny();
       gestureSequenceRef.current = null;
       setShapeSequence(null);
       // Arming is sticky: the tool stays armed for the next shape. Only Escape,
@@ -996,9 +1002,17 @@ export default function DominoEditor() {
     // A brush has no click semantics to protect: pressing and releasing without
     // moving is a dab of paint, and that is exactly what the user asked for.
     if (brushDefinition) {
-      // With no swatch locked the brush is inert — it draws no nib and paints
-      // nothing — so a press must not put it into painting mode either.
-      if (!useStore.getState().dominoColorLockedId) return;
+      // With no swatch selected the brush is inert — it draws no nib and paints
+      // nothing — so a press must not put it into painting mode either. This
+      // stays ahead of the clear below: an inert brush has no business throwing
+      // away a selection the user built up.
+      if (!useStore.getState().dominoSelectedSwatchId) return;
+      // Starting to paint is what discards the selection. Up to this moment it
+      // survives everything — arming the brush, moving the pointer over the
+      // field, clicking swatches — so Ctrl+A then Backspace clears a field, and
+      // a patch picked out beforehand is still there to colour. From here on only
+      // what the nib passes over gets painted.
+      useDominoSelectionStore.getState().clear(dominoEditingId);
       brushPaintingRef.current = true;
       useStore.getState().beginDominoStroke();
       trackBrush(e.point);
@@ -1121,9 +1135,8 @@ export default function DominoEditor() {
     if (!g.dragging) return;
     setDragCurrent({ x: e.point.x, y: e.point.y });
 
-    // Preview which dominoes the box has swept so far. Deliberately no
-    // applyLockedColorIfAny here: that would paint — and push an undo entry —
-    // on every frame of the drag. A locked color is applied once, at pointerup.
+    // Preview which dominoes the box has swept so far. Nothing here paints:
+    // a selection gesture only ever changes which dominoes are selected.
     const data = useDominoDataStore.getState().get(dominoEditingId);
     if (!data) return;
     const entry = resolveDragToSelection(data, g, { x: e.point.x, y: e.point.y }, false);
@@ -1167,7 +1180,6 @@ export default function DominoEditor() {
         // state is committed even if this frame swept nothing new.
         const entry = resolveDragToSelection(data, g, { x: e.point.x, y: e.point.y }, true);
         if (entry) selectionStore.replace(dominoEditingId, entry);
-        applyLockedColorIfAny();
       } else if (g.selectionGestureMode === "remove") {
         // Alt was held, but this was a click rather than a drag. If the domino
         // clicked on was selected, take it back out of the selection; do
@@ -1190,8 +1202,7 @@ export default function DominoEditor() {
 
           // The two corners carry over untouched: nothing was *added* for a
           // following Shift+Arrow to extend from, and pointing a corner at the
-          // domino that just left the selection would be meaningless. No locked
-          // color to apply either — a remove paints nothing.
+          // domino that just left the selection would be meaningless.
           selectionStore.replace(dominoEditingId, {
             selected,
             baseSelection: new Set(selected),
@@ -1203,7 +1214,7 @@ export default function DominoEditor() {
         // Click on empty space.
         if (g.selectionGestureMode !== "add") selectionStore.clear(dominoEditingId);
       } else if (g.selectionGestureMode === "add") {
-        // Toggle in/out of the current selection. The corners only reseed on
+        // Toggle in/out of the current selection. The corners only move on
         // toggle-on — pointing them at a domino that just got deselected would
         // be meaningless for a future Shift+Arrow.
 
@@ -1223,7 +1234,6 @@ export default function DominoEditor() {
             ? prevEntry!.selectionMovingCornerIndex
             : g.startIndex,
         });
-        applyLockedColorIfAny();
       } else {
         // Plain click: replace the whole selection with just this domino.
         selectionStore.replace(dominoEditingId, {
@@ -1232,7 +1242,6 @@ export default function DominoEditor() {
           selectionFixedCornerIndex: g.startIndex,
           selectionMovingCornerIndex: g.startIndex,
         });
-        applyLockedColorIfAny();
       }
     }
 

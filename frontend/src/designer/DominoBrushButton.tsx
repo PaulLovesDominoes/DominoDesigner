@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { RiArrowDownSLine } from "@remixicon/react";
 
 import { useStore } from "../store";
 import { DOMINO_BRUSH_SIZES, type DominoBrushDefinition } from "../paint-brush/base";
@@ -13,6 +14,9 @@ import toolbarStyles from "./Toolbar.module.css";
  * it: a Small icon rendered small would shrink its own droplet too.
  */
 const GLYPH_PX = 20;
+
+/** The caret beside it, matching every other caret in the app. */
+const CARET_PX = 14;
 
 /**
  * One paint brush in the toolbar: a button showing that brush's nib at the size
@@ -30,10 +34,12 @@ const GLYPH_PX = 20;
  * no aria-haspopup/aria-expanded. Hence the markup by hand, aria-pressed
  * included.
  *
- * **No disabled state, deliberately.** A brush with no locked swatch arms fine
+ * **No disabled state, deliberately.** A brush with no selected swatch arms fine
  * and is simply inert — it draws no nib and paints nothing (see DominoEditor's
  * brushCanPaint), and ModeHintBar says so in words. Greying the button out
- * instead made the tool look broken rather than explaining itself.
+ * instead made the tool look broken rather than explaining itself: the user has
+ * a colour to pick, not a bug to work around, and they can only be told that if
+ * the button lets them press it.
  *
  * The popup follows NewElementMenu — local open state, a layout effect measuring
  * the button's own rect (its screen position depends on the sidebar width and
@@ -90,8 +96,8 @@ export default function DominoBrushButton({ brush }: { brush: DominoBrushDefinit
         ref={buttonRef}
         className={
           armed
-            ? `${toolbarStyles.iconBtn} ${toolbarStyles.active}`
-            : toolbarStyles.iconBtn
+            ? `${toolbarStyles.iconBtn} ${toolbarStyles.iconBtnWithCaret} ${toolbarStyles.active}`
+            : `${toolbarStyles.iconBtn} ${toolbarStyles.iconBtnWithCaret}`
         }
         onClick={() => setOpen((o) => !o)}
         // Both, because the control genuinely is both things: a mode that can be
@@ -106,6 +112,11 @@ export default function DominoBrushButton({ brush }: { brush: DominoBrushDefinit
         aria-label={brush.label}
       >
         <CurrentSizeIcon size={GLYPH_PX} />
+        {/* Says the button opens a menu rather than just toggling — the same
+            14px caret the New button and the colour swatches use. aria-hidden
+            because aria-haspopup above already announces it; drawing it twice
+            would be worse than not at all. */}
+        <RiArrowDownSLine size={CARET_PX} aria-hidden="true" />
       </button>
 
       {open && (

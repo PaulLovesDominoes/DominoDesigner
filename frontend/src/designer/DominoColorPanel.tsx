@@ -1,15 +1,8 @@
 import { useMemo, useState, type MouseEvent } from "react";
-import { RiArrowDownSLine, RiLockFill } from "@remixicon/react";
+import { RiArrowDownSLine } from "@remixicon/react";
 
 import { useStore } from "../store";
-import { useDominoDataStore } from "../dominoes/store";
-import { useDominoSelectionStore } from "../dominoes/selectionStore";
-import { isHiddenColorId } from "../dominoes/object-model";
-import {
-  HIDE_SWATCH_ID,
-  UNASSIGNED_SWATCH_ID,
-  type DominoSwatchId,
-} from "../dominoes/swatches";
+import type { DominoSwatchId } from "../dominoes/swatches";
 import FloatingTip from "../components/FloatingTip";
 import DominoSwatchMenu from "./DominoSwatchMenu";
 import { dominoSwatches, type DominoSwatch } from "./dominoSwatches";
@@ -18,63 +11,41 @@ import styles from "./DominoColorPanel.module.css";
 /**
  * The domino-editing-mode sidebar: a grid of swatches replacing the object
  * hierarchy (DDObjectsPanel) for the duration of the mode (see Sidebar.tsx).
- * Click applies a swatch to the current domino selection; double-click locks it
- * (DominoEditor.tsx then auto-applies it to every newly-selected domino); the
- * caret opens per-swatch selection commands; and the highlighted swatch tracks
- * either the selection's shared state or, while a shortcut is being typed, every
- * candidate it could resolve to.
+ *
+ * Clicking a swatch does two things at once: it applies that swatch to whatever
+ * dominoes are selected, and it becomes the *selected swatch* — the colour a
+ * paint brush lays down. The accent outline marks it. One click, both effects;
+ * there was once a double-click that "locked" a colour so every later selection
+ * was repainted, and it is gone (see the store's dominoSelectedSwatchId).
+ *
+ * Both halves happen in every mode, a paint brush in hand included: a brush's
+ * hover footprint is not the selection (see dominoes/selectionStore.ts), so
+ * dominoes picked out with Ctrl+A or a swatch menu are still there to be
+ * coloured while a brush is held.
+ *
+ * Every swatch presses in while held, and flashes when picked from the keyboard,
+ * so a click that changes nothing visible on the build plane — re-applying the
+ * colour the selection already has — still reads as a click that landed.
+ *
+ * The caret beside each swatch opens its per-swatch selection commands.
  *
  * Hide and Unassigned sit at the top and are swatches in every respect — they
- * lock, they apply, they have menus. Only three things distinguish them: they
- * carry no hover tip, their labels name keys rather than typeable shortcuts, and
- * Hide alone offers Unhide in its menu.
+ * are selected, they apply, they have menus. Only three things distinguish them:
+ * they carry no hover tip, their labels name keys rather than typeable
+ * shortcuts, and Hide alone offers Unhide in its menu.
  */
 export default function DominoColorPanel() {
   const dominoEditingId = useStore((s) => s.dominoEditingId);
   const inventoryEntries = useStore((s) => s.inventoryEntries);
-  const dominoColorLockedId = useStore((s) => s.dominoColorLockedId);
+  const dominoSelectedSwatchId = useStore((s) => s.dominoSelectedSwatchId);
   const dominoColorShortcut = useStore((s) => s.dominoColorShortcut);
-  const applyDominoSwatch = useStore((s) => s.applyDominoSwatch);
-  const toggleDominoColorLock = useStore((s) => s.toggleDominoColorLock);
-
-  // Selection/data changes happen imperatively (mutated in place); these
-  // version counters are the reactive "please recompute" signal, same
-  // pattern dominoes/modeller.tsx's copy effect already uses.
-  const selectionVersion = useDominoSelectionStore((s) =>
-    dominoEditingId ? s.versions[dominoEditingId] : undefined,
-  );
-  const dataVersion = useDominoDataStore((s) =>
-    dominoEditingId ? s.versions[dominoEditingId] : undefined,
-  );
+  const pickDominoSwatch = useStore((s) => s.pickDominoSwatch);
+  // Set for a moment after a swatch is picked from the keyboard, so a shortcut
+  // key flashes the same button a mouse click presses. A click needs nothing
+  // stored — CSS :active covers it.
+  const dominoPressedSwatchId = useStore((s) => s.dominoPressedSwatchId);
 
   const swatches = useMemo(() => dominoSwatches(inventoryEntries), [inventoryEntries]);
-
-  /**
-   * Which swatch the whole selection currently is, or null if it's empty or
-   * mixed. Every domino hidden wins over their underlying colors: hidden is what
-   * you see, and it's the state the Hide swatch represents.
-   */
-  const matchedSwatchId: DominoSwatchId | null = useMemo(() => {
-    if (!dominoEditingId) return null;
-    const selected = useDominoSelectionStore.getState().get(dominoEditingId)?.selected;
-    const data = useDominoDataStore.getState().get(dominoEditingId);
-    if (!selected || selected.size === 0 || !data) return null;
-
-    let allHidden = true;
-    let sharedId: number | null = null;
-    for (const i of selected) {
-      const colorId = data.colorIds[i];
-      if (!isHiddenColorId(colorId)) allHidden = false;
-      if (sharedId === null) sharedId = colorId;
-      else if (sharedId !== colorId) sharedId = -1; // mixed
-    }
-    if (allHidden) return HIDE_SWATCH_ID;
-    if (sharedId === null || sharedId < 0) return null;
-    // 0 is the unpainted sentinel, which the Unassigned swatch now represents.
-    if (sharedId === 0) return UNASSIGNED_SWATCH_ID;
-    return inventoryEntries.find((e) => e.numericId === sharedId)?.id ?? null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dominoEditingId, selectionVersion, dataVersion, inventoryEntries]);
 
   // Which swatch is hovered, and where it sits on screen. The tip is rendered
   // once outside the grid rather than inside each button, so it can escape the
@@ -95,13 +66,6 @@ export default function DominoColorPanel() {
 
   if (!dominoEditingId) return null;
 
-  const onSwatchClick = (swatch: DominoSwatch) => {
-    if (dominoColorLockedId && dominoColorLockedId !== swatch.id) {
-      toggleDominoColorLock(dominoColorLockedId); // unlock the old one
-    }
-    applyDominoSwatch(swatch.id);
-  };
-
   const openMenu = (swatch: DominoSwatch) => (e: MouseEvent<HTMLButtonElement>) => {
     // The caret sits inside .cell alongside the swatch button, not inside it —
     // a button can't nest — so nothing here would apply the swatch anyway. Kept
@@ -113,20 +77,36 @@ export default function DominoColorPanel() {
   return (
     <div className={styles.panel}>
       {swatches.map((swatch) => {
+        // While a shortcut is part-typed the candidates take the outline, so the
+        // user can see what they are narrowing towards; the moment the buffer
+        // resolves and clears, it settles onto the swatch that matched — which
+        // is the same swatch the match just selected.
         const isHighlighted = shortcutCandidates
           ? shortcutCandidates.has(swatch.id)
-          : swatch.id === matchedSwatchId;
-        const isLocked = dominoColorLockedId === swatch.id;
+          : swatch.id === dominoSelectedSwatchId;
         const isMenuOpen = menu?.swatch.id === swatch.id;
 
         return (
           <div key={swatch.id} className={styles.cell}>
-            <div className={styles.swatchRow}>
+            {/* The outline goes on the row so it rings the swatch and its caret
+                together; on the swatch alone the caret painted over its right
+                edge and the ring looked broken open. */}
+            <div
+              className={
+                isHighlighted ? `${styles.swatchRow} ${styles.highlighted}` : styles.swatchRow
+              }
+            >
               <button
-                className={isHighlighted ? `${styles.swatch} ${styles.highlighted}` : styles.swatch}
+                className={
+                  swatch.id === dominoPressedSwatchId
+                    ? `${styles.swatch} ${styles.pressed}`
+                    : styles.swatch
+                }
                 style={{ background: swatch.background, color: swatch.textColor }}
-                onClick={() => onSwatchClick(swatch)}
-                onDoubleClick={() => toggleDominoColorLock(swatch.id)}
+                // Always picks, never un-picks: clicking the swatch already
+                // selected is a harmless re-apply. A toggle would make a paint
+                // brush go inert on a second click.
+                onClick={() => pickDominoSwatch(swatch.id)}
                 onMouseEnter={(e) =>
                   swatch.tip && setHovered({ swatch, anchor: e.currentTarget.getBoundingClientRect() })
                 }
@@ -138,7 +118,6 @@ export default function DominoColorPanel() {
                 aria-label={swatch.name}
               >
                 <span>{swatch.shortcutLabel}</span>
-                {isLocked && <RiLockFill className={styles.lockBadge} />}
               </button>
               <button
                 className={isMenuOpen ? `${styles.caret} ${styles.caretOpen}` : styles.caret}

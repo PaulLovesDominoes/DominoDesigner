@@ -106,7 +106,7 @@ the one `AppState`. Five exist today:
 |---|---|
 | `domino-inventory/appStoreSlice.ts` | the inventory catalog, its selection and its sort |
 | `history/appStoreSlice.ts` | `Operation`, the undo/redo stacks, the domino-editing undo barrier |
-| `dominoes/appStoreSlice.ts` | the swatch lock/shortcut, every domino-colour write (including a paint stroke's), select-by-swatch, the Expand toggle, and domino editing mode's cancel snapshot |
+| `dominoes/appStoreSlice.ts` | the selected swatch and the shortcut buffer, every domino-colour write (including a paint stroke's), select-by-swatch, the Expand toggle, and domino editing mode's cancel snapshot |
 | `shape-select/appStoreSlice.ts` | which shape-select gesture is armed inside domino editing mode, and its hint text |
 | `paint-brush/appStoreSlice.ts` | which paint brush is armed inside domino editing mode, and each brush's chosen size |
 
@@ -561,8 +561,8 @@ tightly-spaced ones are easier to hit. Four things about it are deliberate:
   the Z lift to `(length + z1 - z0) / 2`, without which an expanded domino sinks through the
   build plane.
 - **It is view state, not document state**: no undo entry, and `exitDominoEditing` clears it
-  alongside `dominoColorLockedId`/`dominoColorShortcut`, which is the whole of "leaving the mode
-  restores the real sizes."
+  alongside `dominoSelectedSwatchId`/`dominoColorShortcut`, which is the whole of "leaving the
+  mode restores the real sizes."
 
 **The mode outline is measured off the dominoes, not the element's `bounds()`** —
 `modeOutlineRect` puts it `MODE_OUTLINE_MARGIN` outside every domino's drawn footprint, expansion
@@ -602,17 +602,22 @@ Shift+Arrow that may follow, which is why they are named for that role rather th
 `anchor`/`active` the spreadsheet convention would suggest. Note a plain (unshifted) arrow does
 not read them either: it rescans the whole selection for its extreme domino in the direction of
 travel, then reseeds both corners onto where it landed.
-Delete hides the selection and Backspace clears it to unpainted, both via `applyDominoSwatch`
+Delete hides the selection and Backspace clears it to unpainted, both via `pickDominoSwatch`
 (see *Domino color editing*).
 
 **Selection commands that produce a whole set at once — select all, invert, and the swatch menus'
 four modes — live in `dominoes/appStoreSlice.ts`, not here**, since a toolbar button and a menu
 item both need them. They converge on one module-private `writeDominoSelection`, which is what
-guarantees they all seed both selection corners identically and all run `applyLockedSwatchIfAny`.
+guarantees they all set both selection corners identically.
 **It finds the lowest index by iterating, never `Math.min(...selected)`** — spreading a `Set`
 creates one argument per element and V8 exhausts the call stack around 65k, so Select All on a
 250×250 field (62,500 dominoes) crashed. That is the reason the helper exists at all rather than
-the epilogue being copied four times.
+the line being copied four times.
+
+**Note that selecting dominoes never paints them.** It used to, while a swatch was *locked*:
+this helper's last line applied the locked colour, which made Ctrl+A a one-keystroke way to
+overwrite a whole field. Locking is gone (see *Domino color editing*), and the only thing that
+paints without an explicit swatch click is a paint brush, only while its button is down.
 
 **Ctrl and Alt are one value, not two booleans.** `SelectionGestureMode`
 (`shape-select/base.ts`) is `"replace" | "add" | "remove"`, captured into `GestureSequenceState`
@@ -632,7 +637,7 @@ at the sequence's first press and threaded to `selectionFrom`. Four decisions he
   someone holding Alt is asking for — and an Alt+click on empty space would clear the selection
   outright instead of doing nothing. Only the clicked domino leaves the selection; the two
   selection corners are carried over unchanged, since nothing was added for a following
-  Shift+Arrow to extend from, and no locked colour is applied, since a remove paints nothing.
+  Shift+Arrow to extend from.
   The shape path needs no equivalent: a click while a shape is armed is a zero-radius circle,
   and removing nothing changes nothing.
 - **A remove does not change the two selection corners.** `nearestToPoint` picks from `indices`,
@@ -649,16 +654,14 @@ see cutting a row takes that row); Shift+Arrow's `recomputeFromRect` uses `enclo
 intersection test there would let neighbours on the far side of a tight pitch bleed in.
 
 **A rubber-band drag previews live**, replacing the stored selection on every pointermove
-(`resolveDragToSelection`, shared with the pointerup commit so the two can't disagree). Three consequences
-are load-bearing:
+(`resolveDragToSelection`, shared with the pointerup commit so the two can't disagree). Two
+consequences are load-bearing:
 
 - **`resolveDragToSelection` must stay a pure function of the gesture, never of the stored selection** —
   after the first frame the store holds this same drag's own preview, so Ctrl+drag's union
   builds on `GestureSequenceState.before`, the entry captured at pointerdown. Holding that reference is
   a sound snapshot only because every write path calls `replace` with a brand-new entry;
   nothing mutates one in place.
-- **`applyLockedColorIfAny` runs at pointerup only.** Calling it per frame would paint, and push
-  an undo entry, on every frame of the drag.
 - **Escape mid-drag restores `before`** — a preview that wrote to the store has to be undone by
   `cancelSequence`, which used to have nothing to put back. It covers shape gestures too, which
   preview identically (see *Shape select*).
@@ -831,20 +834,22 @@ Decisions a fresh session would plausibly reverse:
 - **Arming is sticky**, and **Escape is an escalating ladder** of four rungs: cancel the gesture in
   progress (a shape sequence, a rubber band, or a paint stroke — a stroke reverts every colour it
   laid down) → clear the selection → disarm back to the rectangle band, whether a shape or a brush
-  was armed → release the lock and the shortcut buffer. Each press makes exactly one visible change,
+  was armed → clear the shortcut buffer. Each press makes exactly one visible change,
   and `"done"` never disarms.
   **The order of the middle two is the whole rule.** Testing the selection *before* the armed shape
   is what makes them separate presses; swapping them collapses both back into one, which is what
   this replaced — so from "circle armed with a selection" it is press one to clear and press two to
-  disarm. **Rung 2 is skipped outright while a paint brush is armed**, and that is not an
-  exception to the rule but the rule applied: what is "selected" under a brush is the nib's own
-  hover footprint, which the next pointermove puts straight back, so a rung that made no lasting
-  change would break the one-visible-change-per-press property.
+  disarm. **Rung 2 applies with a paint brush in hand exactly as without one.** It was once
+  skipped there, because a brush's hover footprint *was* the selection and the next pointermove
+  put it straight back — a rung making no lasting change, which the one-visible-change-per-press
+  property forbids. The hover is its own set now (see *Paint brushes*), so this rung only ever
+  sees a selection the user built, and the skip was deleted rather than kept.
   **Escape and the Rectangle button still deliberately differ**: the button is a mode change
   and keeps the selection, Escape is a back-out and ends with it gone; that now takes two presses
-  rather than one, but the distinction is unchanged. A locked colour survives every rung above it on
-  purpose — it has its own badge and its own way out, so neither clearing a selection nor disarming
-  a shape may silently unlock. Note an *open size menu* claims Escape ahead of all four rungs, in
+  rather than one, but the distinction is unchanged. **The selected swatch is deliberately not on
+  the ladder at all** — it is a choice rather than a mode, and it paints nothing by itself, so
+  taking it away would only leave a brush inert with no visible reason; leaving the mode clears
+  it. Note an *open size menu* claims Escape ahead of all four rungs, in
   the capture phase, so closing a menu never also disarms the tool it belongs to (see *Paint
   brushes*).
 - **One catch plane, one gesture-sequence ref.** A second tool component would need its own catch
@@ -859,8 +864,6 @@ Decisions a fresh session would plausibly reverse:
 - **`nextStep` must return a fresh state object.** The dispatcher stores it in React state to
   trigger the preview repaint, and React compares by identity — a mutated-in-place object looks
   unchanged and nothing redraws.
-- **`applyLockedColorIfAny` at `done` only**, never per `active`. Restated from the rubber band's
-  version of the rule because a multi-click variant has many non-committing steps.
 - **`GestureSequenceState`/`ShapeGestureSequence`, not `Gesture`** — a sequence may span several
   presses and releases before the variant calls itself finished.
 - **`ShapeSelectEvent` carries no click count.** No shape needs a double click to be distinct
@@ -910,7 +913,7 @@ While in domino editing mode, `Sidebar.tsx` shows `DominoColorPanel.tsx` — a g
 
 **A swatch is anything the panel offers as a click target**, and the abstraction is the point:
 `Hide` and `Unassigned` sit above one swatch per **active** domino-inventory entry, and everything
-downstream (the lock, the apply, the menus, the highlight) is keyed by `DominoSwatchId`
+downstream (the selected swatch, the apply, the menus, the highlight) is keyed by `DominoSwatchId`
 (`dominoes/swatches.ts`) so none of it branches on which kind it holds. Only three things
 distinguish the two specials at all — no hover tip, labels that name keys rather than typeable
 shortcuts, and `Unhide` in Hide's menu. The split is store/presentation: `dominoes/swatches.ts`
@@ -919,11 +922,29 @@ model so the panel's JSX stays a single code path, and `dominoes/appStoreSlice.t
 behaviour keyed by id. `background` is a free-form CSS value rather than a hex string specifically
 so Hide's hatch and a solid color share one `style` prop.
 
-**`applyDominoSwatch` is the single apply path** — the panel, the lock and the Delete/Backspace
-keys all go through it, so they cannot drift; it dispatches to `hideSelectedDominoes`,
-`clearSelectedDominoColors` or `applyColorToSelectedDominoes`. **Clicking Hide always hides,
-never toggles**, exactly as clicking Red always paints red; that is what lets Hide be locked
-without flip-flopping, and unhiding is the menu's separate command. Painting a hidden domino
+**`pickDominoSwatch` is the single path for "the user picked this swatch"** — the panel's click,
+the shortcut keys and the Delete/Backspace keys all go through it, so they cannot drift. It does
+two things, and the split between them is load-bearing:
+
+- **It always records the swatch** in `dominoSelectedSwatchId`. There is deliberately no bare
+  setter beside it, so no route can pick a colour while skipping the rest of this.
+- **It applies the swatch to the selection**, dispatching to `hideSelectedDominoes`,
+  `clearSelectedDominoColors` or `applyColorToSelectedDominoes`.
+
+**It applies with a paint brush in hand too, and there is deliberately no guard against that.**
+There briefly was one, because a brush's hover footprint used to be written into the selection
+itself, so a shortcut key pressed mid-drawing painted whatever the nib was over and left smears
+across the field. The hover is its own set now (*Paint brushes*), so this only ever sees a
+selection the user built — and the guard would block precisely the thing it should allow: Ctrl+A
+then Backspace to clear a field you have just painted, which is the case the whole split was for.
+
+One consequence worth knowing, since it reads as a bug the first time it happens: using a swatch
+click to *load* a brush while a selection is standing also recolours that selection. That is what
+a swatch click does everywhere else, and Escape clears the selection first if it isn't wanted.
+
+**Clicking Hide always hides, never toggles**, exactly as clicking Red always paints red; that
+is what lets a brush use Hide as an eraser rather than flip-flopping as the nib passes over,
+and unhiding is the menu's separate command. Painting a hidden domino
 unhides it for free (see *Domino data*'s flag note).
 
 **Those three all became one line each over `applySwatchToSelection`**, which holds the guard
@@ -935,11 +956,65 @@ per-domino where the other two are one value for every index. **A paint stroke s
 `swatchTargets` but deliberately not `applySwatchToSelection`**, since it needs the same swatch
 resolution while pushing nothing per frame (see *Paint brushes*).
 
-Two ways to color the current selection, both immediate and both pushing exactly one undoable
-`"dominoColors"` operation (see *Domino data* above for why that's a live color-id reference,
-not baked-in RGB):
+**Picking a swatch does two things at once**, and that is the whole interaction model. It applies
+the swatch to the current selection — immediately, as one undoable `"dominoColors"` operation
+(see *Domino data* above for why that's a live color-id reference, not baked-in RGB) — **and** it
+becomes `dominoSelectedSwatchId`, the colour a paint brush lays down, marked by the panel's accent
+outline. One gesture, both effects; there is nothing extra to do to load a brush.
 
-- **Select dominoes, then choose a color** — click a swatch, or type its `shortcut` (matches
+Three properties follow, each of which a later change could plausibly reverse:
+
+- **A click always selects, never deselects.** Clicking the swatch already selected is a harmless
+  re-apply. A toggle would make a brush go inert on a second click.
+- **The selected swatch is cleared in exactly one place**, `exitDominoEditing`. Not by Escape
+  (see *Shape select*'s ladder), and deliberately not by picking up a brush.
+- **`Hide` and `Unassigned` are selectable like any other swatch**, which is the whole of "a brush
+  can be an eraser" — no branch anywhere implements that separately.
+
+**The accent outline has exactly one meaning now**, and that is a deliberate narrowing. It used to
+be driven by a derived `matchedSwatchId` — "the whole domino selection is this colour" — which was
+deleted along with the two version subscriptions feeding it.
+Two meanings could not share one outline: at the time, a brush's "selection" was the nib's hover
+footprint changing every frame, so a derived highlight would flicker while the colour the brush
+paints must stay put. The one remaining override is `shortcutCandidates`, and the two hand off
+cleanly — while the buffer is part-typed the candidates outline, and as it resolves and clears,
+the outline settles on the swatch that just matched, which is the swatch the match just selected.
+
+**It is drawn on `.swatchRow`, not on `.swatch`** — the row being the swatch and its caret
+together. On the swatch alone, `outline-offset` put the ring's right-hand edge in the strip the
+caret occupies, and the caret has a background, so it painted over it and the ring came out
+visibly open on one side. The row needs its own `border-radius` for this, since an outline follows
+the radius of the element carrying it and the row is a plain square-cornered flex box; its two
+children hold the rounding.
+
+**A swatch shows pressed-in feedback, in every mode.** Without it, clicking a swatch whose colour
+the selection already has produced no visible response at all — nothing on the build plane
+changed and the outline was already there — so the click read as ignored. It was briefly gated on
+no brush being armed, back when a click under a brush applied nothing; with the guard above gone
+there is no such case left, so the gate went with it.
+
+**Two selectors, one declaration** (`.swatch:active, .swatch.pressed`). `:active` is the mouse.
+`.pressed` is a brief flash driven from `dominoPressedSwatchId` for a swatch picked from the
+*keyboard*, which has no `:active` of its own — a shortcut key that recolours dominoes otherwise
+gave no sidebar feedback at all, and one that recoloured nothing looked swallowed. Sharing the
+declaration is what keeps the two from drifting apart visually.
+
+`DominoEditor`'s `pickSwatchFromKeyboard` is the only writer: it picks the swatch, sets the
+pressed id, and clears it on a `SWATCH_PRESS_FLASH_MS` timer. **`exitDominoEditing` must clear
+`dominoPressedSwatchId` as well**, and that is not belt-and-braces: the keydown effect's teardown
+clears that timer, so leaving the mode inside the flash window would cancel the un-press and
+strand a swatch looking held down for good.
+
+**Two inset shadows, not one**, because a swatch is whatever colour the user's inventory holds: a
+wide-spread tint darkens the whole face (what shows on a pale swatch) and a soft shadow cast
+inward from the top edge gives the depth (what survives on a dark one). Deliberately neither
+`filter` nor `transform` — either one between `#root` and `.sidebar` would break `FloatingTip`'s
+`position: fixed`, and putting one on a swatch is close enough to that hazard to be worth avoiding.
+
+There are three ways in — clicking, typing a shortcut, and Delete/Backspace — and they all behave
+identically, because they are all one call to `pickDominoSwatch`:
+
+- **Click the swatch**, or **type its `shortcut`** (matches
   narrow live as you type; a unique match applies immediately; Space applies the *exact* match
   when a longer one is also a valid prefix, e.g. disambiguating "B" from "B1"). Shortcut state
   (`dominoColorShortcut`) and its ~1.2s inactivity auto-clear live in `DominoEditor.tsx`'s
@@ -951,59 +1026,47 @@ not baked-in RGB):
   that one place, which is why both the clipboard and Ctrl+A needed no change to this file's
   keyboard handling at all. Ctrl+A is additionally gated on `dominoEditingId` *there*, so outside
   the mode it falls through without `preventDefault` and the browser's own select-all still works.
-- **Choose a color first, then select dominoes** — double-click a swatch to lock it, or pick
-  **Lock** from its caret menu, which calls the same `toggleDominoColorLock` action
-  (`dominoColorLockedId`, badge via `RiLockFill`); every domino selected afterward, by any
-  method, is recolored to it immediately (`DominoEditor.tsx`'s `applyLockedColorIfAny`, called
-  after every selection-setting gesture). Locking also colors whatever's already selected at
-  that moment, since a double-click's first `click` already applies the color before `dblclick`
-  fires the lock — not a special case, just how the browser sequences the two events. Clicking a
-  *different* swatch while one is locked unlocks it (then applies the new color as an ordinary
-  click); clicking the already-locked swatch is just a no-op re-apply. Escape clears the
-  selection, the lock, and any in-progress shortcut buffer all at once — though only as the
-  *last* rung of its ladder, below cancelling a gesture and disarming a shape (see *Shape
-  select*); so does exiting the mode. Only one color locks at a time. `ModeHintBar` swaps its
-  sentence while locked, unless a shape is armed, which outranks it.
+  A unique match and a Space-disambiguation each call `pickDominoSwatch`, the same action the
+  click does, which is what makes the shortcut a true keyboard equivalent — a brush's colour can
+  be changed without reaching for the sidebar.
 
-Clicking a swatch with nothing selected is a documented no-op — nothing to apply to.
+Clicking a swatch with **nothing selected** applies to nothing, which is a documented no-op — but
+it still selects the swatch, and that is the normal way to load a brush.
 
 **Delete hides, Backspace unassigns** — the `DEL`/`Bksp` labels on the two special swatches name
-exactly these keys, and both route through `applyDominoSwatch` so they inherit the one undo step,
-the `colorByCell` sync and the empty-selection no-op rather than restating any of it. Note the
-labels are *not* typeable: the shortcut buffer only ever matches inventory entries' own
-`shortcut`, so typing D-E-L does nothing.
+exactly these keys, and both route through `pickDominoSwatch` so they *are* ordinary swatch picks
+in every respect: the same undo step, the same `colorByCell` sync, the same empty-selection no-op,
+they become the selected swatch, and they apply nothing while a brush is armed. Note the labels
+are *not* typeable: the shortcut buffer only ever matches inventory entries' own `shortcut`, so
+typing D-E-L does nothing.
 
-**Every swatch carries a caret opening `DominoSwatchMenu`** — `Lock`/`Unlock`, then Select /
+**That uniformity is a deliberate reversal.** These two keys once skipped the selected-swatch
+half, on the reasoning that they are commands rather than colour choices and a Delete meant to
+clear one stray domino should not turn the brush in the user's hand into an eraser. Making them
+behave exactly like their swatches won out: one rule is easier to hold than one rule plus an
+exception, and the brush guard above removes the sharp edge — with a brush in hand Delete no
+longer paints anything, it just points the brush at Hide, which is a visible change the accent
+outline shows and another click undoes.
+
+**Every swatch carries a caret opening `DominoSwatchMenu`** — Select /
 Add Select / Deselect / Deselect others over the dominoes matching it (`DominoSelectMode`'s
-`replace`/`add`/`remove`/`intersect`), plus `Unhide` at the very top for Hide alone. Three
+`replace`/`add`/`remove`/`intersect`), plus `Unhide` at the very top for Hide alone. Four
 things about it:
 
 - **Matching is plain equality on the stored `colorId`**, which is exactly why a color swatch
   selects only *visible* dominoes of that color and Hide selects exactly the hidden ones (see
   *Domino data*). There is no filter on top of the predicate and there must not be one.
-- **The menu's Lock is the double-click's twin, not a second mechanism** — same
-  `toggleDominoColorLock` call, same one-lock-at-a-time rule, and it colors whatever is selected
-  at that moment just as the double-click does. It has to ask for that half explicitly
-  (`applyLockedSwatchIfAny` right after the toggle) where the double-click gets it free: the
-  browser fires `click` before `dblclick`, so the swatch has already been applied by the time
-  the lock is set, but opening the caret menu never fires a click on the swatch at all. Running
-  it on the *un*lock is harmless — with nothing locked `applyLockedSwatchIfAny` does nothing,
-  which is the point of it being a no-op rather than a caller's branch.
+- **Every item here only ever changes which dominoes are selected**, never their colour —
+  `Unhide` excepted, which is a command. That was not true while a colour could be locked, and
+  it is the property the removal was for.
+- **The separator belongs to `Unhide`** and is rendered inside the same `canUnhide` block, or a
+  colour swatch's menu opens with a rule floating above `Select` and nothing above the rule.
 - **The matching set is built in one pass and then combined**, rather than the modes mutating the
   previous selection inside the loop. `intersect` is why: it has to drop selected dominoes the
   loop never visits, which an in-loop `add`/`delete` cannot express.
 
-**`applyLockedSwatchIfAny` runs after every selection change, from anywhere.** It is a store
-action rather than a `DominoEditor` local specifically so the store's own commands reach it;
-`DominoEditor`'s `applyLockedColorIfAny` is now a one-line delegate kept only for its five
-gesture call sites. This is the documented lock rule ("every domino selected afterward, by any
-method") holding literally, and it has teeth: with Red locked, Ctrl+A paints the entire field red
-in one undoable step, and `Select` from any swatch's menu repaints what it selected. `Unhide`
-still works with Hide locked, since the lock only re-applies when the selection *changes*.
-
 The caret is a sibling of the swatch button, not a child — `.swatch` is itself a `<button>` and a
-button cannot nest one — and the lock badge moved to the swatch's top-*left* to get out of its
-way.
+button cannot nest one.
 
 Each swatch's hover text is a `components/FloatingTip`, rendered once at the panel level rather
 than inside each button. It must not go back to being a CSS-only absolute tooltip: `Sidebar.tsx`
@@ -1022,7 +1085,12 @@ undo entry.
 
 `paint-brush/` holds domino editing mode's freehand painting tools — two today, `pencil` (a round
 nib) and `quill` (a thin bar fixed at 45°, lower-left to upper-right). Drag one across the field and
-every domino it passes over takes the locked swatch as it goes. It follows the `object-types/`
+every domino it passes over takes the selected swatch as it goes. Note the two are **labelled**
+"Paint with Circle" and "Paint with Bar", and the help topic calls them the Circle and Bar brushes:
+the icons draw a nib rather than a drawing implement, and the user-facing names follow the icons.
+The registry ids, folder names and `DominoBrushId` still say `pencil`/`quill` — renaming those is
+mechanical but wide (two folders, six `PaintCircle*`/`PaintQuill*` icon exports) and has not been
+done. It follows the `object-types/`
 layout, per the *Guiding principle*: `base.ts` (the `DominoBrushDefinition` contract, the three
 sizes), `registry.ts` (`DOMINO_BRUSHES` and its accessors), `coverage.ts` (the shared per-frame
 scan), one folder per variant holding `object-model.ts` and `preview.tsx`, plus
@@ -1064,13 +1132,13 @@ a small circle. The quill's floor sits about where the pencil's middle does. The
 `dominoBrushSizeMm` lookup any more, and reintroducing one would re-import the assumption.
 
 **One stroke is one undo entry, and that inverts the rule every other colour write follows.** All
-of those write and record in the same breath — which is exactly why `DominoEditor` never applies a
-locked colour inside a pointermove. A stroke must write live, so paint appears under the nib, yet
+of those write and record in the same breath, which here would mean an undo entry per frame. A
+stroke must write live, so paint appears under the nib, yet
 record once, so Ctrl+Z takes back the whole stroke rather than one flick of it. Four actions in
 `dominoes/appStoreSlice.ts` do it, over `dominoStroke` (the dominoes painted so far and the colour
 each had *before*):
 
-- **`paintDominoStroke`** resolves the locked swatch through the shared `swatchTargets` and calls
+- **`paintDominoStroke`** resolves the selected swatch through the shared `swatchTargets` and calls
   `commitDominoColors` like everything else, inheriting the in-place column write, the version bump
   the modeller redraws on, and the `colorByCell` sync. The one difference is the last step: the
   operation it hands back is **folded into `dominoStroke` instead of being pushed**. First value
@@ -1086,55 +1154,93 @@ each had *before*):
   revert re-syncs colour memory too. Without that, a later regenerate would repaint the very colours
   the cancel discarded.
 - **`beginDominoStroke`** opens the map. It and `paintDominoStroke` both bail with no
-  `dominoColorLockedId`.
+  `dominoSelectedSwatchId`.
 
 `designer/DominoEditor.tsx` drives all of it, and a brush is the **first gesture in the file that
 acts with no button down**. Its branch therefore sits *above* the `if (!g) return` in
 `onPointerMove` — that one line is what makes every other gesture a no-op until a press. One
-function, `trackBrush`, handles a frame whether hovering or painting: it draws the nib, selects what
-the nib covers, and, when a stroke is open, paints it. Load-bearing details:
+function, `trackBrush`, handles a frame whether hovering or painting: it draws the nib, marks what
+the nib covers as hovered, and, when a stroke is open, paints it. Load-bearing details:
 
 - **The paint call goes before the `sameIndices` redraw guard, never after.** The first frame of a
   stroke usually covers exactly what the last hovering frame covered, so a guarded paint would skip
   the press itself.
-- **Nothing in the brush path calls `applyLockedColorIfAny`,** and the selection is written straight
-  to `useDominoSelectionStore` rather than through the store's `writeDominoSelection` — that one
-  applies the locked swatch, which here would push an undo entry per frame, the exact hazard the
-  stroke exists to avoid. The two corner indices carry no meaning for a brush; the ends of the
-  covered range stand in because the entry requires real indices.
 - **`resetBrushView` runs off `[brushId, brushCanPaint]`, and the derived boolean is why that is one
-  effect rather than two.** Arming, disarming, swapping brushes, and the lock coming or going are
-  all "what the brush should be showing changed wholesale". Depending on `dominoColorLockedId`
-  *directly* would be too permissive twice over: locking a different colour mid-drawing would reset
-  needlessly, and an unlock with no brush armed would clear the user's own selection. Once a guard
+  effect rather than two.** Arming, disarming, swapping brushes, and a colour arriving where there
+  was none are all "what the brush should be showing changed wholesale". Depending on
+  `dominoSelectedSwatchId` *directly* would be too permissive twice over: choosing a different
+  colour mid-drawing would reset needlessly, and choosing one with no brush armed would reset a
+  brush that isn't in hand. Once a guard
   inside the effect filters those out you can no longer tell which dependency fired, which is what
-  forced two effects before.
+  forced two effects before. Note it resets only the brush's own view — the nib, the stroke, the
+  hover — and deliberately leaves the selection alone, which is what lets dominoes picked out
+  before a brush was reached for survive being armed.
 - **`onPointerLeave` commits a stroke rather than ignoring it.** Nothing captures the pointer, so a
   button released outside the canvas never reaches this component; an earlier version bailed out
   while painting and the brush stayed in painting mode, silently resuming the moment the pointer
   came back with the button long since up. This was a real bug — do not "considerately" re-add a
-  guard against interrupting a stroke here. Leaving also clears the hover selection, which is
-  equally load-bearing: a swatch click applies to whatever is *selected*, and under a brush that is
-  the nib's last footprint, so a residue there would be recoloured by the very click the user makes
-  to pick their next colour.
+  guard against interrupting a stroke here. Leaving also clears the hover, which has no nib left
+  to belong to.
 - **The nib preview sits in world coordinates**, unlike a shape variant's `Preview`, which is
   wrapped in a `<group>` at the edited DDObject's origin. A shape works in parent-relative mm; a nib
   just follows the pointer and is as happy off the field as on it.
 
-**A brush arms with or without a locked swatch, and is simply inert without one** — no nib, no hover
-selection, nothing paintable, with `ModeHintBar` saying why. The button carries **no disabled
-state**, and that is not laziness: swapping the locked colour by double-clicking another swatch goes
-red → **null** → blue, because `DominoColorPanel`'s `onSwatchClick` unlocks the old swatch first and
-the browser fires `click` before `dblclick`. Anything hung off "the lock went away" — a disable, or
-a disarm — therefore fires during the very gesture a user uses to change colour mid-drawing. Don't
-add one.
+**A brush's hover footprint is not a selection, and that separation is the load-bearing thing in
+this subsystem.** `dominoes/selectionStore.ts` holds two per-domino sets: `entries` (what the user
+picked out) and `brushHover` (what the nib covers right now). `dominoes/modeller.tsx` draws the
+**union** of them in white — colour, Z bias and the hidden-domino outline reveal all take the
+union, so a hidden domino under the nib shows the same warning box that selecting it does.
+
+They were one set, and every awkward rule the brush needed came from that. Restoring the
+conflation would bring all of them back at once, so it is worth naming what the split bought:
+
+- A selection survives being hovered over, so Ctrl+A then Backspace clears a field the way it does
+  in any other mode — the case that prompted this.
+- A selection survives *arming a brush*, so reaching for one is not a way to lose work.
+- `pickDominoSwatch` needs no brush guard, and Escape's rung 2 needs no skip. Both were deleted.
+- A swatch click no longer has to fear recolouring a stale footprint, so `onPointerLeave`'s clear
+  is ordinary tidiness rather than a correctness fix.
+
+**Only a press to paint discards the selection** (`onPointerDown`'s brush branch), and it sits
+*after* the no-swatch early return: an inert brush must not throw away work when pressed.
+
+**`hoverVersions` is a separate counter from `versions`, and must stay separate.** A brush
+rewrites its hover on nearly every pointermove, and `DominoEditor` subscribes to `versions` to
+rebuild the clipboard handlers whose enablement tracks the selection — one shared counter would
+re-register both handlers, and re-render every `useClipboardCapabilities` consumer, at
+pointer-event rate. The modeller subscribes to both because it draws both.
+
+**`exitDominoEditing` clears the hover explicitly**, and cannot leave it to `resetBrushView`: that
+update nulls `dominoBrushId` and `dominoEditingId` together, so by the time the effect runs it has
+no id to clear under and the hover would be stranded — white boxes over a field nobody is editing.
+
+**A brush arms with or without a selected swatch, and is simply inert without one** — no nib, no
+hover, nothing paintable, with `ModeHintBar` saying why. The button carries **no disabled
+state**, and that is not laziness: what the user has is a colour still to pick, not a broken tool,
+and they can only be told that by a button they are allowed to press. Greying it out instead made
+the whole feature look unimplemented.
+
+**Arming a brush deliberately does not clear the selected swatch either**, so a brush picked up
+while a colour is already chosen paints straight away. Adding a clear to `setDominoBrush` is the
+obvious-looking change and it is a trap: `DominoBrushButton`'s size menu calls that action again
+for a brush already in hand, so a clear would drop the colour on every size change, and again on
+every swap between brushes. Nothing extra is needed to clear the *dominoes* selected on arming —
+`brushId` changes, so `resetBrushView` above fires and starts the brush on a clean plane.
 
 `designer/DominoBrushButton.tsx` is one control per brush, and **the button only opens the size
 menu; the menu arms the brush.** Clicking an armed brush is therefore not a disarm — it just reopens
-the menu, matching every other tool in this toolbar, none of which turns itself off. It borrows
+the menu, matching every other tool in this toolbar, none of which turns itself off. It carries a
+14px caret beside its size glyph saying so — the same caret the New button and the colour swatches
+use — marked `aria-hidden`, since `aria-haspopup` already announces it. It borrows
 `Toolbar.module.css`'s `.iconBtn`/`.active` rather than keeping a byte-identical copy; what it can't
 borrow is `ToolButton`, which takes no ref to anchor a popup to and emits no
-`aria-haspopup`/`aria-expanded`. The popup follows `NewElementMenu`'s pattern, and adds one thing:
+`aria-haspopup`/`aria-expanded`.
+
+**The caret's layout modifier, `.iconBtnWithCaret`, lives in `Toolbar.module.css` beside `.iconBtn`
+and not in this component's own module.** `.iconBtn` is a fixed 34px square, so the caret needs
+`width: auto` and a gap — an override of the same specificity. Across two CSS modules, which one
+wins would come down to the order the stylesheets happen to land in the bundle, which nothing pins
+down; in one file, after the rule it overrides, it is certain. The popup follows `NewElementMenu`'s pattern, and adds one thing:
 an effect that claims **Escape in the capture phase while open**, so closing a menu never also runs
 `DominoEditor`'s ladder and disarms the tool underneath. Same answer `ConfirmDialog` uses against
 the same window listeners, but for that one key only — a menu is a popup, not a modal, and has no
@@ -1181,7 +1287,7 @@ answers could have changed (its `useMemo` deps include the selection version). D
 capability-version counter — that's what this replaces.
 
 The domino-color clipboard **deliberately survives `exitDominoEditing`** (unlike
-`dominoColorLockedId`/`dominoColorShortcut`, cleared there), since the item snapshots its
+`dominoSelectedSwatchId`/`dominoColorShortcut`, cleared there), since the item snapshots its
 source DDObject and stays valid across a resize or even a delete. That's what makes
 field-to-field paste work.
 
@@ -1603,10 +1709,21 @@ otherwise "correct" backwards:
   camera, deliberately, since selection happens constantly and a moving viewport would fight the
   user. The row ⋯ menu continues to act on its own DDObject independently of what is selected.
 - **Freehand painting exists now** (`paint-brush/`, see *Paint brushes*) alongside the
-  select-then-apply and lock-then-select routes. It is the only route that writes continuously while
+  select-then-apply route. It is the only route that writes continuously while
   recording a single undo entry, and the only sub-mode whose *size* is a per-variant number rather
   than a shared one — "Medium" is a different reach for the pencil than for the quill, which testing
   established and a shared table would quietly undo.
+- **Locked-colour mode existed and was deliberately removed.** A swatch could be locked
+  (double-click, or its menu's `Lock`), after which *every* selection change repainted whatever it
+  had just selected. It was a pre-brush stand-in for a brush, and once real brushes existed it was
+  only a hazard: it made every selection destructive, worst of all Ctrl+A, which repainted a whole
+  field in one keystroke and was reachable by accident with a brush in hand. Everything it was good
+  for is covered by Ctrl+drag to extend a selection and then clicking a swatch.
+  `dominoSelectedSwatchId` is what replaced it and is **not** the same thing: it stores the choice
+  and nothing else, and only a paint brush acts on it, only while its button is down. Do not
+  propose a lock as an enhancement, and do not "restore" the pieces that went with it — the
+  `RiLockFill` badge, the swatch double-click, the menu's `Lock` item, the derived
+  `matchedSwatchId` highlight, or a clear of the selected swatch inside `setDominoBrush`.
 - **There is one generic modal, `components/ConfirmDialog.tsx`**, raised today only by
   ModeHintBar's Cancel. It is owned by whoever raises it (local state, mounted inline) rather
   than by the store — unlike `PropertiesDialog` there is no shared editing session behind it,
