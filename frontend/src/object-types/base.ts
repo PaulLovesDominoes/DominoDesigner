@@ -3,6 +3,7 @@ import type { RemixiconComponentType } from "@remixicon/react";
 
 import type { DominoColorClipboardItem } from "../dominoes/clipboardItem";
 import type { DominoSelectionEntry } from "../dominoes/selectionStore";
+import type { Bounds } from "../types";
 
 /** System-generated unique id for a DDObject in the hierarchy, e.g. "DDO-1". */
 export type DDObjectId = string;
@@ -33,17 +34,6 @@ export interface DDObjectEditorProps<T extends DDObjectBase = DDObjectBase> {
  */
 export interface DDObjectModellerProps<T extends DDObjectBase = DDObjectBase> {
   ddObject: T;
-}
-
-/**
- * A DDObject's axis-aligned footprint on the build plane, in mm, measured from
- * the plane's lower-left origin. What the camera needs to fit or frame it.
- */
-export interface DDObjectBounds {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
 }
 
 /**
@@ -102,7 +92,7 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
    * May also return undefined per-instance, for a type whose footprint depends
    * on data that hasn't been generated yet.
    */
-  bounds?(ddObject: T): DDObjectBounds | undefined;
+  bounds?(ddObject: T): Bounds | undefined;
   /**
    * Whether instances of this type can be selected and directly manipulated on
    * the canvas / in the hierarchy. Defaults to selectable; set false to opt out
@@ -222,6 +212,25 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
    */
   snapShapePoint?(ddObject: T, x: number, y: number): { x: number; y: number };
   /**
+   * The point on the build plane, in world mm, that this instance's dominoes
+   * keep their positions against — the origin anything laid *over* the grid must
+   * be placed relative to.
+   *
+   * The boundary box is the wrong origin for that, which is the whole reason
+   * this member exists. Dragging a field's west or south handle moves its
+   * `position` while every existing domino deliberately stays exactly where it
+   * was on the build plane, their parent-relative coordinates being recomputed
+   * to compensate (see CLAUDE.md's "The field's anchor model"). So a picture
+   * stored against `position` would slide out of registration with the very
+   * dominoes it is there to be matched against, by exactly that delta. A field
+   * returns its anchor, which is the point that does not move.
+   *
+   * Declaring it is the whole of "this type has such a point". A type that omits
+   * it falls back to its bounds() corner, which is right for a type whose box
+   * and grid are the same thing.
+   */
+  dominoLayoutAnchor?(ddObject: T): { x: number; y: number };
+  /**
    * Optional override of how copied domino colors land on this instance.
    * Returns the flat indices to recolor and each one's colorId, or undefined
    * when the paste means nothing here.
@@ -246,14 +255,14 @@ export interface DDObjectTypeDefinition<T extends DDObjectBase = DDObjectBase> {
    * tool then discards that drag frame, keeping the last valid state). Per-type
    * because each type maps a rectangle onto its own position/size fields.
    */
-  setBounds?(ddObject: T, bounds: DDObjectBounds): Partial<T> | undefined;
+  setBounds?(ddObject: T, bounds: Bounds): Partial<T> | undefined;
   /**
    * Optional: how a region drawn on the build plane becomes an instance of
    * this type. Returns the creation patch (merged over create()'s defaults),
    * or undefined if the region is too small/invalid — the placement tool
    * discards drags like that rather than creating a degenerate DDObject.
    */
-  createFromRegion?(region: DDObjectBounds): Partial<T> | undefined;
+  createFromRegion?(region: Bounds): Partial<T> | undefined;
 }
 
 /**

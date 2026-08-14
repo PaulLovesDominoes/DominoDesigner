@@ -5,7 +5,8 @@ import { EdgesGeometry, PlaneGeometry, type Object3D, type Scene, type Raycaster
 
 import { useStore } from "../store";
 import { getDDObjectBounds, getSnapShapePoint } from "../object-types/registry";
-import type { DDObjectBounds, DDObjectId, DominoExpansion } from "../object-types/base";
+import type { DDObjectId, DominoExpansion } from "../object-types/base";
+import type { Bounds } from "../types";
 import { DOMINO_SIZE } from "../dimensions";
 import { useDominoDataStore } from "../dominoes/store";
 import { resolveDominoExpansion } from "../dominoes/expansion";
@@ -149,10 +150,10 @@ function footprint(data: DominoData, i: number, expansion: DominoExpansion) {
  * orientations, both need revisiting together.
  */
 function modeOutlineRect(
-  bounds: DDObjectBounds,
+  bounds: Bounds,
   data: DominoData | undefined,
   expansion: DominoExpansion,
-): DDObjectBounds {
+): Bounds {
   const e = data && extent(data);
   if (!e) {
     return {
@@ -397,6 +398,11 @@ export default function DominoEditor() {
   const shapeSelectId = useStore((s) => s.dominoShapeSelectId);
   const shapeDefinition = shapeSelectId ? getShapeSelect(shapeSelectId) : undefined;
 
+  // Image mapping mode, the third choice alongside an armed shape and an armed
+  // brush — but a bigger one: while it is on, this tool draws only the mode
+  // outline and handles no input at all. See the early return below.
+  const imageMapActive = useStore((s) => s.imageMapActive);
+
   // Which paint brush is armed, if any, and how big its nib currently is. Both
   // primitives, so no useShallow needed, and the definition is resolved outside
   // the selector for the same reason the shape's is. A brush and a shape can
@@ -610,7 +616,7 @@ export default function DominoEditor() {
   // handler reads fresh state imperatively (getState()), so dominoEditingId is
   // the only thing that needs to be a dependency.
   useEffect(() => {
-    if (!dominoEditingId) return;
+    if (!dominoEditingId || imageMapActive) return;
 
     /**
      * Picks a swatch from the keyboard, and makes its button look pressed for a
@@ -847,9 +853,37 @@ export default function DominoEditor() {
       window.clearTimeout(swatchPressTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dominoEditingId]);
+  }, [dominoEditingId, imageMapActive]);
 
   if (!dominoEditingId || !fieldBounds || !rootBounds) return null;
+
+  // Image mapping mode owns the canvas for as long as it is on, so this tool
+  // keeps only the frame round the element being edited and gives up everything
+  // else — no catch plane, no rubber band, no shape or brush preview.
+  //
+  // Dropping the catch plane is what hands pointer events cleanly to
+  // ImageTransformTool: the one-catch-plane rule this file documents holds
+  // because the two are never mounted at the same time, rather than being broken
+  // by a second plane competing for the same pointerdown.
+  if (imageMapActive) {
+    if (!outlineRect) return null;
+    return (
+      <lineSegments
+        geometry={unitEdges}
+        position={[
+          outlineRect.x + outlineRect.width / 2,
+          outlineRect.y + outlineRect.height / 2,
+          OUTLINE_Z,
+        ]}
+        scale={[outlineRect.width, outlineRect.height, 1]}
+      >
+        {/* depthTest off is what keeps this visible through an opaque picture:
+            it draws over whatever is already there rather than losing the depth
+            comparison against a plane the user has put in front of it. */}
+        <lineBasicMaterial color={MODE_OUTLINE_COLOR} transparent depthTest={false} />
+      </lineSegments>
+    );
+  }
 
   /** World coordinates -> the parent-relative mm DominoData.positions lives in. */
   const toLocal = (p: { x: number; y: number }) => ({
@@ -1267,7 +1301,7 @@ export default function DominoEditor() {
   );
 
   const dragStart = gestureSequenceRef.current?.startWorld;
-  const dragRect: DDObjectBounds | null =
+  const dragRect: Bounds | null =
     dragCurrent && dragStart && !shapeDefinition
       ? {
           x: Math.min(dragStart.x, dragCurrent.x),

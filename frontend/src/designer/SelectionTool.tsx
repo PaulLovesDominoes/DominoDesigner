@@ -11,7 +11,14 @@ import {
   isDominoEditable,
 } from "../object-types/registry";
 import type { DDObject } from "../object-types/registry";
-import type { DDObjectBounds, DDObjectId } from "../object-types/base";
+import type { DDObjectId } from "../object-types/base";
+import type { Bounds } from "../types";
+import {
+  RESIZE_HANDLES,
+  cursorFor,
+  handlePos,
+  type ResizeHandleId,
+} from "./resizeHandles";
 
 // Z layering, lowest first. Picking planes sit just above the build plane (a
 // domino in front of them is a no-handler mesh, so the ray still reaches the
@@ -43,36 +50,6 @@ const CATCH_SIZE = 1_000_000;
 const clamp = (v: number, lo: number, hi: number) =>
   Math.min(Math.max(v, lo), Math.max(lo, hi));
 
-type HandleId = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
-const HANDLES: HandleId[] = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
-
-/** Centre of a handle, in build-plane mm. */
-function handlePos(b: DDObjectBounds, id: HandleId): [number, number] {
-  const left = b.x, right = b.x + b.width, bottom = b.y, top = b.y + b.height;
-  const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
-  switch (id) {
-    case "n": return [cx, top];
-    case "s": return [cx, bottom];
-    case "e": return [right, cy];
-    case "w": return [left, cy];
-    case "ne": return [right, top];
-    case "nw": return [left, top];
-    case "se": return [right, bottom];
-    case "sw": return [left, bottom];
-  }
-}
-
-// The view is top-down with +Y up on screen, so a bottom-left/top-right diagonal
-// is nesw and a top-left/bottom-right diagonal is nwse.
-function cursorFor(id: HandleId): string {
-  switch (id) {
-    case "n": case "s": return "ns-resize";
-    case "e": case "w": return "ew-resize";
-    case "ne": case "sw": return "nesw-resize";
-    case "nw": case "se": return "nwse-resize";
-  }
-}
-
 /**
  * Which mesh a hover cursor belongs to. "overlay" covers the selection fill and
  * all eight resize handles together — they mount and unmount as one group, with
@@ -86,12 +63,12 @@ const OVERLAY_CURSOR: CursorOwner = { kind: "overlay" };
 
 /** New footprint for a resize handle dragged by (dx,dy) mm, clamped to `root`. */
 function resizeRect(
-  orig: DDObjectBounds,
-  id: HandleId,
+  orig: Bounds,
+  id: ResizeHandleId,
   dx: number,
   dy: number,
-  root: DDObjectBounds,
-): DDObjectBounds {
+  root: Bounds,
+): Bounds {
   const rl = root.x, rr = root.x + root.width, rb = root.y, rt = root.y + root.height;
   let left = orig.x, right = orig.x + orig.width;
   let bottom = orig.y, top = orig.y + orig.height;
@@ -108,11 +85,11 @@ function resizeRect(
 
 /** New footprint for a whole-object move by (dx,dy) mm, kept inside `root`. */
 function moveRect(
-  orig: DDObjectBounds,
+  orig: Bounds,
   dx: number,
   dy: number,
-  root: DDObjectBounds,
-): DDObjectBounds {
+  root: Bounds,
+): Bounds {
   const rr = root.x + root.width, rt = root.y + root.height;
   return {
     x: clamp(orig.x + dx, root.x, rr - orig.width),
@@ -124,9 +101,9 @@ function moveRect(
 
 interface DragState {
   pointerStart: { x: number; y: number };
-  original: DDObjectBounds;
+  original: Bounds;
   originalObject: DDObject;
-  handle: HandleId | "move";
+  handle: ResizeHandleId | "move";
 }
 
 /**
@@ -286,7 +263,7 @@ export default function SelectionTool() {
       ? getDDObjectBounds(selected)
       : undefined;
 
-  const beginDrag = (handle: HandleId | "move", e: ThreeEvent<PointerEvent>) => {
+  const beginDrag = (handle: ResizeHandleId | "move", e: ThreeEvent<PointerEvent>) => {
     if (e.button !== 0 || !selected || !selectedBounds) return;
     e.stopPropagation();
     dragRef.current = {
@@ -386,7 +363,7 @@ export default function SelectionTool() {
           </lineSegments>
 
           {/* Corner + edge resize handles. */}
-          {HANDLES.map((id) => {
+          {RESIZE_HANDLES.map((id) => {
             const [hx, hy] = handlePos(selectedBounds, id);
             return (
               <mesh

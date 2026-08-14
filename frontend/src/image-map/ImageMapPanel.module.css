@@ -1,0 +1,190 @@
+/*
+ * Sits above the colour swatches in the sidebar while image mapping mode is on.
+ *
+ * `flex: 0 0 auto` matters: the sidebar is a column flex box, and the swatch
+ * grid below has no basis of its own, so without this the two would compete and
+ * this panel would be the one that stretched.
+ */
+.panel {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 4px 12px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 10px;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+/* The four picture commands, laid out as a miniature toolbar. */
+.tools {
+  display: flex;
+  gap: 4px;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--color-chrome-2);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.iconBtn:hover:not(:disabled) {
+  background: var(--color-border);
+}
+
+.iconBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.iconBtn.active {
+  background: var(--color-accent-dim);
+  border-color: var(--color-accent);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rowLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-text-dim);
+}
+
+.slider {
+  width: 100%;
+  accent-color: var(--color-accent);
+}
+
+.select {
+  width: 100%;
+  padding: 4px 6px;
+  background: var(--color-input-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+/*
+ * Map Colors and Clear, side by side. Map takes the extra width because it is
+ * the one the user is here for; Clear is sized to its own label.
+ */
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.mapBtn,
+.clearBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  color: var(--color-text);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mapBtn {
+  flex: 1;
+  background: var(--color-accent-dim);
+  border: 1px solid var(--color-accent);
+}
+
+.mapBtn:hover:not(:disabled) {
+  background: var(--color-accent);
+}
+
+/* Plain chrome rather than the accent: undoing the mapping is a step back, and
+   two equally loud buttons would make the pair hard to tell apart at a glance. */
+.clearBtn {
+  flex: 0 0 auto;
+  background: var(--color-chrome-2);
+  border: 1px solid var(--color-border);
+}
+
+.clearBtn:hover:not(:disabled) {
+  background: var(--color-border);
+}
+
+.mapBtn:disabled,
+.clearBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The progress bar and its Cancel, shown only while a mapping run is going. */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progressTrack {
+  flex: 1;
+  height: 6px;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 80ms linear;
+}
+
+.textBtn {
+  padding: 2px 6px;
+  background: none;
+  color: var(--color-text-dim);
+  border: none;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.textBtn:hover {
+  color: var(--color-text);
+}
+
+.fileName {
+  font-size: 11px;
+  color: var(--color-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text);
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}

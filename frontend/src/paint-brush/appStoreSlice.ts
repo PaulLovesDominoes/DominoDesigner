@@ -34,11 +34,12 @@ export interface PaintBrushSlice {
   dominoBrushSizes: Record<DominoBrushId, DominoBrushSizeId>;
   /**
    * Arms a brush, or disarms with null. Radio semantics against the shape-select
-   * modes: both interpret canvas drags, so arming a brush returns shape select
-   * to its default rectangle band, and setDominoShapeSelect clears this in turn.
+   * modes and image mapping mode: all three interpret canvas drags, so arming a
+   * brush returns shape select to its default rectangle band and leaves image
+   * mapping, and each of those clears this in turn.
    *
    * That cross-slice write needs no import either way — `set` is typed against
-   * the whole AppState, so each slice can see the other's members.
+   * the whole AppState, so each slice can see the others' members.
    *
    * It deliberately does NOT touch dominoSelectedSwatchId, so a brush picked up
    * while a colour is already chosen paints straight away. Clearing it here is
@@ -61,7 +62,13 @@ export const createPaintBrushSlice: StateCreator<AppState, [], [], PaintBrushSli
   dominoBrushSizes: initialBrushSizes,
 
   setDominoBrush: (dominoBrushId) =>
-    set({ dominoBrushId, dominoShapeSelectId: null, dominoShapeSelectHint: null }),
+    set({
+      dominoBrushId,
+      dominoShapeSelectId: null,
+      dominoShapeSelectHint: null,
+      imageMapActive: false,
+      imageMapSelected: false,
+    }),
 
   setDominoBrushSize: (id, size) =>
     set((s) => ({ dominoBrushSizes: { ...s.dominoBrushSizes, [id]: size } })),

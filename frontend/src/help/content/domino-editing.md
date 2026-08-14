@@ -12,6 +12,7 @@ In this mode you can edit domino colors and hide dominoes from the build. This i
 -  Undo / redo to return to previous domino colors
 -  The ability to "hide" or "unhide" dominoes from the build
     -  Hidden dominoes will not be included in the build output
+-  [Mapping an image](image-mapping) onto the dominoes to set their colors automatically
 
 To leave domino editing mode:
 

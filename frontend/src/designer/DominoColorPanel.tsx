@@ -44,6 +44,13 @@ export default function DominoColorPanel() {
   // key flashes the same button a mouse click presses. A click needs nothing
   // stored — CSS :active covers it.
   const dominoPressedSwatchId = useStore((s) => s.dominoPressedSwatchId);
+  // Image mapping mode owns the whole of domino editing while it is on, so the
+  // swatches are shown but do nothing. Inert rather than `disabled`, for two
+  // reasons: a disabled button takes no pointer events in most browsers, which
+  // would silently kill the hover tip below, and this is one small step from the
+  // intended next version, where picking swatches chooses which colours the
+  // mapping is allowed to use.
+  const inert = useStore((s) => s.imageMapActive);
 
   const swatches = useMemo(() => dominoSwatches(inventoryEntries), [inventoryEntries]);
 
@@ -81,9 +88,11 @@ export default function DominoColorPanel() {
         // user can see what they are narrowing towards; the moment the buffer
         // resolves and clears, it settles onto the swatch that matched — which
         // is the same swatch the match just selected.
-        const isHighlighted = shortcutCandidates
-          ? shortcutCandidates.has(swatch.id)
-          : swatch.id === dominoSelectedSwatchId;
+        const isHighlighted =
+          !inert &&
+          (shortcutCandidates
+            ? shortcutCandidates.has(swatch.id)
+            : swatch.id === dominoSelectedSwatchId);
         const isMenuOpen = menu?.swatch.id === swatch.id;
 
         return (
@@ -98,15 +107,20 @@ export default function DominoColorPanel() {
             >
               <button
                 className={
-                  swatch.id === dominoPressedSwatchId
-                    ? `${styles.swatch} ${styles.pressed}`
-                    : styles.swatch
+                  [
+                    styles.swatch,
+                    swatch.id === dominoPressedSwatchId ? styles.pressed : "",
+                    inert ? styles.inert : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
                 }
                 style={{ background: swatch.background, color: swatch.textColor }}
                 // Always picks, never un-picks: clicking the swatch already
                 // selected is a harmless re-apply. A toggle would make a paint
                 // brush go inert on a second click.
-                onClick={() => pickDominoSwatch(swatch.id)}
+                onClick={inert ? undefined : () => pickDominoSwatch(swatch.id)}
+                aria-disabled={inert || undefined}
                 onMouseEnter={(e) =>
                   swatch.tip && setHovered({ swatch, anchor: e.currentTarget.getBoundingClientRect() })
                 }
@@ -119,15 +133,20 @@ export default function DominoColorPanel() {
               >
                 <span>{swatch.shortcutLabel}</span>
               </button>
-              <button
-                className={isMenuOpen ? `${styles.caret} ${styles.caretOpen}` : styles.caret}
-                onClick={openMenu(swatch)}
-                aria-label={`Actions for ${swatch.name}`}
-                aria-haspopup="menu"
-                title="Actions"
-              >
-                <RiArrowDownSLine size={14} />
-              </button>
+              {/* No caret at all while image mapping is on: every item in that
+                  menu changes which dominoes are selected, and nothing in this
+                  mode acts on a selection. */}
+              {!inert && (
+                <button
+                  className={isMenuOpen ? `${styles.caret} ${styles.caretOpen}` : styles.caret}
+                  onClick={openMenu(swatch)}
+                  aria-label={`Actions for ${swatch.name}`}
+                  aria-haspopup="menu"
+                  title="Actions"
+                >
+                  <RiArrowDownSLine size={14} />
+                </button>
+              )}
             </div>
             <div className={styles.label}>{swatch.name}</div>
           </div>
@@ -138,7 +157,7 @@ export default function DominoColorPanel() {
         <FloatingTip anchor={hovered.anchor}>{hovered.swatch.tip}</FloatingTip>
       )}
 
-      {menu && (
+      {menu && !inert && (
         <DominoSwatchMenu
           swatch={menu.swatch}
           anchor={menu.anchor}

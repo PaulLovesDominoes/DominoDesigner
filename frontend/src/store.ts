@@ -32,6 +32,10 @@ import {
   createPaintBrushSlice,
   type PaintBrushSlice,
 } from "./paint-brush/appStoreSlice";
+import {
+  createImageMapSlice,
+  type ImageMapSlice,
+} from "./image-map/appStoreSlice";
 import { applyRemoveDDObject, ddObjectsEqual } from "./ddObjectOps";
 
 /**
@@ -82,7 +86,8 @@ export interface AppState
     HistorySlice,
     DominoColorSlice,
     ShapeSelectSlice,
-    PaintBrushSlice {
+    PaintBrushSlice,
+    ImageMapSlice {
   // Which screen is showing.
   screen: ScreenId;
   setScreen: (screen: ScreenId) => void;
@@ -258,7 +263,12 @@ export const useStore = create<AppState>()((set, get, api) => ({
     // a harmless no-op.
     s.cameraApi?.frameDDObject(id);
   },
-  exitDominoEditing: () =>
+  exitDominoEditing: () => {
+    // Before the set, because it has to see dominoEditingId still set: a mapping
+    // run left going would keep recolouring a field nobody is editing, and would
+    // then push its undo entry after the mode's barrier had already been
+    // cleared. Cancelling puts back whatever it had painted so far.
+    get().cancelColorMapping();
     set((s) => {
       if (s.dominoEditingId) {
         useDominoSelectionStore.getState().clear(s.dominoEditingId);
@@ -305,8 +315,16 @@ export const useStore = create<AppState>()((set, get, api) => ({
         // no half-finished stroke can outlive the mode it belongs to.
         dominoBrushId: null,
         dominoStroke: null,
+        // And for image mapping mode. The picture itself deliberately survives,
+        // in imageMaps — Done keeps it, so re-entering the mode shows it exactly
+        // where it was left. Only Cancel throws it away (see below).
+        imageMapActive: false,
+        imageMapSelected: false,
+        imageMapMessage: null,
       };
-    }),
+    });
+  },
+
   cancelDominoEditing: () => {
     // Put the colours back from the entry snapshot rather than replaying the
     // undo stack backwards. Replaying cannot be exact: HISTORY_LIMIT drops
@@ -316,6 +334,13 @@ export const useStore = create<AppState>()((set, get, api) => ({
     get().restoreDominoColorSnapshot();
 
     const s = get();
+    // The picture goes too, along with the set of dominoes it was allowed to
+    // fill. Cancel means "put this element back the way it was when I started",
+    // and a picture the user placed during the session is part of what they are
+    // taking back — unlike Done, which keeps it so re-entering finds it where it
+    // was left.
+    if (s.dominoEditingId) s.discardImageMapSession(s.dominoEditingId);
+
     // Drop the in-mode entries from the history: they describe changes that no
     // longer happened. Everything after the barrier is in-mode work — and
     // lastIndexOf returns -1 exactly when the barrier has aged off the front,
@@ -504,4 +529,5 @@ export const useStore = create<AppState>()((set, get, api) => ({
   ...createDominoColorSlice(set, get, api),
   ...createShapeSelectSlice(set, get, api),
   ...createPaintBrushSlice(set, get, api),
+  ...createImageMapSlice(set, get, api),
 }));

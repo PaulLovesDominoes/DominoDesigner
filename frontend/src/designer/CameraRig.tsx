@@ -5,7 +5,7 @@ import type { OrthographicCamera, Vector3 } from "three";
 
 import { useStore } from "../store";
 import { getDDObjectBounds } from "../object-types/registry";
-import type { DDObjectBounds } from "../object-types/base";
+import type { Bounds } from "../types";
 import type { CameraApi } from "../types";
 
 // Minimal shape of the OrbitControls instance we rely on (avoids a hard
@@ -19,9 +19,24 @@ interface OrbitLike {
 // Fraction of the viewport a framed DDObject fills, leaving breathing room so
 // its boundary rectangle isn't flush with the canvas edge. Deliberately only
 // frameDDObject's: the initial build-plane fit and resetZoom stay edge-to-edge,
-// which is what keeps controls.minZoom a true "can't zoom out past the plane"
-// floor rather than a slightly-looser one.
+// so "Reset Zoom" always lands on exactly the same view.
 const FRAME_FILL = 0.92;
+
+/**
+ * How small the build plane is allowed to be zoomed down to, as a fraction of
+ * the zoom that fits it exactly — so at 0.2 the plane can be shrunk to about a
+ * fifth of the viewport before the camera refuses to go further.
+ *
+ * There used to be no slack at all here: the floor was exactly the fit-the-plane
+ * zoom, on the reasoning that nothing worth looking at lies outside the plane.
+ * Image mapping made that false. A picture laid over a field is deliberately
+ * allowed to hang off the plane, and its resize handles cannot be reached at a
+ * zoom that will not go wider than the plane itself.
+ *
+ * A floor is still kept rather than removed, so the build can't be zoomed away
+ * to an unfindable speck.
+ */
+const MIN_ZOOM_FILL = 0.2;
 
 /**
  * Lives inside the <Canvas>. It is the single point where React UI outside the
@@ -72,10 +87,10 @@ export default function CameraRig() {
       invalidate();
     };
 
-    const fitZoom = (b: DDObjectBounds, fill = 1) =>
+    const fitZoom = (b: Bounds, fill = 1) =>
       Math.min(size.width / b.width, size.height / b.height) * fill;
 
-    const fitTo = (b: DDObjectBounds, fill = 1) => {
+    const fitTo = (b: Bounds, fill = 1) => {
       const cx = b.x + b.width / 2;
       const cy = b.y + b.height / 2;
       camera.position.set(cx, cy, camera.position.z || 100);
@@ -96,9 +111,10 @@ export default function CameraRig() {
 
     setCameraApi(api);
 
-    // Never allow zooming out further than the bounds filling their
-    // constrained axis (viewport or plane resizes move this floor too).
-    controls.minZoom = fitZoom(bounds);
+    // The zoom-out floor: some way past the bounds filling their constrained
+    // axis, not exactly at it (see MIN_ZOOM_FILL). Viewport or plane resizes
+    // move it too.
+    controls.minZoom = fitZoom(bounds) * MIN_ZOOM_FILL;
     if (camera.zoom < controls.minZoom) {
       applyZoom(controls.minZoom);
     }

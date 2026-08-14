@@ -56,6 +56,11 @@ export default function ModeHintBar() {
   // stages, so it comes straight off the registry rather than needing a store
   // field DominoEditor writes.
   const dominoBrushId = useStore((s) => s.dominoBrushId);
+  // Image mapping mode, and whether a picture has actually been loaded — the
+  // sentence differs, since with no picture the only useful thing to say is how
+  // to get one.
+  const imageMapActive = useStore((s) => s.imageMapActive);
+  const hasImage = useStore((s) => !!(s.dominoEditingId && s.imageMaps[s.dominoEditingId]));
   // The root BuildPlane always exists and always has a children array — this
   // is "are there any DDObjects yet" for the Select-mode idle hint below.
   const hasElements = useStore((s) => {
@@ -66,10 +71,12 @@ export default function ModeHintBar() {
   let content: ReactNode;
 
   if (!editing && dominoEditingId && dominoEditingObject) {
-    // The sentence at the end is chosen most-specific-first: an armed shape,
-    // then an armed brush, then the standing advice. What the user is *doing*
-    // outranks where they are, the same rule help/registry.ts applies when it
-    // consults TOOL_TOPIC before SCREEN_TOPIC.
+    // The sentence at the end is chosen most-specific-first: image mapping mode,
+    // then an armed shape, then an armed brush, then the standing advice. What
+    // the user is *doing* outranks where they are, the same rule
+    // help/registry.ts applies when it consults TOOL_TOPIC before SCREEN_TOPIC.
+    // Image mapping goes first because it is a mode rather than a choice within
+    // one — the other three cannot be armed while it is on.
     //
     // Done/Cancel are the only ways out of domino editing mode; nothing in this
     // bar ever means "press ESC to leave".
@@ -88,10 +95,21 @@ export default function ModeHintBar() {
         >
           Cancel
         </button>
-        <button className={styles.textBtn} onClick={() => openHelpTopic("domino-editing")}>
+        {/* Help follows whichever mode is on, so it opens on the page about the
+            thing the user is actually doing. */}
+        <button
+          className={styles.textBtn}
+          onClick={() => openHelpTopic(imageMapActive ? "image-mapping" : "domino-editing")}
+        >
           Help
         </button>
-        {dominoShapeSelectHint ? (
+        {imageMapActive ? (
+          <span>
+            {hasImage
+              ? "Position the image over the dominoes, then Map Colors to fill in the ones that had no color when you switched this mode on."
+              : "Click New Image in the sidebar to choose a picture to map onto these dominoes."}
+          </span>
+        ) : dominoShapeSelectHint ? (
           <span>{dominoShapeSelectHint}</span>
         ) : dominoBrushId ? (
           <span>

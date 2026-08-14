@@ -31,10 +31,10 @@ export interface ShapeSelectSlice {
    * the toolbar's Rectangle button is how a shape is left, so a shape's own
    * button never turns itself off.
    *
-   * Also disarms any armed paint brush, since both interpret canvas drags and
-   * only one can own them; paint-brush's setDominoBrush clears this in turn.
-   * Neither slice imports the other — `set` is typed against the whole AppState,
-   * so each can see the other's members.
+   * Also disarms any armed paint brush and leaves image mapping mode, since all
+   * three interpret canvas drags and only one can own them; each of the other
+   * two slices clears this in turn. None of the three imports another — `set` is
+   * typed against the whole AppState, so each can see the others' members.
    */
   setDominoShapeSelect: (id: ShapeSelectId | null) => void;
 
@@ -61,6 +61,8 @@ export const createShapeSelectSlice: StateCreator<AppState, [], [], ShapeSelectS
         ? getShapeSelect(dominoShapeSelectId).hint(undefined)
         : null,
       dominoBrushId: null,
+      imageMapActive: false,
+      imageMapSelected: false,
     }),
 
   dominoShapeSelectHint: null,

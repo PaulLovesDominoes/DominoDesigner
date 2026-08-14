@@ -24,10 +24,10 @@ Completed:
     -  Cut, copy & paste colors
         -  Including from one field to another in the build
     -  Many other options
+-  [Mapping an image onto the dominoes](image-mapping) to set their colors automatically
+    -  Including moving, resizing and fading the image over the build
 
 Next to do:
--  Upload an image to use to set domino colors
-    -  Including basic image manipulation
 -  Upload / download a domino inventory
 
 Once this is done, the domino designer will be a relatively complete "Version 1".

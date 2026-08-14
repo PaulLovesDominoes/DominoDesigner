@@ -7,6 +7,8 @@ import CameraRig from "./CameraRig";
 import CreateByRegionTool from "./CreateByRegionTool";
 import SelectionTool from "./SelectionTool";
 import DominoEditor from "./DominoEditor";
+import ImageMapModeller from "../image-map/modeller";
+import ImageTransformTool from "../image-map/ImageTransformTool";
 import { useStore } from "../store";
 
 /**
@@ -47,7 +49,14 @@ export default function DesignerCanvas() {
 
       <CreateByRegionTool />
       <SelectionTool />
+      {/* The picture goes under DominoEditor so the mode outline, which draws
+          with depthTest off, still shows through an opaque one; the transform
+          tool goes last of all, since its handles are the topmost thing on the
+          canvas whenever it is armed. Like every tool here, all three arm
+          themselves and return null otherwise. */}
+      <ImageMapModeller />
       <DominoEditor />
+      <ImageTransformTool />
 
       <OrbitControls
         makeDefault

@@ -109,6 +109,7 @@ the one `AppState`. Five exist today:
 | `dominoes/appStoreSlice.ts` | the selected swatch and the shortcut buffer, every domino-colour write (including a paint stroke's), select-by-swatch, the Expand toggle, and domino editing mode's cancel snapshot |
 | `shape-select/appStoreSlice.ts` | which shape-select gesture is armed inside domino editing mode, and its hint text |
 | `paint-brush/appStoreSlice.ts` | which paint brush is armed inside domino editing mode, and each brush's chosen size |
+| `image-map/appStoreSlice.ts` | the picture laid over each element, image mapping mode's own view state, the chosen patch sampler, colour-distance metric and dither, which dominoes a mapping run may colour, and the run itself |
 
 What's left in `store.ts` is the state that isn't any one feature's: screen/menu/help, the
 DDObject hierarchy and its actions, domino editing mode, the properties dialog, and the camera
@@ -220,7 +221,8 @@ for a default-valued instance, and optional `modeller`/`bounds` members. The sib
    while preserving each type's concrete shape.)
 5. **Consume types through the registry accessors** (`getDDObjectIcon`,
    `getDDObjectDefaultName`, `createDDObject`, `getDDObjectEditor`, `getDDObjectModeller`,
-   `getDDObjectBounds`, `getDominoExpansion`). Do not add `switch (ddObject.type)` branching or
+   `getDDObjectBounds`, `getDominoExpansion`, `getDominoLayoutAnchor`). Do not add
+   `switch (ddObject.type)` branching or
    a central per-type metadata config elsewhere in the app.
 
 `editor`, `modeller` and `bounds` all put the DDObject type in a contravariant position,
@@ -287,9 +289,16 @@ fitting the whole plane there would zoom out of the very thing the mode exists t
 in-mode it returns the view to exactly what entering produced. It is deliberately **not** wired
 to the selection model (nothing calls it on select). It is the only fit that
 applies `FRAME_FILL`, a margin so the framed object isn't flush with the canvas edge; the
-initial fit and `resetZoom` stay edge-to-edge, which is what keeps `controls.minZoom` a true
-"can't zoom out past the plane" floor. Nothing restores the prior view on leaving the mode —
-Reset Zoom is the way back out, by design.
+initial fit and `resetZoom` stay edge-to-edge, so Reset Zoom always lands on exactly the same
+view. Nothing restores the prior view on leaving the mode — Reset Zoom is the way back out, by
+design.
+
+**`controls.minZoom` is deliberately *not* the fit-the-plane zoom**, but `MIN_ZOOM_FILL` times
+it, so the plane can be zoomed down to a fraction of the viewport. It was the exact fit once, on
+the reasoning that nothing worth looking at lies outside the plane; *Image mapping* made that
+false, since a picture is allowed to hang off the plane and its resize handles then can't be
+reached at a zoom that won't go wider than the plane. A floor is still kept rather than dropped,
+so the build can't be zoomed away to an unfindable speck.
 
 Note that drei's `<OrbitControls>` calls `invalidate()` on its own `change` event, so ordinary
 user pan/zoom repaints without CameraRig doing anything. Only imperative changes you make
@@ -520,21 +529,27 @@ barrier rather than disabled.
 
 `designer/DominoEditingTools.tsx` is that replacement group, dropped into `Toolbar.tsx`'s left
 `.group` the way `NewElementMenu` is — so `Toolbar.tsx` stays a layout file rather than growing a
-branch per mode-specific button. It holds **Select All**, **Invert** and the **Expand** toggle
-(below); a `.separator`; the selection-mode buttons (**Rectangle** plus one per registered shape —
-see *Shape select*); another `.separator`; then one `DominoBrushButton` per registered paint brush
-(see *Paint brushes*). Note Select All and Invert are raw `<button>`s while the modes and Expand
-are `ToolButton`s: `ToolButton` always emits `aria-pressed`, which is right for a toggle or a mode
-and wrong for a command — the same split `Toolbar.tsx` already makes between its zoom/undo buttons
-and the Select tool.
+branch per mode-specific button. It holds **Select All**, **Invert**, the **Expand** toggle
+(below) and the **image mapping** toggle (see *Image mapping*); a `.separator`; the selection-mode
+buttons (**Rectangle** plus one per registered shape — see *Shape select*); another `.separator`;
+then one `DominoBrushButton` per registered paint brush (see *Paint brushes*). Note Select All and
+Invert are raw `<button>`s while the modes and Expand are `ToolButton`s: `ToolButton` always emits
+`aria-pressed`, which is right for a toggle or a mode and wrong for a command — the same split
+`Toolbar.tsx` already makes between its zoom/undo buttons and the Select tool.
+
+While image mapping is on, **everything in this group except Expand and the image toggle itself is
+`disabled`** — disabled rather than hidden, unlike the Select/New swap above, so the user can see
+what the mode switched off and where it comes back. Expand's exemption is explained under *Image
+mapping*.
 
 **Both gesture groups grow as variants are registered**, which is why the fixed commands stay
 pinned at the front and everything that grows sits behind them. Rectangle stays first *within* its
 group because it is that group's null state. Its `active` test is the one thing in this file that
-isn't obvious: it must be `dominoShapeSelectId === null && dominoBrushId === null`, because a null
+isn't obvious: it must be `dominoShapeSelectId === null && dominoBrushId === null &&
+!imageMapActive`, because a null
 `dominoShapeSelectId` means "no *shape* armed" and stopped meaning "a drag draws the rectangle
-band" once a brush could own drags while leaving that field null. Without the second test, arming a
-brush lit Rectangle up too and two tools looked armed at once.
+band" once a brush could own drags while leaving that field null, and image mapping does the same.
+Without the other two tests, arming either lit Rectangle up too and two tools looked armed at once.
 
 **Expand** (`dominoExpanded` in `dominoes/appStoreSlice.ts`) draws every domino oversized so
 tightly-spaced ones are easier to hit. Four things about it are deliberate:
@@ -562,7 +577,8 @@ tightly-spaced ones are easier to hit. Four things about it are deliberate:
   build plane.
 - **It is view state, not document state**: no undo entry, and `exitDominoEditing` clears it
   alongside `dominoSelectedSwatchId`/`dominoColorShortcut`, which is the whole of "leaving the
-  mode restores the real sizes."
+  mode restores the real sizes." Being view state is also why it is the one tool left enabled
+  inside image mapping mode — see *Image mapping*.
 
 **The mode outline is measured off the dominoes, not the element's `bounds()`** —
 `modeOutlineRect` puts it `MODE_OUTLINE_MARGIN` outside every domino's drawn footprint, expansion
@@ -1252,6 +1268,391 @@ it — a Small icon rendered small would shrink its own droplet too. There is de
 per-tool glyph on the definition: the button shows the size-specific drawing, so one would have no
 consumer. See *Hand-drawn icons* for the shared-viewBox rule those six drawings depend on.
 
+### Image mapping
+
+`image-map/` lays a picture over an element and gives every unpainted domino the nearest colour in
+the inventory. It is the third sub-mode inside domino editing mode, alongside an armed shape and an
+armed brush — but a **bigger** one: where those two only decide what a canvas drag does, this takes
+the whole mode. The toolbar's other buttons go `disabled` (not hidden, so the user can see what was
+switched off and where it comes back), the swatches go inert, and `DominoEditor` gives up its catch
+plane and its keyboard entirely, keeping only the mode outline.
+
+`imageMapActive` is **not a `ToolId`**, for exactly the reason `dominoShapeSelectId` and
+`dominoBrushId` are not: `activeTool` is already held by `"editDominoes"` for the whole mode. The
+three-way exclusion is each slice's setter clearing the other two's fields — an importless
+cross-slice write, since `set` is typed against the whole `AppState`.
+
+**Expand is the one tool left enabled**, and that is deliberate rather than an oversight. It
+changes only how big a domino is *drawn*, which helps line a picture up against the grid, and a
+mapping run reads the type's raw `dominoExpansion` rather than `resolveDominoExpansion` — so what a
+run paints is identical with the toggle on or off. Keep that split, or the toggle silently becomes
+a document-state control.
+
+#### Where the picture lives, and why it isn't the boundary box
+
+A record's rectangle is stored in mm **relative to the element's `dominoLayoutAnchor`**
+(`object-types/base.ts`), never to its `position` or its `bounds()`. Dragging a field's west or
+south handle moves `position` while the anchor model deliberately keeps every existing domino where
+it is, recomputing their parent-relative coordinates to compensate — so a picture stored against the
+box would slide out of registration with the very dominoes it exists to be matched against. A type
+declaring no anchor falls back to its `bounds()` corner, which is right for a type whose box and
+grid are the same thing; `image-map/object-model.ts`'s `imageOriginFor` is the one place that
+fallback lives, and the modeller, the transform tool and the mapping all read it, so the picture
+drawn, the picture dragged and the picture sampled cannot be three different rectangles.
+
+The rectangle is free to go negative and to extend past the element — a picture may hang off the
+element and off the build plane both, which is what forced the `minZoom` change under *three.js /
+R3F boundary*.
+
+#### The "below" layer squashes unpainted dominoes
+
+`layer: "below"` means *above the unpainted dominoes, below the coloured ones*. Every domino is the
+same height, so no single height for the picture does both. `image-map/underlay.ts`'s
+`resolveUnpaintedTopZ` squashes the unpainted ones instead, and it costs nothing visually: the
+camera is orthographic and top-down, so a shorter domino covers exactly the same pixels, and the
+only thing that changes is which of them the picture ends up in front of. The picture is
+`transparent` with `depthWrite={false}` and `depthTest` on — opaque geometry draws first, so a
+full-height painted domino writes depth nearer than the plane and hides it, while a squashed one
+does not. No stencil, no draw-order trickery.
+
+`resolveUnpaintedTopZ` is imperative for the same reason `dominoes/expansion.ts`'s resolver is —
+subscribe to the values it reads and call it, never call it inside a selector. It is also the one
+thing about images that `dominoes/modeller.tsx`, the shared drawing half for every element type,
+knows about; keep the signature a plain id in and a number out.
+
+#### The colour-distance registry
+
+`color-distance/` follows the usual four-part accessor shape (map → `Id` → `_LIST` → `get`), with
+**one file per metric rather than one folder**: a metric is pure arithmetic with no preview
+component to keep beside it. Maths two metrics share gets its own module beside them —
+`linearRgb.ts` (sRGB bytes → linear light), `lab.ts` (CIELAB) and `oklab.ts` (OKLab) are not
+registered variants.
+
+**A metric is three stages, and the middle one is the one a fresh session would drop.** `prepare`
+runs once per run and depends only on the inventory; **`sample` runs once per domino** and depends
+only on the colour being asked about; `distanceTo` runs once per candidate per domino and is
+arithmetic. `nearestColor` is what enforces it, calling `sample` outside its own loop. Folding
+`sample` back into `distanceTo` looks tidier and silently multiplies the conversion by the number of
+active inventory colours — which is exactly what the original code did, unnoticed while CIELAB was
+the only metric doing real work.
+
+`prepare` both filters the inventory and precomputes per colour, which is what makes Greyscale an
+ordinary metric rather than a special case somewhere else — the only thing that distinguishes it is
+which colours are on the table. It is also the seam the intended "only use the swatches I picked"
+feature widens.
+
+Five metrics today. **OKLab is the default and CIELAB is kept beside it deliberately** — the two
+mostly agree and part company in the deep blues, where CIELAB's hue drifts towards purple as a
+colour darkens; keeping both lets a picture be judged rather than argued about. **`valueWeighted` is
+built on OKLab, not CIELAB, and the choice is load-bearing**: OKLab's lightness runs 0..1 and its
+colour axes reach about the same magnitude, so `VALUE_WEIGHT` is the whole of the bias with no scale
+correction. Ported to CIELAB, whose lightness runs to 100, the same constant would mean something
+entirely different.
+
+**`linearRgb.ts`'s `toByteIndex` is load-bearing and its absence fails silently.** Callers
+legitimately pass *averages* of pixels, so a channel is `137.42` rather than `137` — and dithering
+then adds an offset on top — and reading a typed array at a fractional index gives `undefined`, not
+a rounded or interpolated value. Every Lab component then becomes `NaN`, every distance becomes
+`NaN`, `NaN < best` is false for every candidate, and the nearest-colour search returns nothing and
+paints nothing, with no error anywhere. This shipped once and cost a debugging session: Perceptual
+and Greyscale mapped nothing at all while Weighted RGB worked, because that one never indexes
+anything. **TypeScript cannot catch it** — a typed array's index signature is `number` whatever the
+index is. Any lookup table added here needs the same guard. Its *clamping* half is what makes a
+dither offset safe to add before the conversion rather than after.
+
+#### The patch-sample registry
+
+`image-map/patch-sample/` decides how the patch of picture a domino covers is reduced to the one
+colour the metric is asked about — `average`, `dominant`, `dominantMerged`. Same four-part accessor
+shape as `color-distance/` and `dither/`, with what variants share in its own module:
+`patchBounds.ts` (the clamp-and-round every caller runs first, so no variant range-checks anything)
+and `buckets.ts` (the bucketing, tally and chosen-bucket re-average the two dominant variants share).
+
+**It lives under `image-map/` rather than at the top level beside the other two**, and that is the
+distinction to preserve: a colour metric and a dither are ideas about colour that would mean
+something without a picture, where reducing a rectangle of pixels means nothing without one.
+
+**Average and dominant are not better and worse — they are for the two kinds of picture, and each
+is visibly wrong on the other's.** `average` is right for photographs. The dominant pair is right
+for flat artwork, because anti-aliasing puts a fringe of blended pixels along every edge, and a patch
+straddling one averages to a colour that exists in neither region it separates — the mapping then
+faithfully finds the nearest inventory colour to a shade that was never in the picture, which is
+where the ring of yellow dominoes between an orange region and a white one comes from. The same
+thing happens with no anti-aliasing at all wherever an edge falls part-way across a domino. Run
+`dominant` on a photograph, though, and no bucket holds a real majority, so the winner is close to
+arbitrary and neighbours jump about. Neither behaviour is a defect to be smoothed away.
+
+Four implementation points worth not reversing:
+
+- **The dominant variants count *buckets*, not colours.** Counting exact RGB values cannot work:
+  along an anti-aliased edge every pixel is a different blend, so everything ties at one vote. Five
+  bits per channel (a step of 8) is coarse enough that a region's pixels land together despite JPEG
+  noise and fine enough that two visibly different colours never share a bucket.
+- **They then re-average the winning bucket's own pixels** rather than returning the bucket's
+  centre. The buckets are for *counting*; quantising the answer to a step of 8 per channel is enough
+  to push a borderline domino onto the wrong inventory colour.
+- **The scratch tables are module-level and cleared by walking only the buckets used**, never
+  reallocated and never wholly cleared. 32768 entries rebuilt or zeroed per domino would cost more
+  than the entire rest of the run. Shared mutable scratch is safe here for the same reason
+  `dominoes/modeller.tsx`'s scratch matrix is: one patch is processed start to finish before the
+  next begins, on one thread. `releaseTally` is the promise that every array is all zeroes again
+  before the next patch, and a variant with scratch of its own (`dominantMerged`) clears it over the
+  same used-bucket list before calling it.
+- **`dominantMerged` exists because a fixed grid splits piles that land on its edges**, and that
+  was a reported bug rather than a hypothetical: a stray domino or two in the middle of a flat band,
+  landing somewhere different each time the picture was nudged. A region whose colour sits on a
+  boundary has its pixels halved between two buckets and a smaller, better-centred pile wins. It
+  joins buckets that are **both occupied and adjacent** (all 26 neighbours, since brightness noise
+  moves all three channels together) into groups and takes the heaviest group. Two properties make
+  that safe where a blur would not be: an empty bucket never joins anything, so two piles with a gap
+  between them stay apart; and adjacent buckets differ by 8–14 out of 255, far below what any
+  inventory distinguishes. **Overlapping votes — each pixel voting for a 3×3×3 neighbourhood — is
+  the more obvious fix and is worse**: 27 increments per pixel instead of one, and it smears across
+  24 bytes whether or not anything is there to join.
+
+**Mapping the whole picture first and downscaling afterwards is the obvious-looking alternative and
+is wrong**, so it is worth recording why before someone re-proposes it: it would destroy the
+dithering. The dither pattern's whole purpose is to be at *domino* resolution, and applying it per
+pixel and then reducing averages it away to noise — so the dither has to come after the reduction,
+and the pipeline cannot be reordered. It is also the same computation done more expensively (a
+full-resolution intermediate and millions of nearest-colour lookups instead of tens of thousands),
+and it would need a quantised colour cache to be fast at all, which is most of the bucketing
+machinery again with an extra pass bolted on.
+
+#### The dither registry
+
+`dither/` is the second stage of the colour choice and a registry of its own: `base.ts`,
+`registry.ts`, three shared-maths modules that are **not** variants (`ordered.ts` for the Bayer
+matrix, `pattern.ts` and `diffusion.ts` for the two kinds of dither), and one file per registered
+entry — `none`, `bayer4`, `bayer8`, `random`, `floydSteinberg`, `atkinson`. Same four-part accessor
+shape, same one-file-per-variant rule as `color-distance/` and for the same reason.
+
+**It is a separate registry from colour distance, not a member on it.** A metric answers *which
+inventory colour is nearest to this one*; a dither changes *which colour gets asked about*. Every
+dither composes with every metric, so merging them would give a dropdown of every combination.
+
+**There are two kinds of dither and the contract's whole shape follows from the second.** A
+*pattern* (the two Bayers, `random`, and `none`) works its shift out from the domino's grid position
+alone. *Error diffusion* (`floydSteinberg`, `atkinson`) measures how far each domino actually missed
+and hands the shortfall to dominoes it has not reached yet — so it carries state for the length of a
+run, has to be told what each domino came out as, and has to see them in a fixed order. Hence
+`DitherDefinition` is `{ id, label, scanOrder, createRun(context) }` and the answering happens on a
+per-run `DitherRun` (`colorShiftAt` / `recordChoice`) rather than on the definition.
+
+The contract was deliberately stateless until diffusion existed to exercise it, per the standing
+rule against reserving machinery speculatively (the `hidden: Uint8Array` column that gathered six
+readers and never a writer). This is what widening it actually cost: a pattern variant is still one
+line, because `pattern.ts` supplies the empty `recordChoice` and the `scanOrder: "any"`.
+
+Nine decisions worth not reversing:
+
+- **`AnyDitherDefinition` is still a plain alias, not an `any` erasure**, unlike
+  `AnyColorDistanceDefinition` and `AnyShapeSelectDefinition`. A run's state hides behind the
+  `DitherRun` interface instead of surfacing as a type parameter on the definition. Keep it that
+  way — a variant wanting its state in the type would put `any` back in the registry.
+- **A pattern supplies one scalar; only diffusion moves channels independently.** Adding the same
+  amount to red, green and blue moves a colour along the light-to-dark axis, which is what makes a
+  pattern read as a blend between two inventory colours. Independent per-channel *noise* shifts hue
+  too, and against a scattered handful of inventory colours — rather than a regular colour cube,
+  which is what classic per-channel dithering assumes — that scatters dominoes into unrelated hues;
+  it also keeps dithering meaningful under Greyscale, where a hue nudge could not change the answer
+  at all. **`pattern.ts` is what enforces this rather than leaving it as a rule to remember**: a
+  pattern variant hands over a `PatternAt` returning one number and has no way to express three.
+  Diffusion is the exception and earns it — its amount is a *measurement* of how the last choice
+  missed, not invented noise, and passing it on is self-correcting (overshooting red makes the next
+  domino pick something less red). That is exactly what lets red and blue dominoes average into a
+  purple the inventory does not hold.
+- **`base.ts`'s `scanRunsForward(row)` is the single definition of serpentine order, and it has two
+  readers that must agree**: `image-map/mapping.ts` when it sorts the dominoes, and a diffusing run
+  when it decides which side of a domino is "ahead". Both derive it from `row` alone rather than
+  counting rows as they go, specifically so a row with no targets in it cannot put them out of step.
+  If they ever disagree, half the rows hand their shortfall to dominoes already finished with.
+- **The 0-255 clamp in `mapping.ts` *is* the runaway guard — do not add a second cap on carried
+  error.** A neutral-only palette asked for a saturated colour would otherwise accumulate chroma it
+  can never discharge. Clamping the colour that gets *asked about* stops it at the source: once a
+  channel is pinned at an end, the shortfall measured against it cannot keep growing. (The clamp is
+  applied for every dither, not just diffusion. It changes nothing for four of the five metrics,
+  which already clamp inside `linearRgb.ts`'s `toByteIndex`.)
+- **Diffusion ignores the measured amplitude, and that is not an oversight.** `resolveDitherAmplitude`
+  returns `0` for a palette the grey ramp cannot tell apart — red and blue only, say — which
+  correctly silences the patterns, there being no lightness axis to nudge along. Diffusion still
+  works there, because its shortfall is measured rather than scaled from the palette. Feeding the
+  amplitude into the diffusion path would break exactly that case.
+- **The shortfall stopping at a hole is a decision, not a gap.** A run only visits the dominoes it
+  may colour, so error aimed at a hand-painted one lands in the buffer and is never read. Three
+  reasons it stays that way: the natural order of work is to map a blank field *first* and paint on
+  top afterwards, so there are rarely holes when mapping runs; a region deliberately outside the
+  picture is arguably right to be a hard edge; and diffusion flowing *around* an obstacle is a usable
+  effect. An earlier version of this file anticipated "measure through them" as the obvious next
+  step — it is an option not taken, and it would cost a full-grid scan instead of a target-list one,
+  a third method on `DitherRun`, sampling the picture for dominoes the run will not colour, and a
+  large false shortfall wherever the hand-painting disagrees with the picture.
+- **`none` is a registered entry**, deliberately unlike shape-select's Rectangle. Rectangle is
+  excluded there because `null` already encodes it and two encodings of one state is a bug waiting
+  to happen; here the value backs a `<select>`, whose value is a string, so a `DitherId | null` would
+  put a special case in the store, the panel and the mapping run to save four lines.
+- **`random` hashes `(row, col)` and must never call `Math.random()`.** A run has to be
+  reproducible, or pressing Map Colors twice gives two different fields and comparing a metric or a
+  strength setting becomes impossible.
+- **`diffusion.ts`'s ring of error rows takes its depth from the weights**, `1 + max(rowsAhead)`,
+  and must not be fixed at two. Floyd–Steinberg reaches one row ahead and Atkinson two, so a
+  hard-coded pair of rows would silently drop Atkinson's last weight — it would still map, still
+  look like dithering, and just be a slightly wrong kernel, which is the worst kind of bug to
+  notice. Holding only a few rows rather than the whole field is itself sound for a reason worth
+  keeping in view: a weight only ever points *forward*, so once a row has been walked nothing can
+  add to it again.
+
+Both kinds are indexed through the type's own `dominoRowCol` — already contracted to be
+*structurally* meaningful, so adjacent dominoes differ by 1 in exactly one coordinate — which is
+what makes dithering correct for a polar element type as readily as for a field, and makes a type
+declaring none simply get no dithering. That adjacency is load-bearing twice over now: a pattern
+needs it to land on the dominoes, and diffusion needs it to hand a shortfall to the domino
+physically next door. Note a Bayer repeat is a **rectangle** on the ground, since a field's X and Y
+pitch differ; indexing by row/col is still right.
+
+**A *pattern* variant returns only the pattern — a unit value in `[-0.5, +0.5)` — and knows nothing
+about bytes.** How far to push it is `image-map/ditherAmplitude.ts`'s
+`resolveDitherAmplitude(metric, candidates)`, measured **once per run from the palette**, and the
+slider is a multiplier on that. So the amplitude lives at the seam between the two registries rather
+than in either, `dither/` never imports `color-distance/`, and a new pattern cannot disagree with the
+existing ones about how hard to nudge.
+
+**The strength slider means the natural thing in each kind, and `mapping.ts` no longer multiplies
+the two together.** `ColorMappingSettings` carries `ditherAmplitude` and `ditherStrength`
+separately, because a pattern scales its pattern by both while diffusion ignores the amplitude and
+uses the strength to decide how much of its shortfall to pass on. At 0 both do nothing, which is
+what keeps "0% is identical to None" true without a special case.
+
+**`mapping.ts` does a grid pre-pass at job creation**: every target's row and column into two
+`Int32Array`s, the column range for the run context, and — only when the dither asks for it — a
+`Uint32Array` sorted into serpentine order. It is a small win even for the patterns, saving the loop
+a call and a fresh `{row, col}` object per domino. The chosen colour's RGB, which diffusion needs to
+measure against, comes from `colorLookupStore.ts`'s `rgbById`, **snapshotted into
+`ColorMappingSettings` by the caller** alongside `candidates` — deliberately not by widening
+`PreparedColor` with three fields four of the five metrics would never read, and snapshotted rather
+than read live because a run spans many frames and an inventory edit must not shift the table
+underneath it.
+
+**Measuring it is not optional tuning — a constant is wrong by construction**, and this shipped
+once. `MAX_DITHER_AMPLITUDE_BYTES` was a flat `64`, which is exactly right for a five-level palette
+and wrong everywhere else: the textbook ordered-dither amplitude is `255 / (N - 1)`, so a
+black-and-white inventory wants `255` and a forty-colour one wants about `7`. With black and white
+the symptom was a photograph coming out as a plain threshold — Greyscale's only boundary is
+L\* = 50, sRGB byte 119, and a ±32 nudge can only flip patches averaging 87–151, a quarter of the
+range. The other direction was invisible but real: a full inventory was being over-nudged ninefold,
+which is why the slider had to be kept low there.
+
+**The measurement is a grey-ramp probe, and asking through `nearestColor` is the whole trick.** It
+walks `v` = 0…255, asks the *selected metric* which candidate wins for `(v, v, v)`, and counts the
+distinct answers — so Greyscale, which throws most of the inventory away in `prepare`, measures a
+much coarser palette than OKLab does over the same inventory, and switching metric re-measures with
+no extra code. Reading the inventory directly instead would need each candidate's RGB on
+`PreparedColor` — widening a type four metrics implement, to compute a worse answer that ignores
+which colours the metric will actually use. (Error diffusion *does* need a chosen candidate's RGB,
+and gets it from `colorLookupStore.ts`'s `rgbById` for the same reason — the two agree deliberately,
+so don't resolve the apparent tension by putting RGB on `PreparedColor` after all.) It costs 256 lookups per run and is computed
+unconditionally; branching on `ditherId === "none"` to skip it would put registry knowledge back in
+the caller to save microseconds. Fewer than two distinct winners returns `0`, so the caller
+multiplies and needs no branch — the same idiom as `dominoes/expansion.ts`'s zeroed record and
+`NO_SNAP`.
+
+It measures how finely the palette divides *lightness*, which is the axis a **pattern** moves a
+colour along, and is therefore an estimate for a palette of strong colours, which divides lightness
+differently at different hues. That is what the strength slider sits on top of. The panel's range
+stops at 100% because past one full palette step a domino takes colours that are not adjacent to its
+true one — scatter, not blending — and full strength is the textbook half-step rather than an
+aggressive setting, so `DEFAULT_DITHER_STRENGTH` is free to sit wherever it looks best without any
+of this needing to change.
+
+**Note the whole of this only concerns the pattern dithers.** A diffusing one never reads the
+amplitude (see the fifth bullet above), so nothing here bounds what Floyd–Steinberg or Atkinson do,
+and the strength slider means something different to them — how much of the shortfall is passed on.
+
+#### Mapping
+
+`image-map/mapping.ts` is a chunked job driven from an animation frame in the slice, reusing the
+**paint-stroke idiom verbatim**: write live so the field visibly fills in, record once, as a single
+`"dominoColors"` operation. Cancel feeds the before-map back through `commitDominoColors` — not
+straight into the column — so the revert re-syncs colour memory, exactly as `cancelDominoStroke`
+does.
+
+**Which dominoes a run may colour is decided once, when the mode is switched on, and handed to
+`createColorMappingJob` as an explicit list** — `imageMapTargets[parentId]`, a `Uint32Array` of the
+indices whose `colorIds` were `0` at that moment. `mapping.ts` never inspects a colour and has no
+eligibility rule of its own.
+
+This replaced a rule that inferred eligibility per run — `colorId === 0`, *or* the domino still held
+exactly what the previous run left (a `lastMappedColors` map). That worked, and the reasons it was
+dropped are worth recording, because it is the more obvious design and would be re-proposed:
+
+- It compares against a *moving* target once dithering exists, since a dithered and an undithered
+  run of the same picture give the same domino different colours.
+- Freezing the set states the user's intent rather than inferring it: *these* are the dominoes on
+  offer. Anything hand-painted is excluded structurally — it was not blank at capture — instead of
+  by a colour comparison that happens to fail.
+- It gives leaving and re-entering the mode a meaning: the fresh capture excludes what was just
+  mapped, so a toggle **commits** a result. There was no way to express that before.
+
+Four consequences, each load-bearing:
+
+- **`imageMapTargets` is written only on entry and never cleared on exit.** `imageMapActive` is set
+  `false` from five places (its own setter, `exitDominoEditing`, and the cross-slice writes in
+  `shape-select` and `paint-brush` that enforce the three-way exclusion), and a field needing to be
+  cleared in all five will eventually be missed in one. A stale entry is unreachable while the mode
+  is off and is overwritten on the next entry. Only `discardImageMapSession` drops it — from
+  `cancelDominoEditing` and from `initImageMapPruning`, where the element's whole session is over.
+  Note `clearImageMap` (DEL on the picture) deliberately does *not*: the target set belongs to the
+  session, not to the picture.
+- **`colorIds[i] === 0` needs no masking**, the same property the swatch menus rely on: a hidden
+  domino is at least `HIDDEN_COLOR_FLAG` and a painted one is a small `numericId`, so one equality
+  excludes both.
+- **A run clears its whole target set to `0` before mapping into it**, folded into the same
+  `before` map the chunks write to, so the clear and the mapping land in one undo entry. Not
+  redundant with the mapping overwriting each domino: a run leaves a domino alone where the picture
+  does not reach or is transparent, so without the clear, moving the picture and mapping again would
+  strand the previous result outside the new footprint. `clearMappedColors` (the panel's Clear) is
+  the same write on its own.
+- **A domino's patch comes from `getDominoExpansion`**, the type's own statement of how much room
+  each domino owns. For a field that is half the spacing on each side, which makes the patch exactly
+  one pitch in each axis — note `thickness` goes with X and `width` with Y, matching `pitchX`/
+  `pitchY`, which is the part that would be easy to get backwards. So the patches tile the grid
+  exactly in millimetres and the whole scan visits each source pixel about once. (`resolvePatchBounds`
+  then rounds *outward* to whole pixels, so neighbouring patches share up to one pixel row and column
+  at each seam. That is the right way round — a gap would silently lose pixels — and it is negligible
+  until the picture is low-resolution relative to the field, since the decoder only ever downscales.
+  At a couple of pixels per domino a patch is mostly its neighbours, which hurts the dominant
+  samplers far more than the average.) Reading the whole patch rather than the single pixel at its
+  centre is what stops a detailed picture turning into speckle; *how* it is read is the patch-sample
+  registry's business, not this file's.
+
+`colorMappingProgress` is written **only when a run is about to schedule another chunk**, never at
+the start. A run finishing in one frame then shows no bar, which is honest; setting it up front
+could not have worked anyway, since React coalesces the `0` and the `null` after it into one render
+and the bar was never committed at all for a short run.
+
+#### Placement is not undoable, and that is the current version's line
+
+Moving, resizing, opacity, layer, show/hide and DEL-to-delete record nothing. Only the mapping
+does. A future mode-scoped undo stack is anticipated; until then `cancelDominoEditing` discards the
+picture along with the colour edits, while `exitDominoEditing` (Done) keeps it — the picture
+survives leaving the mode so re-entering finds it where it was left.
+
+`ImageTransformTool` mounts **two planes whenever image mode is armed**, not only while the picture
+is selected: the picture's own pick plane (which selects *and* begins a move in one gesture) and a
+`CATCH_SIZE` deselect plane behind it. Both halves are needed — canvas selecting with no
+canvas deselecting is a one-way door. The pick plane is gated on `image.visible`, or it would select
+on what looks like empty space. The *one catch plane, one gesture* rule still holds: `DominoEditor`
+mounts none at all in this mode, so these two never compete for a `pointerdown`.
+
+`assetStore.ts` is a small store of its own, following `colorLookupStore.ts`'s precedent — a cache
+*derived* from the data URL in the record, holding a `THREE.Texture` that must be `dispose()`d and a
+pixel buffer of megabytes, neither of which belongs in copy-on-write state. It downscales to
+`MAX_SAMPLE_DIM`, since even a 250×250 field needs only a handful of pixels per domino.
+`initImageMapPruning` defers freeing through `isDDObjectInUndoHistory`, like `colorMemory` and
+unlike `selectionStore`: undoing a field delete must bring its picture back. It iterates the union
+of `imageMaps` and `imageMapTargets`, because an element can hold a target set with no picture —
+the mode was switched on and nothing was ever loaded.
+
 ### The clipboard
 
 `clipboard/` is a **generic subsystem, not a domino feature** — domino colors are merely its
@@ -1353,7 +1754,7 @@ only the registry — which makes it the pattern to copy alongside `Scene.tsx` a
 - Drag state is component-local; only the finished rectangle reaches `createElement`. Escape
   mid-drag clears the start ref, which is also what makes the pending pointer-up a no-op.
 - **The rectangle-to-DDObject mapping is the type's own concern**, not the tool's: a type
-  declares `createFromRegion?(region: DDObjectBounds): Partial<T> | undefined` on its
+  declares `createFromRegion?(region: Bounds): Partial<T> | undefined` on its
   `DDObjectTypeDefinition`, resolved via `getDDObjectCreateFromRegion`. `undefined` means the
   region was too small/invalid, and the tool discards it exactly like a cancelled drag. This
   mapping has to be per-type because each type's model shapes position/size differently —
@@ -1713,6 +2114,27 @@ otherwise "correct" backwards:
   recording a single undo entry, and the only sub-mode whose *size* is a per-variant number rather
   than a shared one — "Medium" is a different reach for the pencil than for the quill, which testing
   established and a shared table would quietly undo.
+- **Image mapping exists now** (`image-map/` with its `patch-sample/`, plus `color-distance/` and
+  `dither/`, see *Image mapping*)
+  — the third route to a domino's colour, and the only one that chooses colours rather than being
+  told them. Two things about it are the current version's line rather than the design's: a
+  picture's **placement records no undo entry at all** (a mode-scoped stack is anticipated), and a
+  run **assumes unlimited dominoes of every colour**, ignoring the inventory's `available` counts.
+  Neither is an oversight to be quietly corrected — both are scoped decisions.
+- **Error diffusion exists now** (`floydSteinberg` and `atkinson`, see *The dither registry*), and
+  widening `DitherDefinition` to hold it is what turned a definition into a per-run object. The two
+  are registered together deliberately: they differ only in their table of weights, and having both
+  is what makes the trade between them — faithful on average versus keeping the extremes — a thing
+  that can be looked at rather than argued about, the same reasoning behind the two Dominant
+  samplers and the two perceptual metrics.
+- **A tonal-range pre-pass is the one thing still deliberately absent from the colour choice, and
+  it is wanted.** Stretching a picture's own range of light and dark onto the range the inventory
+  actually spans is the single biggest remaining improvement for photographs and paintings, and it
+  is **not** a metric: if the darkest active inventory colour is a mid-charcoal, every metric is
+  *correctly* reporting that nothing darker exists, and no change of formula can recover the
+  contrast. Don't try to solve it inside `color-distance/`. Note error diffusion narrows the gap
+  without closing it — it can suggest a tone between two the inventory holds, but not one outside
+  the range of every colour in it.
 - **Locked-colour mode existed and was deliberately removed.** A swatch could be locked
   (double-click, or its menu's `Lock`), after which *every* selection change repainted whatever it
   had just selected. It was a pre-brush stand-in for a brush, and once real brushes existed it was
@@ -1824,10 +2246,17 @@ touching when you are editing that code anyway.
 - **DDObject naming.** Any identifier — variable, parameter, prop, type, or function — that
   holds or means a DDObject (as opposed to an incidental JS object, e.g. three.js `Object3D`
   or a plain object literal) is named with the `ddObject`/`DDObject` convention: `ddObject` /
-  `ddObjects` for values, `DDObjectXxx` for types (`DDObjectBounds`, `DDObjectTypeDefinition`),
+  `ddObjects` for values, `DDObjectXxx` for types (`DDObjectId`, `DDObjectTypeDefinition`),
   and `xxxDDObjectXxx` for functions or props that operate on one (`updateDDObject`,
   `getDDObjectIcon`, `ddObjectId`). A bare `object` in this codebase should always mean
-  something that is *not* a DDObject; if it does mean one, rename it. The per-type union member
+  something that is *not* a DDObject; if it does mean one, rename it.
+  **The convention is about what a name *means*, not where it happens to be used.** A general
+  type that a DDObject accessor merely returns does not take the prefix — `Bounds`
+  ([types.ts](frontend/src/types.ts)) was once `DDObjectBounds` in `object-types/base.ts`, and
+  the name went wrong the moment the same four numbers started describing a rubber-band drag,
+  a region drawn to create an element with, and an image placed over a field, none of which is
+  a DDObject. The accessor keeps the prefix (`getDDObjectBounds`) because *it* is about a
+  DDObject; the rectangle it hands back does not. The per-type union member
   aliases carry the suffix too (`BuildPlaneDDObject`, `FieldElementDDObject`). Identifiers
   already unambiguous through an `Id`-typed-as-`DDObjectId` suffix (`rootId`, `parentId`) are
   exempt — don't force those to stutter.

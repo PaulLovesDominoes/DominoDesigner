@@ -1,5 +1,21 @@
 export type ScreenId = "dominoInventory" | "designer";
 
+/**
+ * An axis-aligned rectangle on the build plane, in mm, measured from the plane's
+ * lower-left origin.
+ *
+ * Deliberately not named for any one thing that has a rectangle. It started as a
+ * DDObject's own footprint — what the camera fits or frames — but the same four
+ * numbers describe a rubber-band drag, a region drawn to create an element with,
+ * and the placement of an image mapped over a field, none of which is a DDObject.
+ */
+export interface Bounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 // "newElement" is the single element-placement tool, whatever type is being
 // placed: *which* type that is lives beside it in the store (newElementType),
 // not in this union. So registering a placeable type adds nothing here — the

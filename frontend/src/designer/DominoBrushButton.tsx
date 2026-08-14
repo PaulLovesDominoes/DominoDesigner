@@ -46,7 +46,19 @@ const CARET_PX = 14;
  * the toolbar layout, not a fixed offset), a position:fixed menu and a
  * transparent full-viewport backdrop that closes it.
  */
-export default function DominoBrushButton({ brush }: { brush: DominoBrushDefinition }) {
+export default function DominoBrushButton({
+  brush,
+  disabled,
+}: {
+  brush: DominoBrushDefinition;
+  /**
+   * Switched off wholesale by image mapping mode, which owns the canvas for as
+   * long as it is on. Note this is a *different* thing from the brush being
+   * inert for want of a chosen colour, which is deliberately not a disabled
+   * state (see the doc above).
+   */
+  disabled?: boolean;
+}) {
   const brushId = brush.id as DominoBrushId;
 
   const dominoBrushId = useStore((s) => s.dominoBrushId);
@@ -100,6 +112,7 @@ export default function DominoBrushButton({ brush }: { brush: DominoBrushDefinit
             : `${toolbarStyles.iconBtn} ${toolbarStyles.iconBtnWithCaret}`
         }
         onClick={() => setOpen((o) => !o)}
+        disabled={disabled}
         // Both, because the control genuinely is both things: a mode that can be
         // on or off, and the trigger for a menu.
         aria-pressed={armed}

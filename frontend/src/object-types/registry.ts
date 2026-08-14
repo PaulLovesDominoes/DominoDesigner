@@ -2,13 +2,13 @@ import type { ComponentType } from "react";
 
 import type {
   AnyDDObjectTypeDefinition,
-  DDObjectBounds,
   DDObjectEditorProps,
   DDObjectId,
   DDObjectModellerProps,
   DominoExpansion,
   DominoRowCol,
 } from "./base";
+import type { Bounds } from "../types";
 import type { DominoColorClipboardItem } from "../dominoes/clipboardItem";
 import type { DominoSelectionEntry } from "../dominoes/selectionStore";
 import { buildPlaneDefinition, type BuildPlaneDDObject } from "./buildPlane/object-model";
@@ -62,9 +62,9 @@ export const getDDObjectModeller = (type: DDObjectType) =>
  * the registry's type erasure, same as getDDObjectEditor: indexing by a union
  * `type` otherwise intersects the per-type bounds params down to `never`.
  */
-export const getDDObjectBounds = (ddObject: DDObject): DDObjectBounds | undefined => {
+export const getDDObjectBounds = (ddObject: DDObject): Bounds | undefined => {
   const bounds = DD_OBJECT_TYPES[ddObject.type].bounds as
-    | ((ddObject: DDObject) => DDObjectBounds | undefined)
+    | ((ddObject: DDObject) => Bounds | undefined)
     | undefined;
   return bounds?.(ddObject);
 };
@@ -157,6 +157,22 @@ export const getSnapShapePoint = (
 };
 
 /**
+ * The build-plane point this DDObject's dominoes keep their positions against,
+ * or undefined when its type declares none — see `dominoLayoutAnchor`'s contract
+ * in base.ts. Callers fall back to the DDObject's bounds() corner;
+ * image-map/object-model.ts's imageOriginFor is the one place that does so, and
+ * every consumer of the image's coordinates goes through it.
+ */
+export const getDominoLayoutAnchor = (
+  ddObject: DDObject,
+): { x: number; y: number } | undefined => {
+  const fn = DD_OBJECT_TYPES[ddObject.type].dominoLayoutAnchor as
+    | ((ddObject: DDObject) => { x: number; y: number })
+    | undefined;
+  return fn?.(ddObject);
+};
+
+/**
  * This type's override of how copied domino colors land on it, or undefined —
  * which is the normal case, meaning "use the generic row/col paste". Resolved
  * by dominoes/rowColPaste.ts's resolveDominoColorPaste rather than called
@@ -188,10 +204,10 @@ export const getPasteDominoColorsOverride = (
  */
 export const applyDDObjectBounds = (
   ddObject: DDObject,
-  bounds: DDObjectBounds,
+  bounds: Bounds,
 ): Partial<DDObject> | undefined => {
   const setBounds = DD_OBJECT_TYPES[ddObject.type].setBounds as
-    | ((ddObject: DDObject, bounds: DDObjectBounds) => Partial<DDObject> | undefined)
+    | ((ddObject: DDObject, bounds: Bounds) => Partial<DDObject> | undefined)
     | undefined;
   return setBounds?.(ddObject, bounds);
 };
@@ -204,10 +220,10 @@ export const applyDDObjectBounds = (
  */
 export const getDDObjectCreateFromRegion = (
   type: DDObjectType,
-  region: DDObjectBounds,
+  region: Bounds,
 ): Partial<DDObject> | undefined => {
   const createFromRegion = DD_OBJECT_TYPES[type].createFromRegion as
-    | ((region: DDObjectBounds) => Partial<DDObject> | undefined)
+    | ((region: Bounds) => Partial<DDObject> | undefined)
     | undefined;
   return createFromRegion?.(region);
 };

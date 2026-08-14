@@ -3,11 +3,12 @@ import {
   RiCollapseDiagonalLine,
   RiContrastFill,
   RiExpandDiagonalLine,
+  RiImageLine,
   RiRectangleLine,
 } from "@remixicon/react";
 
 import { useStore } from "../store";
-import { getDominoExpansion } from "../object-types/registry";
+import { getDDObjectBounds, getDominoExpansion } from "../object-types/registry";
 import { SHAPE_SELECT_LIST, type ShapeSelectId } from "../shape-select/registry";
 import { DOMINO_BRUSH_LIST } from "../paint-brush/registry";
 import DominoBrushButton from "./DominoBrushButton";
@@ -33,6 +34,8 @@ export default function DominoEditingTools() {
   // Only so Rectangle can tell "no shape armed" from "the rectangle band is
   // what a drag actually does" — see its button below.
   const dominoBrushId = useStore((s) => s.dominoBrushId);
+  const imageMapActive = useStore((s) => s.imageMapActive);
+  const setImageMapActive = useStore((s) => s.setImageMapActive);
 
   if (!dominoEditingId) return null;
 
@@ -40,6 +43,16 @@ export default function DominoEditingTools() {
   // to answer, says they can't grow at all — a field with no spacing has nowhere
   // to expand into.
   const canExpand = !!ddObject && !!getDominoExpansion(ddObject);
+  // Image mapping is a mode of its own inside this one, and a picture is placed
+  // against the element's footprint, so a type reporting none can't have one.
+  const canMapImage = !!ddObject && !!getDDObjectBounds(ddObject);
+
+  // Everything except the image button itself is disabled while image mapping
+  // is on — disabled rather than hidden, so the user can see what the mode has
+  // switched off and where it comes back. It is the third mutually exclusive
+  // sub-mode alongside the armed shape and the armed brush, but unlike those two
+  // it takes the whole toolbar rather than only what a canvas drag does.
+  const off = imageMapActive;
 
   return (
     <>
@@ -61,6 +74,7 @@ export default function DominoEditingTools() {
         title="Select all dominoes (Ctrl+A)"
         aria-label="Select all dominoes"
         onClick={selectAllDominoes}
+        disabled={off}
       >
         <RiCheckboxMultipleLine size={20} />
       </button>
@@ -69,6 +83,7 @@ export default function DominoEditingTools() {
         title="Invert selection"
         aria-label="Invert selection"
         onClick={invertDominoSelection}
+        disabled={off}
       >
         <RiContrastFill size={20} />
       </button>
@@ -77,7 +92,29 @@ export default function DominoEditingTools() {
         Icon={dominoExpanded ? RiCollapseDiagonalLine : RiExpandDiagonalLine}
         active={dominoExpanded}
         onClick={toggleDominoExpanded}
+        // The one tool that stays live in image mapping mode. It is a view aid
+        // rather than something that edits dominoes, and it is genuinely useful
+        // there — lining a picture up against a grid is easier when the dominoes
+        // tile edge to edge. Safe because it changes only how big a domino is
+        // *drawn*: a mapping run measures each domino's patch from the type's own
+        // dominoExpansion rather than from this toggle, so what it paints is the
+        // same either way.
         disabled={!canExpand}
+      />
+
+      {/* Image mapping mode, immediately to the right of Expand. A fixed button
+          in the fixed group, so it keeps its place as shapes and brushes are
+          registered — same reasoning as the two commands above it.
+
+          It is a mode rather than a command, hence ToolButton and its
+          aria-pressed. Turning it on disarms the armed shape or brush, and
+          arming either of those turns it back off (see the three slices). */}
+      <ToolButton
+        label={imageMapActive ? "Leave image mapping" : "Map an image onto the dominoes"}
+        Icon={RiImageLine}
+        active={imageMapActive}
+        onClick={() => setImageMapActive(!imageMapActive)}
+        disabled={!canMapImage}
       />
 
       <span className={styles.separator} aria-hidden="true" />
@@ -95,11 +132,12 @@ export default function DominoEditingTools() {
           "rectangle armed" two encodings of one thing. Everything after it is
           registry-driven, so adding a shape needs no edit here.
 
-          Its highlight has to test the brush as well, and the reason is not
-          visible in the expression: a null dominoShapeSelectId means "no *shape*
-          armed", which stopped meaning "a drag draws the rectangle band" once
-          brushes existed — arming a brush sets that same field to null to keep
-          the two mutually exclusive. Without the second test, arming a brush lit
+          Its highlight has to test the brush and image mapping as well, and the
+          reason is not visible in the expression: a null dominoShapeSelectId
+          means "no *shape* armed", which stopped meaning "a drag draws the
+          rectangle band" once brushes existed — arming a brush sets that same
+          field to null to keep the two mutually exclusive, and entering image
+          mapping does the same. Without the other two tests, either would light
           this button up too, leaving two tools looking armed at once.
 
           It stays *enabled* while a brush is armed, though: clicking it is one
@@ -108,8 +146,9 @@ export default function DominoEditingTools() {
       <ToolButton
         label="Rectangle select"
         Icon={RiRectangleLine}
-        active={dominoShapeSelectId === null && dominoBrushId === null}
+        active={dominoShapeSelectId === null && dominoBrushId === null && !imageMapActive}
         onClick={() => setDominoShapeSelect(null)}
+        disabled={off}
       />
       {SHAPE_SELECT_LIST.map((shape) => (
         <ToolButton
@@ -118,6 +157,7 @@ export default function DominoEditingTools() {
           Icon={shape.icon}
           active={dominoShapeSelectId === shape.id}
           onClick={() => setDominoShapeSelect(shape.id as ShapeSelectId)}
+          disabled={off}
         />
       ))}
 
@@ -134,7 +174,7 @@ export default function DominoEditingTools() {
           them. When either group outgrows a flat row, the NewElementMenu-style
           popup swap is one file, since both are already registry-driven. */}
       {DOMINO_BRUSH_LIST.map((brush) => (
-        <DominoBrushButton key={brush.id} brush={brush} />
+        <DominoBrushButton key={brush.id} brush={brush} disabled={off} />
       ))}
     </>
   );

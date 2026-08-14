@@ -13,6 +13,7 @@ import {
   withoutHiddenColorId,
 } from "./object-model";
 import { resolveDominoExpansion } from "./expansion";
+import { resolveUnpaintedTopZ } from "../image-map/underlay";
 import { useStore } from "../store";
 
 /**
@@ -235,6 +236,12 @@ export function DominoModeller({
   const dominoExpanded = useStore((s) => s.dominoExpanded);
   const dominoEditingId = useStore((s) => s.dominoEditingId);
   const ddObject = useStore((s) => s.ddObjects[ddObjectId]);
+  // The two resolveUnpaintedTopZ reads beyond dominoEditingId. Same reasoning as
+  // above: subscribe to the inputs, call the resolver in the effect. The image
+  // record is the store's own reference, not a computed object, so it is exempt
+  // from useShallow.
+  const imageMapActive = useStore((s) => s.imageMapActive);
+  const imageMap = useStore((s) => s.imageMaps[ddObjectId]);
 
   const capacity = data?.capacity ?? 0;
 
@@ -275,6 +282,13 @@ export function DominoModeller({
     const shiftX = (e.x1 - e.x0) / 2;
     const shiftY = (e.y1 - e.y0) / 2;
 
+    // Non-null while a picture is being shown *behind* the dominoes, in which
+    // case the ones with no colour yet are drawn short enough to disappear
+    // behind it — see image-map/underlay.ts, which is the only thing about
+    // images this shared drawing half knows.
+    const unpaintedTopZ = resolveUnpaintedTopZ(ddObjectId);
+    const unpaintedScaleZ = unpaintedTopZ === null ? 0 : unpaintedTopZ / DOMINO_SIZE.length;
+
     for (let i = 0; i < d.count; i++) {
       const x = d.positions[3 * i] + shiftX;
       const y = d.positions[3 * i + 1] + shiftY;
@@ -292,12 +306,22 @@ export function DominoModeller({
       const colorId = d.colorIds[i];
       const isHidden = isHiddenColorId(colorId);
 
+      // Exact equality is the whole test for "no colour yet" and needs no
+      // masking: a hidden domino's value is at least HIDDEN_COLOR_FLAG, so it
+      // can never equal 0 (see CLAUDE.md on the flag).
+      const squashed = unpaintedTopZ !== null && colorId === 0;
+      // Only the height changes. The camera is orthographic and top-down, so a
+      // squashed domino covers exactly the same pixels — all that moves is where
+      // it sits relative to the picture.
+      const dominoScaleZ = squashed ? unpaintedScaleZ : sz;
+      const dominoCentreZ = squashed ? unpaintedTopZ! / 2 : z;
+
       // makeScale/makeTranslation each reset the matrix, so this can't be two
       // make* calls — the scale has to be built first and then positioned. Note
       // the matrix is written at full size even when hidden: it's what the
       // raycaster reads, so collapsing it would make the domino unclickable
       // (see dominoFillMaterial).
-      scratchMatrix.makeScale(sx, sy, sz).setPosition(x, y, z);
+      scratchMatrix.makeScale(sx, sy, dominoScaleZ).setPosition(x, y, dominoCentreZ);
       mesh.setMatrixAt(i, scratchMatrix);
       aVisible.setX(i, isHidden ? 0 : 1);
 
@@ -305,13 +329,19 @@ export function DominoModeller({
       // over nothing is the sole way to see what you're about to unhide, and it
       // is equally the warning that a brush passing over is about to unhide and
       // paint it.
-      const outlineScale = isHidden && !isHighlighted ? NO_OUTLINE_SCALE : { x: sx, y: sy, z: sz };
+      const outlineScale =
+        isHidden && !isHighlighted ? NO_OUTLINE_SCALE : { x: sx, y: sy, z: dominoScaleZ };
       aScale.setXYZ(i, outlineScale.x, outlineScale.y, outlineScale.z);
       // The outline alone takes the bias; the fill stays put, so a highlighted
       // domino is never drawn at a different height than its neighbours. A hover
       // box needs it as much as a selection box does: without it the neighbours
       // above and right win the depth tie and the box renders as an "L".
-      aOffset.setXYZ(i, x, y, isHighlighted ? z + SELECTED_OUTLINE_Z_BIAS : z);
+      aOffset.setXYZ(
+        i,
+        x,
+        y,
+        isHighlighted ? dominoCentreZ + SELECTED_OUTLINE_Z_BIAS : dominoCentreZ,
+      );
       // colorIds[i] is a live reference into the inventory (0 = unpainted);
       // rgbById[...] is undefined for both the sentinel and a since-deleted
       // entry, so both cases share the same DEFAULT_DOMINO_COLOR fallback.
@@ -365,6 +395,11 @@ export function DominoModeller({
     dominoExpanded,
     dominoEditingId,
     ddObject,
+    // Likewise for resolveUnpaintedTopZ: without these, switching a picture
+    // between above and below (or showing and hiding it) would leave the
+    // unpainted dominoes at whatever height they were last drawn at.
+    imageMapActive,
+    imageMap,
   ]);
 
   if (capacity === 0) return null;

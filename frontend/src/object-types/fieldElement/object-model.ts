@@ -1,11 +1,8 @@
 import { RiGridFill } from "@remixicon/react";
 
 import { DOMINO_SIZE, type Position } from "../../dimensions";
-import type {
-  DDObjectBase,
-  DDObjectBounds,
-  DDObjectTypeDefinition,
-} from "../base";
+import type { DDObjectBase, DDObjectTypeDefinition } from "../base";
+import type { Bounds } from "../../types";
 import FieldElementEditor from "./editor";
 import FieldElementModeller from "./modeller";
 
@@ -420,6 +417,13 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
     };
   },
 
+  // The anchor is exactly the point this contract asks for: it is the field's
+  // original creation corner, it moves only under a whole-field translate, and
+  // every domino's position is derived from it (gridOriginWorld). So a picture
+  // placed relative to it keeps its registration with the grid through a resize
+  // from any edge, where one placed relative to position or bounds would not.
+  dominoLayoutAnchor: (field) => ({ x: field.anchorX, y: field.anchorY }),
+
   // The field's boundary rectangle — what CameraRig fits and frames to, what
   // SelectionTool draws its overlay/handles over and measures drags against,
   // and what CreateByRegionTool clamps a new region to. Note this is the box,
@@ -443,7 +447,7 @@ export const fieldElementDefinition: DDObjectTypeDefinition<FieldElementDDObject
   // position of the 0,0 domino and also the lower-left hand point of the original
   // bounding box, where the field will always start when created.
 
-  createFromRegion: (region: DDObjectBounds) => {
+  createFromRegion: (region: Bounds) => {
     const fitted = fitCountsThenSize({
       width: region.width,
       height: region.height,
