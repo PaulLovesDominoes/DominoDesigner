@@ -1,23 +1,13 @@
-import { useState } from "react";
-import {
-  RiBringToFront,
-  RiCursorLine,
-  RiEraserLine,
-  RiEyeLine,
-  RiEyeOffLine,
-  RiImageAddLine,
-  RiMagicLine,
-  RiSendToBack,
-} from "@remixicon/react";
+import { useMemo, useState } from "react";
+import { RiCloseLine, RiEraserLine, RiMagicLine } from "@remixicon/react";
 
 import { useStore } from "../store";
-import { getDDObjectBounds } from "../object-types/registry";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { COLOR_DISTANCE_LIST, type ColorDistanceId } from "../color-distance/registry";
 import { DITHER_LIST, type DitherId } from "../dither/registry";
+import { useDominoDataStore } from "../dominoes/store";
+import { makeDominoUnderImageTest } from "./coverage";
 import { PATCH_SAMPLE_LIST, type PatchSampleId } from "./patch-sample/registry";
-import { pickAndLoadImage } from "./assetStore";
-import { coverPlacement, imageOriginFor } from "./object-model";
 import styles from "./ImageMapPanel.module.css";
 
 /**
@@ -26,17 +16,35 @@ import styles from "./ImageMapPanel.module.css";
  * It lives in image-map/ with the rest of the feature rather than in designer/,
  * which is where the older panels happen to sit — the feature owns its own UI,
  * the way dominoes/ owns its modeller.
+ *
+ * **It is about choosing colours, and nothing else.** Loading a picture, moving
+ * it, hiding it, and setting its transparency and layer all used to live here
+ * too, in a little toolbar across the top. They moved to the toolbar's image
+ * menu when the picture stopped belonging to this mode — a picture is shown for
+ * tracing as often as for mapping, and those controls have to be reachable
+ * without opening this panel at all.
  */
 
 const GLYPH_PX = 18;
 
-/** A newly loaded picture starts fully opaque. */
-const INITIAL_OPACITY = 1;
+/** What the (?) beside the count explains. */
+const TARGETS_EXPLANATION =
+  "Image colors are only mapped to unassigned dominoes. Dominoes that already " +
+  "have a color are left untouched.";
+
+/** Raised on entry when the picture has no unassigned dominoes under it at all. */
+const ALL_COLORED_MESSAGE =
+  "Every domino under this picture already has a color, so image mapping has " +
+  "nothing to fill. Select some dominoes and clear them to unassigned first.";
+
+/** Raised on entry when the picture isn't over the element at all. */
+const NO_DOMINOES_MESSAGE =
+  "This picture isn't over any dominoes, so image mapping has nothing to fill. " +
+  "Use Resize and Move in the image menu to bring it over some dominoes.";
 
 export default function ImageMapPanel() {
   const dominoEditingId = useStore((s) => s.dominoEditingId);
   const imageMapActive = useStore((s) => s.imageMapActive);
-  const imageMapSelected = useStore((s) => s.imageMapSelected);
   const image = useStore((s) => (s.dominoEditingId ? s.imageMaps[s.dominoEditingId] : undefined));
   const ddObject = useStore((s) => (s.dominoEditingId ? s.ddObjects[s.dominoEditingId] : undefined));
   const colorDistanceId = useStore((s) => s.colorDistanceId);
@@ -45,152 +53,116 @@ export default function ImageMapPanel() {
   const ditherStrength = useStore((s) => s.ditherStrength);
   const colorMappingProgress = useStore((s) => s.colorMappingProgress);
   const imageMapMessage = useStore((s) => s.imageMapMessage);
-  const targetCount = useStore((s) =>
-    s.dominoEditingId ? (s.imageMapTargets[s.dominoEditingId]?.length ?? 0) : 0,
+  const targets = useStore((s) =>
+    s.dominoEditingId ? s.imageMapTargets[s.dominoEditingId] : undefined,
   );
+  const targetCount = targets?.length ?? 0;
+  const imageMapEntryWarning = useStore((s) => s.imageMapEntryWarning);
+  const [explaining, setExplaining] = useState(false);
 
-  const setImageMapSelected = useStore((s) => s.setImageMapSelected);
-  const setImageMap = useStore((s) => s.setImageMap);
-  const updateImageMap = useStore((s) => s.updateImageMap);
+  const setImageMapActive = useStore((s) => s.setImageMapActive);
   const setColorDistance = useStore((s) => s.setColorDistance);
   const setPatchSample = useStore((s) => s.setPatchSample);
   const setDither = useStore((s) => s.setDither);
   const setDitherStrength = useStore((s) => s.setDitherStrength);
-  const setImageMapMessage = useStore((s) => s.setImageMapMessage);
   const startColorMapping = useStore((s) => s.startColorMapping);
   const cancelColorMapping = useStore((s) => s.cancelColorMapping);
   const clearMappedColors = useStore((s) => s.clearMappedColors);
 
-  // Asked before a New Image replaces one already loaded. Owned here, mounted
-  // inline — ConfirmDialog is deliberately not store state.
-  const [confirmingReplace, setConfirmingReplace] = useState(false);
+  /**
+   * The dominoes under the picture, split by whether a run may colour them.
+   *
+   * `reachable` is what pressing Map Colors will fill — this session's target
+   * list narrowed to the ones the picture reaches. `skipped` is the rest of what
+   * is under the picture: dominoes that already had a colour when the mode was
+   * switched on and are therefore not on the list.
+   *
+   * Counted from the frozen target list rather than from the colours the
+   * dominoes currently hold, which matters: a run fills every target, so a live
+   * count would drop to nothing the moment one finished and read as though the
+   * tool had stopped working. This answers "what will the button do", which
+   * stays true for the whole session.
+   *
+   * That is also why the dependencies are enough. Inside this mode the ordinary
+   * domino tools are switched off and the element cannot be resized, so of the
+   * three things this reads only the picture can move — no subscription to the
+   * domino data's version is needed. (useDominoDataStore.get is a plain
+   * imperative read of the buffer, not a subscription.)
+   */
+  const { reachable, skipped } = useMemo(() => {
+    const none = { reachable: 0, skipped: 0 };
+    if (!dominoEditingId || !targets || !ddObject || !image) return none;
+    const data = useDominoDataStore.getState().get(dominoEditingId);
+    if (!data) return none;
+    const isUnderImage = makeDominoUnderImageTest(ddObject, image, data);
+    if (!isUnderImage) return none;
+
+    let reachable = 0;
+    let skipped = 0;
+    // Both lists run in ascending index order, so membership is a walk along
+    // `targets` rather than a lookup structure built per recount.
+    let t = 0;
+    for (let i = 0; i < data.count; i++) {
+      while (t < targets.length && targets[t] < i) t++;
+      const onTheList = t < targets.length && targets[t] === i;
+      if (!isUnderImage(i)) continue;
+      if (onTheList) reachable++;
+      else skipped++;
+    }
+    return { reachable, skipped };
+  }, [dominoEditingId, targets, ddObject, image]);
 
   if (!dominoEditingId || !imageMapActive) return null;
 
   const mapping = colorMappingProgress !== null;
 
-  /**
-   * Every control here except Select puts the handles away first. Clicking
-   * anything in the panel means the user has finished positioning, and leaving
-   * the handles up over a picture nobody is dragging only invites a stray click
-   * that moves it.
-   */
-  const deselectFirst = () => setImageMapSelected(false);
-
-  const loadImage = () => {
-    deselectFirst();
-    setImageMapMessage(null);
-    pickAndLoadImage(dominoEditingId)
-      .then((loaded) => {
-        if (!loaded) return;
-        const bounds = ddObject && getDDObjectBounds(ddObject);
-        const origin = ddObject && imageOriginFor(ddObject);
-        if (!bounds || !origin) return;
-        setImageMap(dominoEditingId, {
-          ...loaded,
-          ...coverPlacement(bounds, origin, loaded.naturalWidth, loaded.naturalHeight),
-          opacity: INITIAL_OPACITY,
-          visible: true,
-          // Under the painted dominoes by default: the point of the mode is to
-          // watch colours land against the picture, which needs them in front of
-          // it.
-          layer: "below",
-        });
-        setImageMapSelected(true);
-      })
-      .catch((error: Error) => setImageMapMessage(error.message));
-  };
-
-  const onNewImage = () => {
-    if (image) setConfirmingReplace(true);
-    else loadImage();
-  };
-
   return (
     <div className={styles.panel}>
-      <div className={styles.title}>Image</div>
-
-      <div className={styles.tools}>
+      {/* The title takes the spare width, which is what pushes the close button
+          to the right — the same arrangement HelpPanel's header uses. */}
+      <div className={styles.header}>
+        <div className={styles.title}>Map Image Colors</div>
         <button
-          className={styles.iconBtn}
-          onClick={onNewImage}
-          title="New"
-          aria-label="New Image"
+          className={styles.closeBtn}
+          onClick={() => setImageMapActive(false)}
+          title="Close"
+          aria-label="Close image mapping"
         >
-          <RiImageAddLine size={GLYPH_PX} />
-        </button>
-        <button
-          className={
-            imageMapSelected ? `${styles.iconBtn} ${styles.active}` : styles.iconBtn
-          }
-          onClick={() => setImageMapSelected(!imageMapSelected)}
-          disabled={!image}
-          aria-pressed={imageMapSelected}
-          title="Selects the image for moving or resizing"
-          aria-label="Selects the image for moving or resizing"
-        >
-          <RiCursorLine size={GLYPH_PX} />
-        </button>
-        <button
-          className={styles.iconBtn}
-          onClick={() => {
-            deselectFirst();
-            updateImageMap(dominoEditingId, {
-              layer: image?.layer === "above" ? "below" : "above",
-            });
-          }}
-          disabled={!image}
-          title={
-            image?.layer === "above"
-              ? "The image is above every domino. Click to put it behind the colored ones."
-              : "The image is behind the colored dominoes. Click to put it above every domino."
-          }
-          aria-label={image?.layer === "above" ? "Image is above" : "Image is below"}
-        >
-          {image?.layer === "above" ? (
-            <RiBringToFront size={GLYPH_PX} />
-          ) : (
-            <RiSendToBack size={GLYPH_PX} />
-          )}
-        </button>
-        <button
-          className={styles.iconBtn}
-          onClick={() => {
-            deselectFirst();
-            updateImageMap(dominoEditingId, { visible: !image?.visible });
-          }}
-          disabled={!image}
-          aria-pressed={!image?.visible}
-          title={image?.visible ? "Hide the image" : "Show the image"}
-          aria-label={image?.visible ? "Hide the image" : "Show the image"}
-        >
-          {image?.visible ? <RiEyeLine size={GLYPH_PX} /> : <RiEyeOffLine size={GLYPH_PX} />}
+          <RiCloseLine size={GLYPH_PX} />
         </button>
       </div>
 
-      {image && <div className={styles.fileName}>{image.fileName}</div>}
-
-      <div className={styles.row}>
-        <div className={styles.rowLabel}>
-          <span>Transparency</span>
-          <span>{image ? `${Math.round((1 - image.opacity) * 100)}%` : "—"}</span>
+      {/* The name is truncated with an ellipsis when it doesn't fit, so it needs
+          a way to be read in full. A plain browser tooltip rather than
+          FloatingTip: this is one static string, and the sidebar clipping that
+          FloatingTip exists to escape doesn't apply to a native tooltip. */}
+      {image && (
+        <div className={styles.fileName} title={image.fileName}>
+          {image.fileName}
         </div>
-        {/* Expressed as transparency to match the label, so the slider reads
-            left-to-right as more see-through; opacity is what gets stored. */}
-        <input
-          className={styles.slider}
-          type="range"
-          min={0}
-          max={100}
-          value={image ? Math.round((1 - image.opacity) * 100) : 0}
-          disabled={!image}
-          onChange={(e) => {
-            deselectFirst();
-            updateImageMap(dominoEditingId, { opacity: 1 - Number(e.target.value) / 100 });
-          }}
-          aria-label="Image transparency"
-        />
-      </div>
+      )}
+
+      {/* How many dominoes the button will fill, shown only when that is fewer
+          than the picture covers — which is exactly when the number is worth
+          saying. Over a field with nothing colored in yet it would only restate
+          what the user can see, and the (?) beside it would answer a question
+          nobody had. It appears the moment some of the dominoes under the
+          picture are ones a run will leave alone. */}
+      {image && skipped > 0 && (
+        <div className={styles.targetCount}>
+          <span>
+            {reachable} Unassigned Domino{reachable === 1 ? "" : "es"}
+          </span>
+          <button
+            className={styles.helpBtn}
+            onClick={() => { setExplaining(true); }}
+            title="More information"
+            aria-label="Why this number"
+          >
+            ?
+          </button>
+        </div>
+      )}
 
       {/* Sampling comes first because it is about reading the picture, where the
           two below it are about choosing a color from what was read. */}
@@ -201,10 +173,7 @@ export default function ImageMapPanel() {
         <select
           className={styles.select}
           value={patchSampleId}
-          onChange={(e) => {
-            deselectFirst();
-            setPatchSample(e.target.value as PatchSampleId);
-          }}
+          onChange={(e) => { setPatchSample(e.target.value as PatchSampleId); }}
           aria-label="How each domino's patch of the picture is read"
         >
           {PATCH_SAMPLE_LIST.map((patchSample) => (
@@ -223,10 +192,7 @@ export default function ImageMapPanel() {
         <select
           className={styles.select}
           value={colorDistanceId}
-          onChange={(e) => {
-            deselectFirst();
-            setColorDistance(e.target.value as ColorDistanceId);
-          }}
+          onChange={(e) => { setColorDistance(e.target.value as ColorDistanceId); }}
           aria-label="How to choose the nearest inventory color"
         >
           {COLOR_DISTANCE_LIST.map((metric) => (
@@ -247,10 +213,7 @@ export default function ImageMapPanel() {
         <select
           className={styles.select}
           value={ditherId}
-          onChange={(e) => {
-            deselectFirst();
-            setDither(e.target.value as DitherId);
-          }}
+          onChange={(e) => { setDither(e.target.value as DitherId); }}
           aria-label="Pattern used to break up color banding"
         >
           {DITHER_LIST.map((dither) => (
@@ -278,10 +241,7 @@ export default function ImageMapPanel() {
           max={100}
           value={Math.round(ditherStrength * 100)}
           disabled={ditherId === "none"}
-          onChange={(e) => {
-            deselectFirst();
-            setDitherStrength(Number(e.target.value) / 100);
-          }}
+          onChange={(e) => { setDitherStrength(Number(e.target.value) / 100); }}
           aria-label="How strongly the dither is applied"
         />
       </div>
@@ -289,10 +249,7 @@ export default function ImageMapPanel() {
       <div className={styles.actions}>
         <button
           className={styles.mapBtn}
-          onClick={() => {
-            deselectFirst();
-            startColorMapping();
-          }}
+          onClick={() => { startColorMapping(); }}
           disabled={!image || mapping}
           title="Give each domino this mode may color the nearest inventory color to the image"
         >
@@ -301,10 +258,7 @@ export default function ImageMapPanel() {
         </button>
         <button
           className={styles.clearBtn}
-          onClick={() => {
-            deselectFirst();
-            clearMappedColors();
-          }}
+          onClick={() => { clearMappedColors(); }}
           disabled={mapping || targetCount === 0}
           title="Put every domino this mode may color back to unassigned"
         >
@@ -329,16 +283,29 @@ export default function ImageMapPanel() {
 
       {imageMapMessage && <div className={styles.message}>{imageMapMessage}</div>}
 
-      {confirmingReplace && (
+      {/* Both of these only have something to say, so they are the
+          acknowledge-only shape of ConfirmDialog — one button, which is also
+          what Escape and the scrim do.
+
+          Closing this one leaves the mode rather than dropping the user into a
+          panel whose every control is pointless: whatever they do next has to
+          start with getting out of here, since the target list is fixed for as
+          long as the mode is on. Leaving is also how they fix it — coming back
+          takes a fresh list. */}
+      {imageMapEntryWarning !== "none" && (
         <ConfirmDialog
-          message="This element already has an image. Loading a new one replaces it."
-          confirmLabel="Choose a new image"
-          cancelLabel="Keep the current image"
-          onConfirm={() => {
-            setConfirmingReplace(false);
-            loadImage();
-          }}
-          onCancel={() => setConfirmingReplace(false)}
+          message={
+            imageMapEntryWarning === "no-dominoes" ? NO_DOMINOES_MESSAGE : ALL_COLORED_MESSAGE
+          }
+          cancelLabel="Close Image Mapping"
+          onCancel={() => { setImageMapActive(false); }}
+        />
+      )}
+      {explaining && (
+        <ConfirmDialog
+          message={TARGETS_EXPLANATION}
+          cancelLabel="Close"
+          onCancel={() => { setExplaining(false); }}
         />
       )}
     </div>

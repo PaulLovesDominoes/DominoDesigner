@@ -23,10 +23,17 @@ import {
   getPatchSample,
   type PatchSampleId,
 } from "./patch-sample/registry";
-import { disposeImageAsset, getImageAsset } from "./assetStore";
+import { getImageAsset } from "./assetStore";
+import { makeDominoUnderImageTest } from "./coverage";
 import { resolveDitherAmplitude } from "./ditherAmplitude";
 import { createColorMappingJob, type ColorMappingJob } from "./mapping";
-import type { DominoImageMap, ImageMapLayer } from "./object-model";
+// A value import, unlike the type-only one it replaces. Safe: object-model
+// already sits in this module's runtime dependencies through mapping.ts.
+import {
+  imageMapRecordsEqual,
+  type DominoImageMap,
+  type ImageMapLayer,
+} from "./object-model";
 
 /**
  * Image mapping mode: the picture laid over each element, the mode's own view
@@ -62,22 +69,47 @@ const NO_TARGETS_MESSAGE =
   "is nothing to map. Leave image mapping, unassign the dominoes you want filled " +
   "in, then switch it back on.";
 
+/**
+ * What was wrong, if anything, when image mapping was switched on.
+ *
+ * "no-dominoes" and "all-colored" are told apart deliberately: they need
+ * different advice, and telling a user their dominoes are all coloured when the
+ * picture is simply parked off to one side would send them looking in the wrong
+ * place.
+ */
+export type ImageMapEntryWarning = "none" | "no-dominoes" | "all-colored";
+
 export interface ImageMapSlice {
   /** At most one picture per element, keyed by the element's id. */
   imageMaps: Record<DDObjectId, DominoImageMap>;
 
   /**
-   * Whether image mapping mode is on. It is a sub-mode *within* domino editing
-   * mode — deliberately not a ToolId, for the same reason the armed shape and
-   * the armed brush are not: `activeTool` is already held by "editDominoes" for
-   * the whole mode, and this is one of three mutually exclusive choices inside
-   * it. View state, never document state, never undoable; cleared on leaving the
-   * mode.
+   * Whether the colour-mapping sidebar is on. It is a sub-mode *within* domino
+   * editing mode — deliberately not a ToolId, for the same reason the armed
+   * shape and the armed brush are not: `activeTool` is already held by
+   * "editDominoes" for the whole mode. View state, never document state, never
+   * undoable; cleared on leaving the mode.
+   *
+   * Note this says nothing about whether the picture is *drawn*. It used to: the
+   * overlay only existed inside this mode, which made tracing a logo with the
+   * shape and brush tools impossible, since showing the picture meant giving up
+   * every tool that could trace it. The picture is now an ordinary overlay of
+   * domino editing mode (see modeller.tsx and underlay.ts), and this flag means
+   * only "the Map Image Colors panel is up".
    */
   imageMapActive: boolean;
 
-  /** Whether the picture is showing its move/resize handles. */
-  imageMapSelected: boolean;
+  /**
+   * Whether Resize and Move is on — the sub-mode that puts handles on the
+   * picture and hands canvas drags to ImageTransformTool.
+   *
+   * It is reached only from the toolbar's image menu. There is deliberately no
+   * way to select the picture by clicking it, which is what let the tool's
+   * click-away-to-deselect plane be deleted: that plane and DominoEditor's own
+   * both covered the whole canvas at the same height, so only a mode keeping
+   * them apart stopped them fighting over the same press.
+   */
+  imageTransformActive: boolean;
 
   /** Which metric the Map Colors button will use. */
   colorDistanceId: ColorDistanceId;
@@ -118,8 +150,34 @@ export interface ImageMapSlice {
   /** Something to tell the user in the panel — a failed load, or a metric with no colours. */
   imageMapMessage: string | null;
 
+  /**
+   * Whether switching image mapping on found anything for a run to do, and if
+   * not, why — the panel raises a dialog saying so.
+   *
+   * Worth stopping the user for, because neither answer is visible on the
+   * screen: a field of coloured dominoes looks perfectly mappable, and nothing
+   * about the picture is wrong. Without this the first sign of trouble is
+   * pressing Map Colors and watching nothing happen.
+   *
+   * Decided once, on entry, and only on entry. It is deliberately not recomputed
+   * as the picture is dragged about — a modal appearing in the middle of a drag
+   * would be its own kind of awful, and the count in the panel already tracks
+   * that live.
+   *
+   * It needs no action of its own to clear it, because closing the dialog leaves
+   * the mode: every control in the panel is pointless with nothing to map, and
+   * leaving is the fix in both cases, since coming back takes a fresh target
+   * list. setImageMapActive writes this on the way in and on the way out alike.
+   */
+  imageMapEntryWarning: ImageMapEntryWarning;
+
   setImageMapActive(active: boolean): void;
-  setImageMapSelected(selected: boolean): void;
+  /**
+   * Turns Resize and Move on or off. Turning it on also shows the picture, since
+   * there is no positioning something you cannot see — safe to fold in here
+   * because `visible` is a view toggle that records no undo entry.
+   */
+  setImageTransformActive(active: boolean): void;
   setImageMap(ddObjectId: DDObjectId, image: DominoImageMap): void;
   updateImageMap(ddObjectId: DDObjectId, patch: Partial<DominoImageMap>): void;
   clearImageMap(ddObjectId: DDObjectId): void;
@@ -130,6 +188,50 @@ export interface ImageMapSlice {
    * editing, or the element being deleted for good.
    */
   discardImageMapSession(ddObjectId: DDObjectId): void;
+  /**
+   * Records a change to an element's picture as one undo entry: `before` and
+   * `after` are the whole record either side, or null where there was no picture.
+   * So an add, a delete, a replacement and a finished move/resize are all this
+   * one call.
+   *
+   * It only *records*. The change itself goes in separately through setImageMap
+   * or clearImageMap — the same split SelectionTool makes, and what lets
+   * undo/redo and discardImageMapSession reuse those without pushing operations
+   * of their own.
+   *
+   * **Call this BEFORE applying a change that drops or replaces a picture, not
+   * after.** That is backwards from every other commit point in the app, and it
+   * is not a style choice. initImageMapPruning frees any decoded picture nothing
+   * points at, it runs synchronously on every store write, and an operation on
+   * the undo stack is one of the two things that counts as pointing at one. So
+   * clearing the record first leaves a gap — one store write long — in which the
+   * old picture is referenced by nothing at all, and the pruner takes that
+   * moment to throw its pixels away. The operation then lands naming a picture
+   * that no longer exists, and undoing it restores a record with nothing to
+   * draw. Recording first means the two never both let go at once.
+   *
+   * A plain move or resize is exempt and records afterwards, as SelectionTool
+   * does: both sides name the same picture, which is live throughout.
+   *
+   * Pushes nothing when nothing actually changed, so a drag that ends where it
+   * began leaves the stack alone.
+   */
+  recordImageMapChange(
+    ddObjectId: DDObjectId,
+    before: DominoImageMap | null,
+    after: DominoImageMap | null,
+  ): void;
+  /**
+   * Shows or hides the picture — the toolbar image button and Ctrl+I both.
+   *
+   * Hiding also leaves Resize and Move, the mirror of setImageTransformActive
+   * showing the picture on the way in: handles floating over nothing are no use
+   * to anyone, and the alternative would be refusing to hide, which is worse for
+   * a key people press without looking.
+   *
+   * Records nothing. Showing and hiding is a glance, like the Expand toggle.
+   */
+  toggleImageVisible(ddObjectId: DDObjectId): void;
   setImageMapLayer(ddObjectId: DDObjectId, layer: ImageMapLayer): void;
   setColorDistance(id: ColorDistanceId): void;
   setPatchSample(id: PatchSampleId): void;
@@ -274,7 +376,7 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
   return {
     imageMaps: {},
     imageMapActive: false,
-    imageMapSelected: false,
+    imageTransformActive: false,
     colorDistanceId: DEFAULT_COLOR_DISTANCE,
     patchSampleId: DEFAULT_PATCH_SAMPLE,
     ditherId: DEFAULT_DITHER,
@@ -282,6 +384,7 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
     colorMappingProgress: null,
     imageMapTargets: {},
     imageMapMessage: null,
+    imageMapEntryWarning: "none",
 
     // Turning image mapping on disarms the other two sub-modes, and they disarm
     // it in turn (see the shape-select and paint-brush slices) — a cross-slice
@@ -302,29 +405,79 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
       // domino's value is at least HIDDEN_COLOR_FLAG and a painted one is a small
       // numericId, so neither can be mistaken for unassigned.
       let imageMapTargets = get().imageMapTargets;
+      // The same pass also answers "will this achieve anything at all", which is
+      // worth knowing before the user presses the button rather than after. Both
+      // counts are of dominoes *the picture reaches*: a field can be mostly blank
+      // and still have nothing to map, if the picture only covers the part that
+      // has already been coloured in.
+      let imageMapEntryWarning: ImageMapEntryWarning = "none";
       if (imageMapActive && parentId) {
         const data = useDominoDataStore.getState().get(parentId);
+        const ddObject = get().ddObjects[parentId];
+        const image = get().imageMaps[parentId];
         const targets: number[] = [];
+        let underImage = 0;
+        let unassignedUnderImage = 0;
         if (data) {
+          // Undefined when there is no picture yet, or nowhere to put one. Then
+          // there is nothing to warn about — the panel's Map Colors button is
+          // already disabled without a picture.
+          const isUnderImage =
+            ddObject && image
+              ? makeDominoUnderImageTest(ddObject, image, data)
+              : undefined;
           for (let i = 0; i < data.count; i++) {
-            if (data.colorIds[i] === 0) targets.push(i);
+            const unassigned = data.colorIds[i] === 0;
+            if (unassigned) targets.push(i);
+            if (!isUnderImage || !isUnderImage(i)) continue;
+            underImage++;
+            if (unassigned) unassignedUnderImage++;
+          }
+          if (isUnderImage && unassignedUnderImage === 0) {
+            imageMapEntryWarning = underImage === 0 ? "no-dominoes" : "all-colored";
           }
         }
         imageMapTargets = { ...imageMapTargets, [parentId]: Uint32Array.from(targets) };
       }
 
+      // Note imageTransformActive is deliberately left alone, unlike the shape
+      // and the brush. Those two interpret canvas drags and so cannot share the
+      // canvas with anything; the mapping panel interprets nothing, and nudging
+      // the picture while it is up is exactly what a user wants to do.
       set({
         imageMapActive,
-        imageMapSelected: false,
         imageMapMessage: null,
         imageMapTargets,
+        imageMapEntryWarning,
         dominoShapeSelectId: null,
         dominoShapeSelectHint: null,
         dominoBrushId: null,
       });
     },
 
-    setImageMapSelected: (imageMapSelected) => set({ imageMapSelected }),
+    setImageTransformActive: (imageTransformActive) => {
+      const s = get();
+      const parentId = s.dominoEditingId;
+      // Entering the mode shows the picture: there is no positioning something
+      // that isn't on screen, and a user who picked Resize and Move off the menu
+      // has said plainly that they want to see it.
+      if (imageTransformActive && parentId && s.imageMaps[parentId]?.visible === false) {
+        s.updateImageMap(parentId, { visible: true });
+      }
+      if (!imageTransformActive) {
+        set({ imageTransformActive });
+        return;
+      }
+      // Arming this takes canvas drags away from an armed shape or brush — the
+      // same radio semantics those two already have with each other, and for the
+      // same reason: only one thing can own a press.
+      set({
+        imageTransformActive,
+        dominoShapeSelectId: null,
+        dominoShapeSelectHint: null,
+        dominoBrushId: null,
+      });
+    },
 
     setImageMap: (ddObjectId, image) =>
       set((s) => ({ imageMaps: { ...s.imageMaps, [ddObjectId]: image } })),
@@ -339,14 +492,40 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
     // The target set deliberately stays. It belongs to this run of the mode, not
     // to the picture — load another image and the same dominoes are still the
     // ones on offer to fill.
+    //
+    // Nothing is disposed here, deliberately. Deleting a picture is undoable
+    // now, so freeing its decoded pixels on the spot would mean Ctrl+Z brought
+    // back a record with nothing left to draw. initImageMapPruning in
+    // assetStore.ts is the single owner of freeing, and it waits until no undo
+    // entry could bring the picture back.
     clearImageMap: (ddObjectId) => {
-      disposeImageAsset(ddObjectId);
       set((s) => {
         if (!s.imageMaps[ddObjectId]) return {};
         const imageMaps = { ...s.imageMaps };
         delete imageMaps[ddObjectId];
-        return { imageMaps, imageMapSelected: false };
+        return { imageMaps, imageTransformActive: false };
       });
+    },
+
+    toggleImageVisible: (ddObjectId) => {
+      const s = get();
+      const image = s.imageMaps[ddObjectId];
+      if (!image) return;
+      const visible = !image.visible;
+      s.updateImageMap(ddObjectId, { visible });
+      if (!visible && s.imageTransformActive) set({ imageTransformActive: false });
+    },
+
+    recordImageMapChange: (ddObjectId, before, after) => {
+      if (imageMapRecordsEqual(before, after)) return;
+      set((s) => ({
+        ...pushOperation(s.undoStack, {
+          kind: "imageMap",
+          parentId: ddObjectId,
+          before,
+          after,
+        }),
+      }));
     },
 
     discardImageMapSession: (ddObjectId) => {
@@ -378,7 +557,7 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
 
       const ddObject = s.ddObjects[parentId];
       const image = s.imageMaps[parentId];
-      const asset = getImageAsset(parentId);
+      const asset = image && getImageAsset(image.assetId);
       const data = useDominoDataStore.getState().get(parentId);
       if (!ddObject || !image || !asset || !data) return;
 

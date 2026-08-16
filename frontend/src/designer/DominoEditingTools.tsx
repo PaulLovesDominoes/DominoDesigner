@@ -3,7 +3,6 @@ import {
   RiCollapseDiagonalLine,
   RiContrastFill,
   RiExpandDiagonalLine,
-  RiImageLine,
   RiRectangleLine,
 } from "@remixicon/react";
 
@@ -11,6 +10,7 @@ import { useStore } from "../store";
 import { getDDObjectBounds, getDominoExpansion } from "../object-types/registry";
 import { SHAPE_SELECT_LIST, type ShapeSelectId } from "../shape-select/registry";
 import { DOMINO_BRUSH_LIST } from "../paint-brush/registry";
+import ImageOverlayButton from "../image-map/ImageOverlayButton";
 import DominoBrushButton from "./DominoBrushButton";
 import ToolButton from "./ToolButton";
 import styles from "./Toolbar.module.css";
@@ -35,7 +35,9 @@ export default function DominoEditingTools() {
   // what a drag actually does" — see its button below.
   const dominoBrushId = useStore((s) => s.dominoBrushId);
   const imageMapActive = useStore((s) => s.imageMapActive);
-  const setImageMapActive = useStore((s) => s.setImageMapActive);
+  // Resize and Move, the other thing that can own a canvas drag. Read only so
+  // Rectangle can tell whether it is the gesture a drag currently draws.
+  const imageTransformActive = useStore((s) => s.imageTransformActive);
 
   if (!dominoEditingId) return null;
 
@@ -43,15 +45,18 @@ export default function DominoEditingTools() {
   // to answer, says they can't grow at all — a field with no spacing has nowhere
   // to expand into.
   const canExpand = !!ddObject && !!getDominoExpansion(ddObject);
-  // Image mapping is a mode of its own inside this one, and a picture is placed
-  // against the element's footprint, so a type reporting none can't have one.
-  const canMapImage = !!ddObject && !!getDDObjectBounds(ddObject);
+  // A picture is placed against the element's footprint, so a type reporting
+  // none can't have one at all.
+  const canHoldImage = !!ddObject && !!getDDObjectBounds(ddObject);
 
-  // Everything except the image button itself is disabled while image mapping
-  // is on — disabled rather than hidden, so the user can see what the mode has
-  // switched off and where it comes back. It is the third mutually exclusive
-  // sub-mode alongside the armed shape and the armed brush, but unlike those two
-  // it takes the whole toolbar rather than only what a canvas drag does.
+  // Everything except the image control is disabled while colours are being
+  // mapped — disabled rather than hidden, so the user can see what the mode has
+  // switched off and where it comes back. Unlike an armed shape or brush, that
+  // mode takes the whole toolbar rather than only what a canvas drag does.
+  //
+  // Note this is *not* about a picture being on screen. Showing one leaves
+  // everything here working, which is the whole point of being able to trace
+  // over it; only the mapping mode switches things off.
   const off = imageMapActive;
 
   return (
@@ -102,20 +107,18 @@ export default function DominoEditingTools() {
         disabled={!canExpand}
       />
 
-      {/* Image mapping mode, immediately to the right of Expand. A fixed button
-          in the fixed group, so it keeps its place as shapes and brushes are
-          registered — same reasoning as the two commands above it.
+      {/* The picture, immediately to the right of Expand. A fixed control in the
+          fixed group, so it keeps its place as shapes and brushes are registered
+          — same reasoning as the two commands above it.
 
-          It is a mode rather than a command, hence ToolButton and its
-          aria-pressed. Turning it on disarms the armed shape or brush, and
-          arming either of those turns it back off (see the three slices). */}
-      <ToolButton
-        label={imageMapActive ? "Leave image mapping" : "Map an image onto the dominoes"}
-        Icon={RiImageLine}
-        active={imageMapActive}
-        onClick={() => setImageMapActive(!imageMapActive)}
-        disabled={!canMapImage}
-      />
+          A button plus its own menu rather than a ToolButton, because a picture
+          is no longer one mode to switch on and off. Showing one is an ordinary
+          overlay that leaves every tool here working, which is what makes
+          tracing a logo possible; mapping its colours is a mode, and is one
+          entry in the menu. Like Expand it stays live in that mode, since the
+          transparency and layer controls are the ones a user reaches for most
+          while lining a picture up. */}
+      <ImageOverlayButton disabled={!canHoldImage} />
 
       <span className={styles.separator} aria-hidden="true" />
 
@@ -132,13 +135,13 @@ export default function DominoEditingTools() {
           "rectangle armed" two encodings of one thing. Everything after it is
           registry-driven, so adding a shape needs no edit here.
 
-          Its highlight has to test the brush and image mapping as well, and the
+          Its highlight has to test everything else that can own a drag, and the
           reason is not visible in the expression: a null dominoShapeSelectId
           means "no *shape* armed", which stopped meaning "a drag draws the
           rectangle band" once brushes existed — arming a brush sets that same
-          field to null to keep the two mutually exclusive, and entering image
-          mapping does the same. Without the other two tests, either would light
-          this button up too, leaving two tools looking armed at once.
+          field to null to keep the two mutually exclusive, and so do the two
+          image sub-modes. Without the other tests, any of them would light this
+          button up too, leaving two tools looking armed at once.
 
           It stays *enabled* while a brush is armed, though: clicking it is one
           of the two ways out of a brush (the other is Escape), since
@@ -146,7 +149,12 @@ export default function DominoEditingTools() {
       <ToolButton
         label="Rectangle select"
         Icon={RiRectangleLine}
-        active={dominoShapeSelectId === null && dominoBrushId === null && !imageMapActive}
+        active={
+          dominoShapeSelectId === null &&
+          dominoBrushId === null &&
+          !imageMapActive &&
+          !imageTransformActive
+        }
         onClick={() => setDominoShapeSelect(null)}
         disabled={off}
       />

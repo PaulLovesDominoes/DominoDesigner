@@ -10,6 +10,14 @@ import {
 } from "../ddObjectOps";
 import { useDominoDataStore } from "../dominoes/store";
 import { syncDominoColorMemory } from "../dominoes/colorMemory";
+// Type-only, so TypeScript erases it and no import appears in the built
+// JavaScript at all — which is what keeps this module free of a value import
+// that could drag store.ts in through image-map/assetStore.ts.
+import type { DominoImageMap } from "../image-map/object-model";
+// A value import, unlike the one above — but a safe one. visibility.ts imports
+// nothing but a type, so it pulls no module into this one's runtime
+// dependencies and cannot open a path back to store.ts.
+import { imageMadeOnScreen, isImageOnScreen } from "../image-map/visibility";
 
 /**
  * Undo/redo: one unified stack over every DDObject-level and domino-color-level
@@ -44,6 +52,24 @@ import { syncDominoColorMemory } from "../dominoes/colorMemory";
  * Applying it reaches into useDominoDataStore rather than ddObjects, and
  * touches neither dominoEditingId nor the domino selection store, which is
  * what lets undo/redo work whether or not domino editing mode is active.
+ *
+ * "imageMap" is the picture laid over an element, and one variant covers all
+ * three things that can happen to one: a null `before` is a picture being added,
+ * a null `after` one being deleted, and two records set is either a move/resize
+ * or a replacement. Splitting those into separate kinds looks tidier and costs
+ * an extra kind for the replacement case, which is neither an add nor a delete
+ * but both at once.
+ *
+ * Note it covers the picture's *geometry* and its comings and goings, not
+ * hide/unhide, transparency or layer. Those three are view aids — Ctrl+I is a
+ * glance toggle, like Expand — and filling the undo stack with them would bury
+ * the edits a user actually wants back. The two cases that apply this kind do
+ * still *read* them, to make sure an undo is something the user can see; see
+ * revealBeforeApplying.
+ *
+ * These entries live only as long as the domino editing session that made them:
+ * exitDominoEditing filters them off both stacks, since a picture is only ever
+ * drawn inside that mode. See the comment there.
  */
 export type Operation =
   | { kind: "create"; ddObject: DDObject; parentId: DDObjectId }
@@ -56,6 +82,14 @@ export type Operation =
       indices: Uint32Array;
       before: Uint32Array;
       after: Uint32Array;
+    }
+  | {
+      kind: "imageMap";
+      parentId: DDObjectId;
+      /** The element's picture before, or null if it had none. */
+      before: DominoImageMap | null;
+      /** The picture after, or null if it was deleted. */
+      after: DominoImageMap | null;
     };
 
 // Undo entries are capped so a long session can't grow the stack unbounded.
@@ -64,6 +98,54 @@ const HISTORY_LIMIT = 100;
 /** Push a new operation and clear the redo stack, per standard undo/redo semantics. */
 export function pushOperation(undoStack: Operation[], op: Operation) {
   return { undoStack: [...undoStack, op].slice(-HISTORY_LIMIT), redoStack: [] as Operation[] };
+}
+
+/**
+ * The imageMaps table with one element's picture set to `image`, or with that
+ * element's entry taken out when `image` is null. Shared by undo and redo, which
+ * differ only in which side of the operation they put back.
+ *
+ * A picture being put back is forced on screen. Without that, undoing the delete
+ * of a picture the user had hidden would restore it still hidden — a Ctrl+Z with
+ * no visible effect at all, which is the thing these two cases exist to prevent.
+ * Nothing is lost by it: neither hiding nor transparency is undoable in the first
+ * place, so there is no earlier state of them for this to contradict.
+ */
+function imageMapsWith(
+  imageMaps: Record<DDObjectId, DominoImageMap>,
+  parentId: DDObjectId,
+  image: DominoImageMap | null,
+): Record<DDObjectId, DominoImageMap> {
+  if (image) return { ...imageMaps, [parentId]: imageMadeOnScreen(image) };
+  if (!imageMaps[parentId]) return imageMaps;
+  const next = { ...imageMaps };
+  delete next[parentId];
+  return next;
+}
+
+/**
+ * The first half of "an image undo must always show the user something".
+ *
+ * If the element's picture is on the element but not on the screen — hidden, or
+ * wound to fully transparent — this brings it back into view and reports true,
+ * meaning *the press has been spent*. The caller must then leave the operation
+ * where it is: the next press applies it for real, now that its effect can be
+ * seen. One press, one visible change, which is the same rule the Escape ladder
+ * in domino editing mode follows.
+ *
+ * It covers a picture that is still there (add, then hide, then undo). The other
+ * half — a picture that has been deleted, so there is nothing here to reveal —
+ * is imageMapsWith's forcing above.
+ */
+function revealBeforeApplying(
+  imageMaps: Record<DDObjectId, DominoImageMap>,
+  parentId: DDObjectId,
+  set: (patch: { imageMaps: Record<DDObjectId, DominoImageMap> }) => void,
+): boolean {
+  const current = imageMaps[parentId];
+  if (!current || isImageOnScreen(current)) return false;
+  set({ imageMaps: { ...imageMaps, [parentId]: imageMadeOnScreen(current) } });
+  return true;
 }
 
 /**
@@ -101,6 +183,7 @@ export function operationReferencesId(op: Operation, id: DDObjectId): boolean {
     case "properties":
       return op.before.id === id || op.after.id === id;
     case "dominoColors":
+    case "imageMap":
       return op.parentId === id;
   }
 }
@@ -227,6 +310,25 @@ export const createHistorySlice: StateCreator<AppState, [], [], HistorySlice> = 
         set({ undoStack, redoStack });
         break;
       }
+      case "imageMap":
+        // A picture the user cannot see is brought into view first, and that
+        // press does nothing else — see revealBeforeApplying. The operation stays
+        // on the stack for the next one.
+        if (revealBeforeApplying(s.imageMaps, op.parentId, set)) break;
+        // A picture lives outside ddObjects, as colors do, so this leaves the
+        // hierarchy and the selection alone: putting one back has to work
+        // whether or not its element is being edited right now.
+        //
+        // Its decoded pixels are still in assetStore.ts, even for a picture that
+        // was deleted or replaced — nothing frees an asset while an operation on
+        // either stack still names it, which is exactly what makes this undo
+        // instant rather than having to decode the file again.
+        set({
+          imageMaps: imageMapsWith(s.imageMaps, op.parentId, op.before),
+          undoStack,
+          redoStack,
+        });
+        break;
     }
   },
 
@@ -284,6 +386,15 @@ export const createHistorySlice: StateCreator<AppState, [], [], HistorySlice> = 
         set({ undoStack, redoStack });
         break;
       }
+      case "imageMap":
+        // The mirror of undo's case: same reasoning, other side of the record.
+        if (revealBeforeApplying(s.imageMaps, op.parentId, set)) break;
+        set({
+          imageMaps: imageMapsWith(s.imageMaps, op.parentId, op.after),
+          undoStack,
+          redoStack,
+        });
+        break;
     }
   },
 

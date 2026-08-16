@@ -38,6 +38,17 @@
   cursor: pointer;
 }
 
+/* Splits the leading Close Image Mapping button off from Done/Cancel/Help, so a
+   sub-mode's exit doesn't read as one of the mode's own. Shorter than the
+   buttons either side, so the bar's fixed height is unaffected. Same rule as
+   Toolbar.module.css's separator. */
+.separator {
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--color-border);
+}
+
 .textBtn:hover {
   background: var(--color-chrome-2);
   border-color: var(--color-accent);

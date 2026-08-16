@@ -18,16 +18,24 @@ import { imageLayerZ, imageOriginFor } from "./object-model";
  * the scene is drawn in — done once here, and once more in ImageTransformTool,
  * from the same helper, so the picture drawn and the picture dragged are the
  * same rectangle.
+ *
+ * **The picture draws throughout domino editing mode, not only while colours are
+ * being mapped.** It used to be tied to image mapping mode, which made its best
+ * use impossible: a picture is tracing paper, and tracing it with the shape and
+ * brush tools needs those tools, which that mode switches off. So there is no
+ * imageMapActive test here — only "is this element being edited, and does it
+ * have a picture it is currently showing".
  */
 export default function ImageMapModeller() {
   const dominoEditingId = useStore((s) => s.dominoEditingId);
-  const imageMapActive = useStore((s) => s.imageMapActive);
   // The store's own stable references, not computed objects, so no useShallow.
   const image = useStore((s) => (s.dominoEditingId ? s.imageMaps[s.dominoEditingId] : undefined));
   const ddObject = useStore((s) => (s.dominoEditingId ? s.ddObjects[s.dominoEditingId] : undefined));
-  const asset = useImageAssetStore((s) => (dominoEditingId ? s.assets[dominoEditingId] : undefined));
+  // Keyed by the picture rather than by the element — see assetStore.ts for why
+  // that distinction is what makes undoing a replacement possible.
+  const asset = useImageAssetStore((s) => (image ? s.assets[image.assetId] : undefined));
 
-  if (!dominoEditingId || !imageMapActive || !image || !image.visible || !ddObject || !asset) {
+  if (!dominoEditingId || !image || !image.visible || !ddObject || !asset) {
     return null;
   }
   const origin = imageOriginFor(ddObject);

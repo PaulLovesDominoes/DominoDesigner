@@ -109,7 +109,7 @@ the one `AppState`. Five exist today:
 | `dominoes/appStoreSlice.ts` | the selected swatch and the shortcut buffer, every domino-colour write (including a paint stroke's), select-by-swatch, the Expand toggle, and domino editing mode's cancel snapshot |
 | `shape-select/appStoreSlice.ts` | which shape-select gesture is armed inside domino editing mode, and its hint text |
 | `paint-brush/appStoreSlice.ts` | which paint brush is armed inside domino editing mode, and each brush's chosen size |
-| `image-map/appStoreSlice.ts` | the picture laid over each element, image mapping mode's own view state, the chosen patch sampler, colour-distance metric and dither, which dominoes a mapping run may colour, and the run itself |
+| `image-map/appStoreSlice.ts` | the picture laid over each element, the two image sub-modes' view state, the chosen patch sampler, colour-distance metric and dither, which dominoes a mapping run may colour, whether entering mapping found anything to do, and the run itself |
 
 What's left in `store.ts` is the state that isn't any one feature's: screen/menu/help, the
 DDObject hierarchy and its actions, domino editing mode, the properties dialog, and the camera
@@ -537,19 +537,23 @@ Invert are raw `<button>`s while the modes and Expand are `ToolButton`s: `ToolBu
 `aria-pressed`, which is right for a toggle or a mode and wrong for a command — the same split
 `Toolbar.tsx` already makes between its zoom/undo buttons and the Select tool.
 
-While image mapping is on, **everything in this group except Expand and the image toggle itself is
+While **colour mapping** is on, **everything in this group except Expand and the image control is
 `disabled`** — disabled rather than hidden, unlike the Select/New swap above, so the user can see
-what the mode switched off and where it comes back. Expand's exemption is explained under *Image
-mapping*.
+what the mode switched off and where it comes back. Both exemptions are explained under *Image
+mapping*. Note this is not about a picture being on screen: showing one leaves every tool here
+working, which is the whole point of being able to trace over it.
+
+The image entry is `image-map/ImageOverlayButton`, a button plus its own menu rather than a
+`ToolButton` — a picture is no longer one thing to switch on and off (see *Image mapping*).
 
 **Both gesture groups grow as variants are registered**, which is why the fixed commands stay
 pinned at the front and everything that grows sits behind them. Rectangle stays first *within* its
 group because it is that group's null state. Its `active` test is the one thing in this file that
-isn't obvious: it must be `dominoShapeSelectId === null && dominoBrushId === null &&
-!imageMapActive`, because a null
-`dominoShapeSelectId` means "no *shape* armed" and stopped meaning "a drag draws the rectangle
-band" once a brush could own drags while leaving that field null, and image mapping does the same.
-Without the other two tests, arming either lit Rectangle up too and two tools looked armed at once.
+isn't obvious: it must test `dominoShapeSelectId === null && dominoBrushId === null &&
+!imageMapActive && !imageTransformActive`, because a null `dominoShapeSelectId` means "no *shape*
+armed" and stopped meaning "a drag draws the rectangle band" once a brush could own drags while
+leaving that field null — and the two image sub-modes do the same. Without the other tests, arming
+any of them lit Rectangle up too and two tools looked armed at once.
 
 **Expand** (`dominoExpanded` in `dominoes/appStoreSlice.ts`) draws every domino oversized so
 tightly-spaced ones are easier to hit. Four things about it are deliberate:
@@ -1270,23 +1274,114 @@ consumer. See *Hand-drawn icons* for the shared-viewBox rule those six drawings 
 
 ### Image mapping
 
-`image-map/` lays a picture over an element and gives every unpainted domino the nearest colour in
-the inventory. It is the third sub-mode inside domino editing mode, alongside an armed shape and an
-armed brush — but a **bigger** one: where those two only decide what a canvas drag does, this takes
-the whole mode. The toolbar's other buttons go `disabled` (not hidden, so the user can see what was
-switched off and where it comes back), the swatches go inert, and `DominoEditor` gives up its catch
-plane and its keyboard entirely, keeping only the mode outline.
+`image-map/` lays a picture over an element. It does **two jobs, and only one of them is a mode** —
+which is the distinction the whole folder is organised around, and the one a fresh session is most
+likely to collapse back.
 
-`imageMapActive` is **not a `ToolId`**, for exactly the reason `dominoShapeSelectId` and
+- **Showing a picture** is an ordinary overlay of domino editing mode. Every tool keeps working over
+  it. This is *tracing paper*: a sponsor's logo laid under the grid, drawn by hand with the shape
+  gestures and the paint brushes. It is switched on and off from the toolbar's image button, and it
+  is not a mode at all.
+- **Mapping its colours** (`imageMapActive`) is a mode. The toolbar's other buttons go `disabled`
+  (not hidden, so the user can see what was switched off and where it comes back), the swatches go
+  inert, and `DominoEditor` gives up its catch plane and its keyboard, keeping only the mode outline.
+
+**The two were one thing, and splitting them was the point of the change.** While the picture only
+existed inside the mapping mode, its best use was impossible: showing it meant giving up every tool
+that could trace it. If a future change re-ties drawing to `imageMapActive`, that capability goes
+with it. The display gates (`modeller.tsx`, `underlay.ts`) therefore test only "is this element
+being edited, and does it have a picture it is showing" — no mode is involved, deliberately.
+
+Third-party consequence worth knowing, since it looks like a bug the first time: `underlay.ts`
+squashes *unpainted* dominoes so a `"below"` picture draws in front of them, and that now happens
+during ordinary editing. It is only a matter of height — the footprint is untouched, so clicking,
+rubber-banding and shape-selecting reach a squashed domino exactly as before.
+
+There are now **two** image sub-modes, and they are not alike:
+
+| | What it is | Owns canvas drags? | Exclusive with |
+|---|---|---|---|
+| `imageMapActive` | the Map Image Colors sidebar | no | armed shape, armed brush |
+| `imageTransformActive` | Resize and Move — handles on the picture | **yes** | armed shape, armed brush |
+
+**They deliberately coexist with each other**, since nudging the picture while the mapping panel is
+up is exactly what a user wants. Neither is a `ToolId`, for the reason `dominoShapeSelectId` and
 `dominoBrushId` are not: `activeTool` is already held by `"editDominoes"` for the whole mode. The
-three-way exclusion is each slice's setter clearing the other two's fields — an importless
-cross-slice write, since `set` is typed against the whole `AppState`.
+exclusions are each slice's setter clearing the others' fields — an importless cross-slice write,
+since `set` is typed against the whole `AppState`.
 
-**Expand is the one tool left enabled**, and that is deliberate rather than an oversight. It
-changes only how big a domino is *drawn*, which helps line a picture up against the grid, and a
-mapping run reads the type's raw `dominoExpansion` rather than `resolveDominoExpansion` — so what a
-run paints is identical with the toggle on or off. Keep that split, or the toggle silently becomes
-a document-state control.
+**`imageTransformActive` is *entered* only from the menu, and that is load-bearing rather than a UI
+preference.** `ImageTransformTool` used to keep a canvas-wide plane up at all times, waiting for a
+click on the picture. `DominoEditor` has a plane of its own covering the same area at the same
+height, and whichever of two such planes sits nearer the camera swallows every press for both — so
+the two could never be mounted together, and that is the whole reason the picture could only be
+shown in a mode where dominoes could not be edited. With no click-to-enter this tool has nothing to
+listen for until the mode is already on, so the two simply take turns: `DominoEditor` mounts its
+plane unless either image sub-mode is on, `ImageTransformTool` mounts its own only while Resize and
+Move is. **Do not re-add clicking the picture to enter the mode.** It would bring the permanent
+plane back and undo the split.
+
+**Clicking *away* to leave is a different thing and is safe**, which is why it exists. That plane
+(`DISMISS_Z`, below the move plane and the grips) is mounted only for as long as the mode is, so it
+is never up at the same time as `DominoEditor`'s. It works only because `beginDrag` calls
+`e.stopPropagation()` — R3F hands a press to *every* mesh the ray passes through unless something
+stops it, so without that line a press on a grip would dismiss the mode as well.
+
+Entering Resize and Move also sets `visible: true` — there is no positioning what you cannot see,
+and `visible` records no undo entry so it costs nothing.
+
+**Expand is the one tool left enabled** while colours are being mapped, and that is deliberate
+rather than an oversight. It changes only how big a domino is *drawn*, which helps line a picture up
+against the grid, and a mapping run reads the type's raw `dominoExpansion` rather than
+`resolveDominoExpansion` — so what a run paints is identical with the toggle on or off. Keep that
+split, or the toggle silently becomes a document-state control. The image button is exempt too, but
+for a different reason: transparency and layer are the controls a user reaches for *most* while
+lining a picture up.
+
+#### The toolbar control and the sidebar
+
+`image-map/ImageOverlayButton.tsx` is the button plus its menu, sitting where the old
+image-mapping toggle sat (right of Expand, in `DominoEditingTools`'s fixed group). Points worth not
+reversing:
+
+- **Two buttons, not one.** The icon acts — load a picture, or show and hide the one already there —
+  and the caret opens the menu. They cannot nest, since `.iconBtn` is itself a `<button>`; they are
+  siblings sharing a wrapper, as `DominoColorPanel`'s swatch and caret are. `DominoBrushButton` has
+  one button because there the whole thing opens the menu.
+- **The popup is `role="group"`, not `role="menu"`.** A menu's children are supposed to be menu
+  items and the inline transparency slider is not one. The slider is also why the popup does not
+  close on every interaction — commands close it, the slider does not, which needs no special
+  handling since dragging inside the popup never reaches the backdrop.
+- **Only New Image is available with nothing loaded.** There is nothing else to do to a picture that
+  isn't there.
+- **Reset Size** is the only way back from an edge grip, which stretches the picture out of shape
+  (only a corner grip holds the proportions). It re-runs `coverPlacement` for the size and keeps the
+  picture's **centre**, not its stored `x`/`y` — that is the lower-left corner, so growing out of it
+  would shift the picture across the field, and "reset the size" should move nothing. It records
+  *after* applying, unlike the delete and replace paths, because the same picture is live on both
+  sides (see `recordImageMapChange`). It also brings the picture on screen, as entering Resize and
+  Move does — and **both sides of the recorded pair are built from that on-screen record**, not from
+  the record as it stands. Recording a hidden original against a visible result would push an entry
+  whose only real difference is visibility, and undoing it would appear to do nothing, since undo
+  forces any record it writes on screen. Comparing like with like also means a picture already at
+  this size records nothing whether it was hidden or not.
+- It claims **Escape in the capture phase while open**, so dismissing the menu never also runs
+  `DominoEditor`'s ladder or leaves Resize and Move. Same answer `DominoBrushButton` uses.
+- Its caret width override lives in `Toolbar.module.css` as `.iconBtnCaretOnly`, **not** in the
+  component's own module — the same bundle-order argument recorded at `.iconBtnWithCaret`.
+
+`ImageMapPanel` is correspondingly narrowed to *choosing colours*: its old four-button toolbar and
+its transparency slider moved to the menu, it is titled "Map Image Colors", and it carries an `[X]`
+that leaves the mode. `ModeHintBar` gains a matching `Close Image Mapping` button at its left, split
+off from Done/Cancel by a rule — without the separation the three read as equals and it is far too
+easy to press Cancel meaning "close this panel" and discard the whole session.
+
+`Ctrl+I` shows or hides the picture, or asks for one when the element has none. It lives in
+`DesignerScreen`'s single Ctrl-chord dispatcher like every other chord, gated on `dominoEditingId`
+*before* `preventDefault` so the browser keeps its own behaviour outside the mode. It tests
+`!e.shiftKey`, since `key` is lowercased there and Ctrl+Shift+I opens the developer tools, and it
+carries the typing guard the rest of that handler does without — unlike the other chords it can fire
+with the pointer in the mapping sidebar, which does hold form controls.
 
 #### Where the picture lives, and why it isn't the boundary box
 
@@ -1613,7 +1708,8 @@ Four consequences, each load-bearing:
   strand the previous result outside the new footprint. `clearMappedColors` (the panel's Clear) is
   the same write on its own.
 - **A domino's patch comes from `getDominoExpansion`**, the type's own statement of how much room
-  each domino owns. For a field that is half the spacing on each side, which makes the patch exactly
+  each domino owns, via `image-map/coverage.ts`'s `dominoPatchHalfExtents`. For a field that is half
+  the spacing on each side, which makes the patch exactly
   one pitch in each axis — note `thickness` goes with X and `width` with Y, matching `pitchX`/
   `pitchY`, which is the part that would be easy to get backwards. So the patches tile the grid
   exactly in millimetres and the whole scan visits each source pixel about once. (`resolvePatchBounds`
@@ -1625,33 +1721,138 @@ Four consequences, each load-bearing:
   centre is what stops a detailed picture turning into speckle; *how* it is read is the patch-sample
   registry's business, not this file's.
 
+**How many dominoes a run will fill is told to the user up front**, because neither reason it can be
+zero is visible on the screen: a field of coloured dominoes looks perfectly mappable, and a picture
+parked off to one side looks fine too. Without it the first sign of trouble was pressing Map Colors
+and watching nothing happen. Three parts:
+
+- `image-map/coverage.ts`'s `makeDominoUnderImageTest` builds the "does the picture reach this
+  domino" test once and then answers it in a few comparisons per domino. It shares
+  `dominoPatchHalfExtents` with `mapping.ts` **specifically so the count and the run cannot disagree
+  about what the picture covers** — a count that contradicted the button would be worse than none.
+  The **geometry is exact**, and it is worth knowing why rather than assuming it is approximate:
+  `resolvePatchBounds` decides a patch misses the picture *before* it rounds outward to whole
+  pixels, and that decision, with the mm-to-pixel factors cancelled, is literally this overlap test.
+  The rounding picks which pixels a reaching patch reads, never which dominoes it reaches.
+  **Transparency is the one thing this does not know about**, and it is not an edge effect: a
+  sampler returns null below `MIN_OPAQUE_FRACTION`, so artwork on a transparent background covers
+  far more dominoes by rectangle than a run actually colours. Closing that gap means summing alpha
+  over the whole pixel buffer, which is affordable once but not while the picture is being dragged —
+  hence a deliberate limit rather than an oversight.
+- `setImageMapActive(true)` counts as it walks the dominoes to build `imageMapTargets`, and sets
+  `imageMapEntryWarning` — `"all-colored"` or `"no-dominoes"`, told apart because they need
+  different advice. Decided on entry and **only** on entry: a modal appearing mid-drag would be its
+  own kind of awful. **Closing its dialog leaves the mode**, which is why the flag needs no clearing
+  action of its own: with nothing to map, every control in the panel is pointless, and leaving is
+  the fix in both cases since coming back takes a fresh target list.
+- The panel's `{n} Unassigned Dominoes (?)` counts the **frozen target set** narrowed to what the
+  picture reaches, never the colours the dominoes currently hold. A live count would drop to nothing
+  the moment a run finished and read as though the tool had stopped working. That is also why its
+  `useMemo` needs no subscription to the domino data's version: inside this mode the ordinary tools
+  are off and the element cannot be resized, so of the three things it reads only the picture moves.
+  It is **shown only when some dominoes under the picture are *not* on the list** — over a field
+  with nothing coloured in yet the number would only restate what the user can see, and the `(?)`
+  would answer a question nobody had. Hence the memo returns `reachable` and `skipped` rather than
+  one figure, and walks all the dominoes rather than only the targets.
+
 `colorMappingProgress` is written **only when a run is about to schedule another chunk**, never at
 the start. A run finishing in one frame then shows no bar, which is honest; setting it up front
 could not have worked anyway, since React coalesces the `0` and the `null` after it into one render
 and the bar was never committed at all for a short run.
 
-#### Placement is not undoable, and that is the current version's line
+#### What is undoable about a picture, and what isn't
 
-Moving, resizing, opacity, layer, show/hide and DEL-to-delete record nothing. Only the mapping
-does. A future mode-scoped undo stack is anticipated; until then `cancelDominoEditing` discards the
-picture along with the colour edits, while `exitDominoEditing` (Done) keeps it — the picture
-survives leaving the mode so re-entering finds it where it was left.
+The line is **document state versus view aid**, and it is drawn deliberately:
 
-`ImageTransformTool` mounts **two planes whenever image mode is armed**, not only while the picture
-is selected: the picture's own pick plane (which selects *and* begins a move in one gesture) and a
-`CATCH_SIZE` deselect plane behind it. Both halves are needed — canvas selecting with no
-canvas deselecting is a one-way door. The pick plane is gated on `image.visible`, or it would select
-on what looks like empty space. The *one catch plane, one gesture* rule still holds: `DominoEditor`
-mounts none at all in this mode, so these two never compete for a `pointerdown`.
+- **Undoable**, as one `"imageMap"` operation: move, resize, reset size, add, delete, and replace.
+- **Not undoable**: show/hide, transparency, layer. These are glances, like the Expand toggle.
+  Ctrl+I in particular is a rapid toggle, and filling the undo stack with it would bury the edits
+  worth taking back.
+
+**An image operation lives only as long as the domino editing session that made it.**
+`exitDominoEditing` filters `kind === "imageMap"` off both stacks, and they are gone for good. The
+rule behind that is worth stating on its own, because it is new and it generalises: **the
+consequence of an undo or a redo must always be visible.** A picture is only ever drawn inside
+domino editing mode, so an operation surviving past it could only ever be undone invisibly. Pulling
+entries out of the middle of the stacks is safe because an image operation touches nothing but
+`imageMaps`, which no other kind reads. It is also what lets the pruner free the megabytes held by
+every picture deleted or replaced during the session — that memory is kept alive *by* those entries,
+and only by them. (Note the barrier can't be one of the entries removed: it is captured on entry,
+and this purge means no image operation is ever on the stack at that moment.)
+
+**The same rule is enforced from the other side, inside `undo`/`redo`**, because a picture can be on
+the element and still not on the screen — hidden, or wound to fully transparent. Two halves, and
+both are needed:
+
+- `revealBeforeApplying` — if the element's picture is currently invisible, that press brings it
+  into view and does nothing else, leaving the operation where it is. One press, one visible change,
+  the same rule the Escape ladder follows. This covers *add → hide → Ctrl+Z*.
+- `imageMapsWith` forces any record it writes on screen. This covers what the first half cannot:
+  undoing the delete of an invisible picture, where there is no current record left to reveal.
+
+`image-map/visibility.ts` holds both tests plus `DEFAULT_IMAGE_OPACITY`, and **is its own module for
+one specific reason**: the history slice needs them as *values*, and `object-model.ts` value-imports
+`object-types/registry`, an edge that leads back towards `store.ts`. `visibility.ts` imports nothing
+but a type, so it is safe to reach from anywhere. Note the transparency test is a literal
+`opacity > 0` with no margin — a picture at 1% is faint but genuinely on screen, and a threshold
+would quietly overwrite a setting the user chose.
+
+One operation variant covers all five undoable cases — a null `before` is an add, a null `after` a
+delete, two records set is a move/resize or a replacement. Splitting them by kind costs an extra
+kind for the replacement, which is neither an add nor a delete but both at once.
+
+`cancelDominoEditing` still discards the picture along with the colour edits, while
+`exitDominoEditing` (Done) keeps it, so re-entering finds it where it was left.
+
+**Two things about recording are load-bearing and easy to get backwards.**
+
+- **`recordImageMapChange` must be called BEFORE applying a change that drops or replaces a
+  picture** — backwards from every other commit point in the app, which record afterwards.
+  `initImageMapPruning` frees any decoded picture nothing points at, it runs synchronously on every
+  store write, and an operation on the undo stack is one of the two things that counts as pointing
+  at one. Clearing the record first leaves a gap, one store write long, in which the old picture is
+  referenced by nothing at all — and the pruner takes exactly that moment to free its pixels, so the
+  operation lands naming a picture that no longer exists and undoing it restores a blank. A plain
+  move or resize is exempt and records afterwards, since both sides name the same live picture.
+- **The no-op check is `imageMapRecordsEqual`, never `ddObjectsEqual`.** That helper compares by
+  `JSON.stringify`, which is fine for a DDObject and quietly terrible here: a record carries `src`, a
+  base64 copy of the original file, often megabytes, and a drag ends every time the mouse comes up.
+  `imageMapRecordsEqual` compares the cheap fields first and only reaches `src` once they all match,
+  where the two are nearly always the same string in memory anyway.
+
+`ImageTransformTool` mounts four things — a click-away dismiss plane, the picture's move plane, its
+grips, and a mid-drag `CATCH_SIZE` catch plane — **all only while Resize and Move is on**. The *one
+catch plane, one gesture* rule holds structurally: `DominoEditor` mounts its plane unless an image
+sub-mode is on, and this mounts its own only while one is. **Two things about the four are
+load-bearing.** Their z order is what decides which one a press belongs to (dismiss below move below
+grips, since the camera is top-down and R3F sorts hits by distance), and **`beginDrag`'s
+`e.stopPropagation()` is what stops a press belonging to more than one of them.** Without it, R3F
+dispatches to every mesh the ray hits: a grip press ran `beginDrag` twice, once for the grip and
+again for the move plane underneath, which overwrote the drag with a move — so grips only worked
+where they hung off the edge of the picture. That was a real bug, from removing the line on the
+grounds that its only job was the plane that had just been deleted. `SelectionTool` has always
+called it, which is why its handles have never had the problem.
 
 `assetStore.ts` is a small store of its own, following `colorLookupStore.ts`'s precedent — a cache
 *derived* from the data URL in the record, holding a `THREE.Texture` that must be `dispose()`d and a
 pixel buffer of megabytes, neither of which belongs in copy-on-write state. It downscales to
 `MAX_SAMPLE_DIM`, since even a 250×250 field needs only a handful of pixels per domino.
-`initImageMapPruning` defers freeing through `isDDObjectInUndoHistory`, like `colorMemory` and
-unlike `selectionStore`: undoing a field delete must bring its picture back. It iterates the union
-of `imageMaps` and `imageMapTargets`, because an element can hold a target set with no picture —
-the mode was switched on and nothing was ever loaded.
+
+**It is keyed by the picture (`assetId`, minted `"IMG-{n}"`), not by the element showing it**, and
+that is not a tidiness choice. Keyed by element there is room for exactly one decoded picture per
+element, so loading a replacement had to throw the old one's pixels away — fine while nothing about
+a picture was undoable, and wrong the moment replacing one became an undo entry, since Ctrl+Z would
+restore a record with nothing left to draw. The record carries the id; `modeller.tsx` and
+`startColorMapping` look up through it.
+
+`initImageMapPruning` is consequently **the only thing that frees anything** — `clearImageMap`
+deliberately disposes nothing, because the delete it performs is undoable. It does two jobs on two
+keys: a *session* (the record plus its target set) goes when its element is absent from `ddObjects`
+and unreachable via `isDDObjectInUndoHistory`, like `colorMemory` and unlike `selectionStore`, since
+undoing a field delete must bring its picture back; a *decoded picture* goes when no live record and
+no `"imageMap"` operation on either stack names its `assetId`. It watches `imageMaps` as well as
+`ddObjects` and both stacks, and iterates the union of `imageMaps` and `imageMapTargets`, because an
+element can hold a target set with no picture — the mode was switched on and nothing was loaded.
 
 ### The clipboard
 
@@ -2117,10 +2318,19 @@ otherwise "correct" backwards:
 - **Image mapping exists now** (`image-map/` with its `patch-sample/`, plus `color-distance/` and
   `dither/`, see *Image mapping*)
   — the third route to a domino's colour, and the only one that chooses colours rather than being
-  told them. Two things about it are the current version's line rather than the design's: a
-  picture's **placement records no undo entry at all** (a mode-scoped stack is anticipated), and a
-  run **assumes unlimited dominoes of every colour**, ignoring the inventory's `available` counts.
-  Neither is an oversight to be quietly corrected — both are scoped decisions.
+  told them. One thing about it is the current version's line rather than the design's: a run
+  **assumes unlimited dominoes of every colour**, ignoring the inventory's `available` counts. That
+  is a scoped decision, not an oversight to be quietly corrected.
+- **A picture is now an overlay first and a colour source second**, and the two were deliberately
+  split apart (see *Image mapping*). Showing one is an ordinary part of domino editing — tracing a
+  sponsor's logo with the shape gestures and brushes is the use that motivated it — while mapping
+  its colours stays a mode. Do not re-tie drawing to `imageMapActive`, and do not re-add
+  click-the-picture-to-select: both would put back the second canvas-wide plane whose removal is
+  what makes the split possible at all.
+- **A picture's geometry and its comings and goings are undoable now**, over a single `"imageMap"`
+  operation; show/hide, transparency and layer deliberately are not, being view aids rather than
+  document state. The earlier note that placement records nothing is superseded, and the anticipated
+  mode-scoped undo stack turned out not to be needed — the one shared stack took it.
 - **Error diffusion exists now** (`floydSteinberg` and `atkinson`, see *The dither registry*), and
   widening `DitherDefinition` to hold it is what turned a definition into a per-run object. The two
   are registered together deliberately: they differ only in their table of weights, and having both
@@ -2146,13 +2356,16 @@ otherwise "correct" backwards:
   propose a lock as an enhancement, and do not "restore" the pieces that went with it — the
   `RiLockFill` badge, the swatch double-click, the menu's `Lock` item, the derived
   `matchedSwatchId` highlight, or a clear of the selected swatch inside `setDominoBrush`.
-- **There is one generic modal, `components/ConfirmDialog.tsx`**, raised today only by
-  ModeHintBar's Cancel. It is owned by whoever raises it (local state, mounted inline) rather
-  than by the store — unlike `PropertiesDialog` there is no shared editing session behind it,
-  just a question and two callbacks. It is a *true* modal, in contrast to the properties dialog:
-  its scrim dims the canvas too, and it swallows every keydown in the capture phase so the
-  window-level handlers behind it (`DominoEditor`'s Delete and colour shortcuts,
-  `DesignerScreen`'s Ctrl chords) can't keep editing the thing being asked about.
+- **There is one generic modal, `components/ConfirmDialog.tsx`**, raised by ModeHintBar's Cancel,
+  the image menu's replace warning, and image mapping's two explanations. It is owned by whoever
+  raises it (local state, mounted inline) rather than by the store — unlike `PropertiesDialog`
+  there is no shared editing session behind it, just a question and two callbacks. It is a *true*
+  modal, in contrast to the properties dialog: its scrim dims the canvas too, and it swallows
+  every keydown in the capture phase so the window-level handlers behind it (`DominoEditor`'s
+  Delete and colour shortcuts, `DesignerScreen`'s Ctrl chords) can't keep editing the thing being
+  asked about. **Omitting `confirmLabel`/`onConfirm` makes it acknowledge-only** — one button,
+  doing what Escape and the scrim already did. That is what keeps it the single modal rather than
+  there being a near-identical second component for telling the user something.
 
 ## Code style0
 

@@ -63,6 +63,21 @@
   padding: 0 4px;
 }
 
+/*
+ * A caret that is a button in its own right, sitting beside an .iconBtn that
+ * does something else — ImageOverlayButton, where the icon shows or hides the
+ * picture and only the caret opens the menu. Narrower than a full .iconBtn,
+ * since it holds nothing but a 14px glyph.
+ *
+ * Here for exactly the reason .iconBtnWithCaret is: it overrides .iconBtn's
+ * width at the same specificity, so across two stylesheets the winner would be
+ * whichever the bundler happened to put last.
+ */
+.iconBtnCaretOnly {
+  width: 20px;
+  padding: 0;
+}
+
 .iconBtn:hover {
   background: var(--color-chrome-2);
   color: var(--color-text);

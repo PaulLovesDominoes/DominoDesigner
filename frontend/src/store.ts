@@ -285,6 +285,28 @@ export const useStore = create<AppState>()((set, get, api) => ({
       // pattern copied in one field be pasted into another. Only the handlers
       // unregister (that's DominoEditor's doing), not the buffer.
       return {
+        // Every image operation is dropped from the history, and they are gone
+        // for good.
+        //
+        // A picture is only ever on screen inside this mode, so an image
+        // operation surviving past it could only ever be undone invisibly —
+        // Ctrl+Z would appear to do nothing at all. That is the rule these
+        // operations are held to (see the "imageMap" cases in
+        // history/appStoreSlice.ts, which enforce the same thing from the other
+        // side), and outside the mode it cannot be met.
+        //
+        // Pulling entries out of the middle of the stacks is safe because an
+        // image operation touches nothing but `imageMaps`, which no other kind
+        // reads — so what is left still replays in order. It is also what lets
+        // assetStore.ts's pruner free the megabytes held by every picture
+        // deleted or replaced during the session: that memory is kept alive
+        // *by* these entries, and only by them.
+        //
+        // dominoEditingUndoBarrier cannot be one of the entries removed here: it
+        // is captured on entry, and this purge means no image operation is ever
+        // on the stack at that moment. It is cleared below in any case.
+        undoStack: s.undoStack.filter((op) => op.kind !== "imageMap"),
+        redoStack: s.redoStack.filter((op) => op.kind !== "imageMap"),
         dominoEditingId: null,
         selectedDDObjectId: s.dominoEditingId,
         activeTool: "select" as ToolId,
@@ -315,12 +337,13 @@ export const useStore = create<AppState>()((set, get, api) => ({
         // no half-finished stroke can outlive the mode it belongs to.
         dominoBrushId: null,
         dominoStroke: null,
-        // And for image mapping mode. The picture itself deliberately survives,
-        // in imageMaps — Done keeps it, so re-entering the mode shows it exactly
-        // where it was left. Only Cancel throws it away (see below).
+        // And for the two image sub-modes. The picture itself deliberately
+        // survives, in imageMaps — Done keeps it, so re-entering the mode shows
+        // it exactly where it was left. Only Cancel throws it away (see below).
         imageMapActive: false,
-        imageMapSelected: false,
+        imageTransformActive: false,
         imageMapMessage: null,
+        imageMapEntryWarning: "none" as const,
       };
     });
   },
@@ -346,8 +369,14 @@ export const useStore = create<AppState>()((set, get, api) => ({
     // lastIndexOf returns -1 exactly when the barrier has aged off the front,
     // in which case every surviving entry is in-mode work and the whole stack
     // goes, which is the same reasoning that makes the undo clamp lapse safely.
-    // Truncating is sound only because in-mode operations are colour changes and
-    // nothing else, which is what enterDominoEditing's redoStack reset secures.
+    //
+    // Throwing the entries away rather than inverting them is sound because
+    // everything they could describe has already been put back by hand: the
+    // colours by restoreDominoColorSnapshot above, and the picture by
+    // discardImageMapSession. Those two are the only things the mode can change,
+    // which is what enterDominoEditing's redoStack reset secures — without it a
+    // Ctrl+Y could have replayed pre-mode work into the mode, and that *would*
+    // be dropped here without being undone.
     const keep = s.dominoEditingUndoBarrier
       ? s.undoStack.lastIndexOf(s.dominoEditingUndoBarrier) + 1
       : 0;

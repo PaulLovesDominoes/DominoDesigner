@@ -398,10 +398,17 @@ export default function DominoEditor() {
   const shapeSelectId = useStore((s) => s.dominoShapeSelectId);
   const shapeDefinition = shapeSelectId ? getShapeSelect(shapeSelectId) : undefined;
 
-  // Image mapping mode, the third choice alongside an armed shape and an armed
-  // brush — but a bigger one: while it is on, this tool draws only the mode
-  // outline and handles no input at all. See the early return below.
+  // The two image sub-modes, either of which takes the canvas away from this
+  // tool entirely: while one is on, this draws only the mode outline and handles
+  // no input at all. See the early return below.
+  //
+  // They take it for different reasons. Image mapping is a whole mode of its own
+  // and switches every domino tool off. Resize and Move is smaller but needs the
+  // presses: it is ImageTransformTool that must receive them, and only one of
+  // the two can, since both cover the canvas at the same height.
   const imageMapActive = useStore((s) => s.imageMapActive);
+  const imageTransformActive = useStore((s) => s.imageTransformActive);
+  const imageOwnsCanvas = imageMapActive || imageTransformActive;
 
   // Which paint brush is armed, if any, and how big its nib currently is. Both
   // primitives, so no useShallow needed, and the definition is resolved outside
@@ -616,7 +623,7 @@ export default function DominoEditor() {
   // handler reads fresh state imperatively (getState()), so dominoEditingId is
   // the only thing that needs to be a dependency.
   useEffect(() => {
-    if (!dominoEditingId || imageMapActive) return;
+    if (!dominoEditingId || imageOwnsCanvas) return;
 
     /**
      * Picks a swatch from the keyboard, and makes its button look pressed for a
@@ -853,19 +860,22 @@ export default function DominoEditor() {
       window.clearTimeout(swatchPressTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dominoEditingId, imageMapActive]);
+  }, [dominoEditingId, imageOwnsCanvas]);
 
   if (!dominoEditingId || !fieldBounds || !rootBounds) return null;
 
-  // Image mapping mode owns the canvas for as long as it is on, so this tool
+  // Either image sub-mode owns the canvas for as long as it is on, so this tool
   // keeps only the frame round the element being edited and gives up everything
   // else — no catch plane, no rubber band, no shape or brush preview.
   //
   // Dropping the catch plane is what hands pointer events cleanly to
   // ImageTransformTool: the one-catch-plane rule this file documents holds
   // because the two are never mounted at the same time, rather than being broken
-  // by a second plane competing for the same pointerdown.
-  if (imageMapActive) {
+  // by a second plane competing for the same pointerdown. Note the picture is
+  // drawn in plenty of situations this test does not catch — showing one no
+  // longer means giving up the canvas, which is the whole point of tracing —
+  // and in those this tool carries on exactly as if there were no picture.
+  if (imageOwnsCanvas) {
     if (!outlineRect) return null;
     return (
       <lineSegments

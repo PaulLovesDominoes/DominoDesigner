@@ -11,7 +11,7 @@ import {
   type ResizeHandleId,
 } from "../designer/resizeHandles";
 import type { Bounds } from "../types";
-import { MIN_IMAGE_MM, imageOriginFor } from "./object-model";
+import { MIN_IMAGE_MM, imageOriginFor, type DominoImageMap } from "./object-model";
 
 /**
  * Moving and resizing the picture laid over a field.
@@ -29,8 +29,24 @@ import { MIN_IMAGE_MM, imageOriginFor } from "./object-model";
  *     no ratio lock at all.
  *  3. Nothing is clamped to the build plane. The picture is explicitly allowed
  *     to hang off the field and off the plane.
- *  4. No undo entry. The picture's placement is view state this version, like
- *     the Expand toggle and the camera — see CLAUDE.md.
+ *
+ * ---- Entered only from the menu, and that is what makes it work ----
+ *
+ * This whole component mounts only while Resize and Move is on, which is reached
+ * from the toolbar's image menu and from nowhere else. There is deliberately no
+ * clicking the picture to *enter* the mode — though clicking away from it does
+ * leave, which is a different thing and is safe for a reason worth spelling out.
+ *
+ * A canvas-wide plane is what makes two tools impossible to mount together:
+ * whichever of two such planes sits nearer the camera swallows every press for
+ * both. That is why the picture could once only be shown in a mode where
+ * dominoes could not be edited — this tool kept a plane up at all times, waiting
+ * for a click on the picture, and DominoEditor had one of its own.
+ *
+ * With no click-to-enter, this tool has nothing to listen for until the mode is
+ * already on, so its planes are mounted only for as long as the mode lasts —
+ * exactly when DominoEditor mounts none. The two simply take turns. Re-adding
+ * click-to-enter would put a permanent plane back and undo the whole split.
  *
  * Everything here works in mm relative to the element's domino layout anchor,
  * the space the record stores, and the whole lot is wrapped in one <group> at
@@ -43,7 +59,7 @@ import { MIN_IMAGE_MM, imageOriginFor } from "./object-model";
 // render order instead of a tall z, so it floats over whatever the picture and
 // the dominoes are doing; the z values only order these pieces against each
 // other. The move plane sits lowest so the grips win a pointer landing on both.
-const DESELECT_Z = 0.5;
+const DISMISS_Z = 0.5;
 const MOVE_Z = 1;
 const BORDER_Z = 1.01;
 const HANDLE_Z = 1.5;
@@ -64,6 +80,13 @@ interface DragState {
   pointerStart: { x: number; y: number };
   /** The picture's rectangle when the drag began, in anchor-relative mm. */
   original: Bounds;
+  /**
+   * The whole record when the drag began, which is what a finished drag is
+   * recorded against and what Escape puts back. Holding the store's own
+   * reference is a sound snapshot because nothing edits a record in place —
+   * updateImageMap builds a new one every time.
+   */
+  originalImage: DominoImageMap;
   handle: ResizeHandleId | "move";
 }
 
@@ -122,8 +145,7 @@ function resizeImageRect(
 
 export default function ImageTransformTool() {
   const dominoEditingId = useStore((s) => s.dominoEditingId);
-  const imageMapActive = useStore((s) => s.imageMapActive);
-  const imageMapSelected = useStore((s) => s.imageMapSelected);
+  const imageTransformActive = useStore((s) => s.imageTransformActive);
   // The store's own stable references, not computed objects, so no useShallow.
   const image = useStore((s) => (s.dominoEditingId ? s.imageMaps[s.dominoEditingId] : undefined));
   const ddObject = useStore((s) => (s.dominoEditingId ? s.ddObjects[s.dominoEditingId] : undefined));
@@ -141,8 +163,12 @@ export default function ImageTransformTool() {
   const unitEdges = useMemo(() => new EdgesGeometry(new PlaneGeometry(1, 1)), []);
   useEffect(() => () => unitEdges.dispose(), [unitEdges]);
 
-  const armed = !!dominoEditingId && imageMapActive && !!image && !!ddObject;
-  const showing = armed && imageMapSelected;
+  // One gate for the whole tool, where there used to be two. The inner one
+  // existed because this was mounted before the picture had been selected, so
+  // that a press could do the selecting; with no click-to-select there is
+  // nothing to mount early for, and the border, the grips and the move target
+  // all appear and disappear together.
+  const armed = !!dominoEditingId && imageTransformActive && !!image && !!ddObject;
 
   /**
    * Whether this tool currently owns the canvas cursor.
@@ -150,10 +176,10 @@ export default function ImageTransformTool() {
    * A hover cursor is normally cleared by the same mesh's own onPointerOut, but
    * a mesh that disappears out from under the pointer never gets one: R3F works
    * out pointerout by comparing what the ray hits between pointer events, and an
-   * object no longer in the scene is never compared against. Deselecting the
-   * picture from the sidebar does exactly that, with no pointer event involved
-   * at all — so without the effect below, a resize cursor would sit on the
-   * canvas indefinitely.
+   * object no longer in the scene is never compared against. Leaving the mode
+   * from the menu does exactly that, with no pointer event involved at all — so
+   * without the effect below, a resize cursor would sit on the canvas
+   * indefinitely.
    */
   const cursorHeldRef = useRef(false);
 
@@ -162,18 +188,46 @@ export default function ImageTransformTool() {
     gl.domElement.style.cursor = cursor;
   };
 
-  const endDrag = () => {
-    if (!dragRef.current) return;
+  /**
+   * Ends a drag. `restore` true puts the picture back where it started and
+   * records nothing; false keeps where it was dropped and records that as one
+   * undo entry.
+   *
+   * The same split SelectionTool makes, and for the same reason: every
+   * pointermove has already written the new rectangle straight into the store,
+   * because the user has to see the picture move as they drag it. So a drop has
+   * nothing left to write and only has to say what happened, and an abandoned
+   * drag has nothing to invert — there was never an entry pushed to invert.
+   */
+  const endDrag = (restore: boolean) => {
+    const drag = dragRef.current;
     dragRef.current = null;
     setDragging(false);
     setCursor("");
+    if (drag && dominoEditingId) {
+      const store = useStore.getState();
+      if (restore) {
+        store.updateImageMap(dominoEditingId, drag.originalImage);
+      } else {
+        // Reads the record back rather than trusting a local copy, so what gets
+        // recorded is exactly what is on screen. recordImageMapChange drops a
+        // drag that finished where it began, so a click pushes nothing.
+        const current = store.imageMaps[dominoEditingId];
+        if (current) {
+          store.recordImageMapChange(dominoEditingId, drag.originalImage, current);
+        }
+      }
+    }
     invalidate();
   };
 
-  // Escape backs out, Delete removes the picture. This is the mode's only
-  // keyboard handler: DominoEditor's four-rung Escape ladder and its
-  // Delete/Backspace swatch keys are both switched off while image mapping is
-  // on, since nothing they act on can be armed.
+  // Escape is this mode's only key, and this is its only keyboard handler:
+  // DominoEditor's Escape ladder is switched off while this mode owns the
+  // canvas, so nothing is contested.
+  //
+  // Delete used to remove the picture from here and deliberately does not any
+  // more. Deleting is a menu command and nothing else — a key that throws a
+  // picture away is far too easy to hit while positioning one.
   useEffect(() => {
     if (!armed) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -182,51 +236,37 @@ export default function ImageTransformTool() {
         return;
       }
 
-      if (e.key === "Escape") {
-        if (dragRef.current) endDrag();
-        else useStore.getState().setImageMapSelected(false);
-        return;
-      }
-
-      // Delete removes the selected picture — the only way to get rid of one
-      // without replacing it. No confirmation: removing what is selected is what
-      // this key means everywhere, and loading another is one click. Note it is
-      // not undoable, like everything else about a picture's placement.
-      if (e.key === "Delete" || e.key === "Backspace") {
-        if (!dominoEditingId || !useStore.getState().imageMapSelected) return;
-        // Backspace would otherwise navigate the page back — the same guard
-        // DominoEditor applies to it.
-        e.preventDefault();
-        endDrag();
-        useStore.getState().clearImageMap(dominoEditingId);
-      }
+      if (e.key !== "Escape") return;
+      // One press, one visible change — the same rule DominoEditor's ladder
+      // follows. A drag in progress is abandoned and the picture goes back where
+      // it was; otherwise the mode itself is left.
+      if (dragRef.current) endDrag(true);
+      else useStore.getState().setImageTransformActive(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [armed, dominoEditingId]);
 
-  // Losing the handles mid-drag — the picture deselected, image mode left, the
-  // element deleted — must not leave a drag running against nothing.
+  // Losing the handles mid-drag — the mode left from the menu, the picture
+  // deleted, the element deleted — must not leave a drag running against
+  // nothing. It commits rather than reverting, matching SelectionTool: the
+  // picture is already where the user dragged it, and snatching it back would
+  // be the surprise.
   useEffect(() => {
-    if (!showing && dragRef.current) endDrag();
+    if (!armed && dragRef.current) endDrag(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showing]);
+  }, [armed]);
 
   // Release a cursor whose mesh has gone. See cursorHeldRef for why no
   // pointerout arrives to do it. Skipped mid-drag: the cursor belongs to the
   // drag then, and endDrag clears it.
   useEffect(() => {
     if (!cursorHeldRef.current || dragRef.current) return;
-    if (!showing) setCursor("");
+    if (!armed) setCursor("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showing]);
+  }, [armed]);
 
-  // Rendered whenever image mapping is on, not only while the picture is
-  // selected: the two planes below are what make clicking the picture select it
-  // and clicking away deselect it, and neither can happen if this is mounted
-  // only once something already has. The border and grips are still conditional
-  // on `showing`.
   if (!armed || !image || !ddObject) return null;
   const origin = imageOriginFor(ddObject);
   if (!origin) return null;
@@ -240,18 +280,24 @@ export default function ImageTransformTool() {
 
   const beginDrag = (handle: ResizeHandleId | "move", e: ThreeEvent<PointerEvent>) => {
     if (e.button !== 0) return;
-    // Stops the deselect plane behind this one from seeing the same press.
+    // Load-bearing, and the same call SelectionTool makes for the same reason.
+    // R3F hands a pointer event to *every* mesh the ray passes through, nearest
+    // to the camera first, unless a handler stops it. A grip sits above the
+    // picture's move plane, so without this a press on a grip that overlaps the
+    // picture ran this function twice — once for the grip, then again for the
+    // move plane, which overwrote the drag with a move. The symptom was that
+    // grips worked only where they hung off the edge of the picture.
+    //
+    // It also keeps a press off the dismiss plane below, which would otherwise
+    // leave the mode on the very click that started a drag.
     e.stopPropagation();
-    // Pressing the picture selects it, so click-to-select and click-and-drag are
-    // one gesture rather than two: the drag below starts either way, and a press
-    // that never moves simply leaves it selected.
-    if (!imageMapSelected) useStore.getState().setImageMapSelected(true);
     dragRef.current = {
       // The pointer arrives in world coordinates; everything else here is
       // anchor-relative, and a *difference* between two points is the same
       // either way, so the origin never has to be subtracted.
       pointerStart: { x: e.point.x, y: e.point.y },
       original: rect,
+      originalImage: image,
       handle,
     };
     setDragging(true);
@@ -278,53 +324,53 @@ export default function ImageTransformTool() {
 
   return (
     <group position={[origin.x, origin.y, 0]}>
-      {/* Clicking away from the picture puts its handles away. Sits behind the
-          picture's own plane, so a press landing on both goes to the picture;
-          anything reaching here missed it. Deliberately far larger than the
-          build plane, so a click out in the dark area beyond it deselects too.
+      {/* Clicking away from the picture finishes the mode. Lowest of everything
+          here in z, so the ray reaches it only after the grips and the move
+          plane have declined the press — which they do by stopping propagation
+          in beginDrag, so this never fires on a press that started a drag.
 
-          Left-button only — right-drag is OrbitControls' pan, and panning
-          across the canvas has no business dropping the selection. */}
+          A plane this size is normally the thing that makes two canvas tools
+          impossible to mount together, since whichever sits nearer the camera
+          swallows every press for both. It is safe here because DominoEditor
+          mounts no plane of its own while either image sub-mode is on: the two
+          tools take turns, and this one is mounted only for as long as Resize
+          and Move is. */}
       <mesh
-        position={[centreX, centreY, DESELECT_Z]}
+        position={[centreX, centreY, DISMISS_Z]}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
-          if (imageMapSelected) useStore.getState().setImageMapSelected(false);
+          useStore.getState().setImageTransformActive(false);
         }}
       >
         <planeGeometry args={[CATCH_SIZE, CATCH_SIZE]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* The picture's own target: selects it, and moves it. Fully invisible
-          rather than tinted — this sits over the picture, and any wash of colour
-          here would bias exactly the judgement the mode exists for. Note
-          `transparent` with zero opacity and NOT visible={false}, which would
-          take the mesh out of ray casting altogether and leave nothing to grab.
+      {/* The picture's move target. Fully invisible rather than tinted — this
+          sits over the picture, and any wash of colour here would bias exactly
+          the judgement the user is placing it to make. Note `transparent` with
+          zero opacity and NOT visible={false}, which would take the mesh out of
+          ray casting altogether and leave nothing to grab.
 
-          Only while the picture is showing: an invisible plane over a hidden
-          picture would select on what looks to the user like empty space. The
-          sidebar's Select button still reaches a hidden picture. */}
-      {image.visible && (
-        <mesh
-          position={[centreX, centreY, MOVE_Z]}
-          scale={[rect.width, rect.height, 1]}
-          renderOrder={MOVE_ORDER}
-          onPointerDown={(e) => beginDrag("move", e)}
-          onPointerOver={() => {
-            if (!dragRef.current) setCursor("move");
-          }}
-          onPointerOut={() => {
-            if (!dragRef.current) setCursor("");
-          }}
-        >
-          <planeGeometry args={[1, 1]} />
-          <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} />
-        </mesh>
-      )}
+          No visibility test: entering this mode shows the picture, so there is
+          no such thing as being in here with a hidden one. */}
+      <mesh
+        position={[centreX, centreY, MOVE_Z]}
+        scale={[rect.width, rect.height, 1]}
+        renderOrder={MOVE_ORDER}
+        onPointerDown={(e) => beginDrag("move", e)}
+        onPointerOver={() => {
+          if (!dragRef.current) setCursor("move");
+        }}
+        onPointerOut={() => {
+          if (!dragRef.current) setCursor("");
+        }}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} />
+      </mesh>
 
       {/* Border around the picture. */}
-      {showing && (
       <lineSegments
         geometry={unitEdges}
         position={[centreX, centreY, BORDER_Z]}
@@ -333,11 +379,10 @@ export default function ImageTransformTool() {
       >
         <lineBasicMaterial color={BORDER_COLOR} transparent depthTest={false} />
       </lineSegments>
-      )}
 
       {/* Corner and edge grips. Corners hold the aspect ratio, edges do not —
           see resizeImageRect. */}
-      {showing && RESIZE_HANDLES.map((id) => {
+      {RESIZE_HANDLES.map((id) => {
         const [hx, hy] = handlePos(rect, id);
         return (
           <mesh
@@ -359,13 +404,15 @@ export default function ImageTransformTool() {
       })}
 
       {/* Mounted only mid-drag, and huge, so move and up never fall through a
-          gap once the cursor has left the grip. */}
+          gap once the cursor has left the grip. Nothing competes with it for a
+          press: DominoEditor's own canvas-wide plane is not mounted at all while
+          this mode is on. */}
       {dragging && (
         <mesh
           position={[centreX, centreY, CATCH_Z]}
           onPointerMove={onCatchMove}
-          onPointerUp={endDrag}
-          onPointerLeave={endDrag}
+          onPointerUp={() => endDrag(false)}
+          onPointerLeave={() => endDrag(false)}
         >
           <planeGeometry args={[CATCH_SIZE, CATCH_SIZE]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />

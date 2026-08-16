@@ -2,52 +2,20 @@
 
 # Mapping an image
 
-Image mapping lays a picture over your dominoes and then picks, for each one, the closest color you have in your [domino inventory](home). It is a fast way to turn a photo or a piece of artwork into a build.
+Image color mapping picks, for each domino, the closest color you have in your [domino inventory](home) to the picture over it. It is a fast way to turn a photo or a piece of artwork into a build.
 
-Image mapping is a mode inside [domino editing](domino-editing). Click the picture button in the toolbar — just to the right of the Expand button — to switch it on, and click it again to switch it off.
+This topic is about *choosing the colors*. Getting a picture onto the element in the first place — loading it, moving it, fading it, hiding it — is covered in [Using an image](using-an-image), and none of it needs this mode. You can also just trace a picture by hand and never come here at all.
 
-While image mapping is on, the rest of the domino editing tools are switched off and shown greyed out: selection, the shapes, the paint brushes, and the color swatches. This is deliberate. Placing a picture takes several steps, and having a stray click paint a domino part-way through would be very easy to do by accident. Everything comes back the moment you leave image mapping.
+## Switching it on
 
-The one exception is the **Expand** button, which stays usable. It only changes how big the dominoes are *drawn*, and lining a picture up against the grid is easier when they tile edge to edge. It makes no difference to the colors that get chosen.
+Open the image menu in the toolbar (the arrow beside the picture button) and choose **Map Image Colors**. A panel appears at the top of the sidebar with the settings below, and the mode hint bar gains a **Close Image Mapping** button. Either that button or the **✕** at the top of the panel switches it off again.
 
-## The image panel
+While it is on, the rest of the domino editing tools are switched off and shown greyed out: selection, the shapes, the paint brushes, and the color swatches. This is deliberate — mapping fills in a set of dominoes decided the moment you switch the mode on, and letting you paint dominoes in the middle of that would make the result hard to predict. Everything comes back the moment you leave.
 
-A new panel appears at the top of the sidebar, above the color swatches. It has four buttons in a row, then a transparency slider, the settings that decide how colors are chosen, and the Map Colors and Clear buttons.
+Two things stay usable:
 
-**New Image** asks you for a picture file. PNG, JPEG, WebP, GIF and BMP all work.
-
-The picture is placed so that it covers the whole element, keeping its own proportions — so it will usually hang off two of the edges. It arrives already selected, ready to be moved and resized.
-
-Each element can have one picture at a time. Loading a second one replaces the first, and you will be asked before that happens.
-
-> The picture is only held in this browser tab. Nothing in DominoDesigner is saved between visits yet, so reloading the page loses it — along with everything else in your build.
-
-**Select** turns the picture's handles on and off. You can also just **click the picture on the build plane** to select it — and dragging straight away moves it, so selecting and moving are one gesture. Clicking anywhere away from the picture puts the handles away again, as does Escape.
-
-With the handles on you can:
-
--  Drag a **corner** handle to make the picture bigger or smaller. The proportions are kept, so the picture is never squashed.
--  Drag a **side** handle to stretch the picture in that direction only. The proportions are *not* kept — use this when you want to fit a picture to a differently shaped element.
--  Drag the **middle** of the picture to move it.
-
-The picture is free to hang off the element and off the build plane. Nothing is clipped, so you can push most of a picture out of the way and map just the part you want. You can zoom out well past the build plane to reach a picture you have dragged a long way off it.
-
-Clicking Select again puts the handles away. So does clicking any other control in the panel.
-
-**Pressing DEL with the picture selected removes it.** That is the only way to get rid of a picture without loading another over the top of it. Note it cannot be undone — nothing about a picture's position or settings goes into the undo history.
-
-**Above / Below** decides what the picture covers.
-
--  **Below** — the starting position — puts the picture behind every domino you have already given a color, and in front of the ones you have not. This is the useful one while you work: you can watch your colors appear against the picture as you go.
--  **Above** floats the picture over everything, so you can see it whole and line it up.
-
-**Show / Hide** takes the picture off the screen without forgetting it or where you put it. Handy for a quick look at how the dominoes are coming along on their own.
-
-## Transparency
-
-The slider fades the picture. A half-faded picture is often easier to line up against a grid than a solid one, because you can see both at once.
-
-Transparency is only about what you can see. It makes no difference to the colors that Map Colors chooses.
+-  The **image menu**, so you can still fade the picture, move it, and switch it between over and under while you line it up. Those are the controls you want most at this point.
+-  The **Expand** button, which only changes how big the dominoes are *drawn*. Lining a picture up against the grid is easier when they tile edge to edge, and it makes no difference to the colors that get chosen.
 
 ## Sampling
 
@@ -143,7 +111,16 @@ That one rule is worth understanding, because everything else here follows from 
 -  Pressing Map Colors again always replaces the previous result rather than adding to it. So you can change the Color Distance or the Dither setting and press it again as often as you like, comparing results, without undoing anything in between.
 -  **Leaving image mapping and coming back makes the current result permanent.** Those dominoes have real colors now, so when the mode starts again they are not blank and are not on the new list. That is the way to lock a mapping in and then map something else — switch the mode off and on again.
 
-If every domino already had a color when you switched the mode on, there is nothing to map and the panel will say so. Leave image mapping, unassign the dominoes you want filled in, and switch it back on.
+When some of the dominoes under the picture are ones mapping will leave alone, the panel says how many are left — **{n} Unassigned Dominoes**, counting only the ones the picture reaches. Over a field you have not colored in yet it does not appear at all, because every domino under the picture is on the list and the number would tell you nothing. It changes as you move the picture, and deliberately does *not* drop to zero once you have mapped: it answers "what will the button do", and pressing it again does the same thing again.
+
+The count goes by where the picture *is*, not by what is drawn on it. If your picture has a transparent background — a logo on nothing, rather than a photograph — the number counts everything under its rectangle, while Map Colors fills only the dominoes under the ink. Expect the count to be the higher of the two in that case.
+
+If it would be zero, you are told when you switch the mode on rather than being left to press the button and watch nothing happen. There are two reasons for it, and the message says which:
+
+-  **Every domino under the picture already has a color.** Select the dominoes you want filled in and press Backspace to unassign them, then switch image mapping back on.
+-  **The picture is not over any dominoes.** Use Resize and Move to bring it over the element.
+
+Closing that message leaves image mapping, because there is nothing you could usefully do from inside it — the list is fixed for as long as the mode is on, so whatever you do next has to start with getting out. Coming back takes a fresh list.
 
 ## Map Colors
 
@@ -166,8 +143,6 @@ Like Map Colors, it is a single step in the undo history.
 
 ## What is remembered
 
-The picture, where you put it, and its transparency and layer settings all survive leaving image mapping mode, and survive clicking **Done** in domino editing. Come back to the same element and it will be waiting where you left it.
+The picture and everything about it survives leaving this mode and survives clicking **Done** in domino editing — see [Using an image](using-an-image) for the details, including what is and is not undoable.
 
-Clicking **Cancel** in domino editing throws the picture away along with your color edits, since that returns the element to how it was when you started.
-
-Moving and resizing the picture is *not* undoable in this version. Only the colors that Map Colors sets go into the undo history.
+The settings on this panel — Sampling, Color Distance, Dither and Dither Strength — stay as you left them for the rest of the session, on every element.

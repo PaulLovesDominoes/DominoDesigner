@@ -14,6 +14,16 @@ export type ImageMapLayer = "above" | "below";
 export interface DominoImageMap {
   /** The decoded file as a data URL. Nothing in this app is persisted, so this lives only for the session. */
   src: string;
+  /**
+   * Which decoded picture in assetStore.ts this record draws.
+   *
+   * The asset store is keyed by the picture rather than by the element, and this
+   * is the key. It has to be, because loading a replacement is undoable: keyed
+   * by element there is room for only one decoded picture per element, so
+   * replacing A with B would throw A's pixels away and undoing back to A would
+   * find nothing to draw.
+   */
+  assetId: string;
   /** For display in the panel. */
   fileName: string;
   /** The file's own pixel dimensions, which fix the aspect ratio a corner drag preserves. */
@@ -41,6 +51,43 @@ export interface DominoImageMap {
   /** The show/hide checkbox. Independent of opacity, so hiding doesn't lose the setting. */
   visible: boolean;
   layer: ImageMapLayer;
+}
+
+/**
+ * Whether two records describe the same picture in the same place, so a commit
+ * point can drop a change that didn't change anything.
+ *
+ * Deliberately not ddObjectOps.ts's ddObjectsEqual, which compares by turning
+ * both sides into JSON text. That is fine for a DDObject, which is a handful of
+ * numbers, and quietly terrible here: `src` is a base64 copy of the original
+ * file, often several megabytes, and a drag ends every time the user lets go of
+ * the mouse.
+ *
+ * The cheap fields are compared first so `src` is only reached once everything
+ * else matches — and at that point the two are nearly always the *same string in
+ * memory* (updateImageMap builds the new record by copying the old one), which
+ * JavaScript settles by comparing references rather than characters.
+ */
+export function imageMapRecordsEqual(
+  a: DominoImageMap | null,
+  b: DominoImageMap | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.x === b.x &&
+    a.y === b.y &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.opacity === b.opacity &&
+    a.visible === b.visible &&
+    a.layer === b.layer &&
+    a.assetId === b.assetId &&
+    a.fileName === b.fileName &&
+    a.naturalWidth === b.naturalWidth &&
+    a.naturalHeight === b.naturalHeight &&
+    a.src === b.src
+  );
 }
 
 // ── Z layering ────────────────────────────────────────────────────────────────

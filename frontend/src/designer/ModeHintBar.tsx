@@ -59,9 +59,14 @@ export default function ModeHintBar() {
   // Image mapping mode, and whether a picture has actually been loaded — the
   // sentence differs, since with no picture the only useful thing to say is how
   // to get one.
+  const setImageMapActive = useStore((s) => s.setImageMapActive);
   const imageMapActive = useStore((s) => s.imageMapActive);
-  const hasImage = useStore((s) => !!(s.dominoEditingId && s.imageMaps[s.dominoEditingId]));
-  // The root BuildPlane always exists and always has a children array — this
+  // Resize and Move, which needs a sentence of its own: it is the one sub-mode
+  // whose two ways out are not written down anywhere else.
+  const imageTransformActive = useStore((s) => s.imageTransformActive);
+  // Only ever set by a failed image load. Shown here as well as in the sidebar
+  // because a picture can now be loaded with that sidebar closed.
+  const imageMapMessage = useStore((s) => s.imageMapMessage);  // The root BuildPlane always exists and always has a children array — this
   // is "are there any DDObjects yet" for the Select-mode idle hint below.
   const hasElements = useStore((s) => {
     const root = s.ddObjects[s.rootId];
@@ -82,32 +87,59 @@ export default function ModeHintBar() {
     // bar ever means "press ESC to leave".
     content = (
       <>
+        {/* Leaving colour mapping is its own thing, and comes first with a rule
+            after it: it closes a sub-mode, where Done and Cancel leave domino
+            editing altogether. Without the separation the three read as one row
+            of equals and it is far too easy to press Cancel meaning "close this
+            panel" and throw the whole session away. The sidebar's own X does the
+            same job for anyone looking there instead. */}
+        {imageMapActive && (
+          <>
+            <button className={styles.textBtn} onClick={() => setImageMapActive(false)}>
+              Close Image Mapping
+            </button>
+            <span className={styles.separator} aria-hidden="true" />
+          </>
+        )}
         {/* Done commits; Cancel rolls the mode's edits back. Cancel only warns
             when there is actually something to lose — with nothing recorded
             since entry the two are indistinguishable to the user, and a prompt
             asking about edits that don't exist would just be noise. */}
-        <button className={styles.textBtn} onClick={exitDominoEditing}>
-          Done
-        </button>
-        <button
-          className={styles.textBtn}
-          onClick={() => (hasEdits ? setConfirmingCancel(true) : cancelDominoEditing())}
-        >
-          Cancel
-        </button>
+        {!imageMapActive && (
+          <>
+            <button className={styles.textBtn} onClick={exitDominoEditing}>
+              Done
+            </button>
+            <button
+              className={styles.textBtn}
+              onClick={() => (hasEdits ? setConfirmingCancel(true) : cancelDominoEditing())}
+            >
+              Cancel
+            </button>
+        </>
+        )}
         {/* Help follows whichever mode is on, so it opens on the page about the
             thing the user is actually doing. */}
         <button
           className={styles.textBtn}
-          onClick={() => openHelpTopic(imageMapActive ? "image-mapping" : "domino-editing")}
+          onClick={() => openHelpTopic(imageTransformActive ? "image-mapping" : "domino-editing")}
         >
           Help
         </button>
-        {imageMapActive ? (
+        {imageMapMessage ? (
+          // A failed image load says so here as well as in the sidebar, since
+          // the sidebar only shows while colour mapping is on and a picture can
+          // be loaded from the toolbar at any time. It replaces the sentence
+          // rather than adding a row, so the bar's fixed height is unaffected.
+          <span>{imageMapMessage}</span>
+        ) : imageTransformActive ? (
           <span>
-            {hasImage
-              ? "Position the image over the dominoes, then Map Colors to fill in the ones that had no color when you switched this mode on."
-              : "Click New Image in the sidebar to choose a picture to map onto these dominoes."}
+            Drag the image to move it, or its handles to resize it. Type ESC or click away
+            from the image when done.
+          </span>
+        ) : imageMapActive ? ( 
+          <span>
+            Set mapping options in the left-hand sidebar then click 'Map Colors' to map the image onto the dominoes.
           </span>
         ) : dominoShapeSelectHint ? (
           <span>{dominoShapeSelectHint}</span>

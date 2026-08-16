@@ -9,10 +9,10 @@ more.
 
 This is **v1**: the expandable app framework — a title bar with menu-driven screen switching
 and a Designer screen with a working pan/zoom 2D canvas, an extensible object model for the
-build's contents, live property editing, and editing of domino colors
+build's contents, live property editing, and editing of domino colors — by hand, by brush, or
+by mapping a picture onto them.
 
 Future plans:
-- Mapping an image onto domino colors
 - Uploading / downloading personal domino inventories (lists of domino colors and counts)
 - More flat element types (circle-bombs, spirals, lines, curves, triangles, etc.)
 - Handling three-dimensional structures
@@ -120,13 +120,19 @@ Double-click the element (on the build plane or in the sidebar) to enter domino 
         -  De-select all of color
         -  De-select others (anything not of the color)
 
-- **Setting Colors** - You can select first then choose the color, or "lock" the color first, then select
+- **Setting Colors** - Select the dominoes you want, then choose a color
     - **Choosing Colors** - Can be done by clicking on a color swatch or typing the color's shortcut combination
-    - **Lock a color** - Double click a color swatch or use the "lock" in the color menu to lock it
-        -  Every domino selected from now on (until the lock is removed) will be immediately changed to the locked color
     - **Unassigned** - dominoes not assigned to colors are "unassigned". Use the Backspace key to clear the colors for selected dominoes
     - **Hidden** - dominoes can be hidden from the build. Use the DEL key to hide dominoes
         -  Hidden dominoes can still be selected so they can be unhidden or assigned to colors (automatically also unhides them) 
+
+- **Painting Colors** — freehand, as an alternative to selecting first. Pick a brush from the
+  toolbar, choose its size from the same button's menu, click a color swatch to load it, then
+  drag across the field to paint as you go. The whole stroke is a single undo step.
+    -  **Circle** — a round nib, for filling and for dabbing single dominoes
+    -  **Bar** — a thin nib fixed at 45°, which gives thick and thin strokes depending on which
+       way you draw, for lettering and anything calligraphic
+    -  Loading **Hide** or **Unassigned** into a brush instead of a color turns it into an eraser
 
 Getting out of Domino Editing Mode:
 
@@ -150,7 +156,27 @@ Other Features:
 
 
 
+### Using a Picture
+
+Still inside domino editing mode, a picture can be laid over the element being edited — from the
+image button on the toolbar, or with **Ctrl+I**. It does two quite different jobs, and only the
+second is a mode:
+
+- **Tracing** — the picture is just an overlay, and every tool above keeps working over it. This is
+  the one that matters for a sponsor's logo: most logos are built out of exactly the shapes the
+  selection tools draw, and a shape snapped to the grid gives a cleaner edge than freehand will. The
+  button's menu holds transparency, hide/unhide, whether the picture sits over or under the colored
+  dominoes, a size reset, and **Resize and Move**, which puts drag handles on it.
+- **Mapping its colors** — a sidebar that gives each domino the nearest inventory color to the
+  picture over it. Choices are how each domino's patch of picture is read (average, for
+  photographs; most-common, for flat artwork with anti-aliased edges), which color-distance metric
+  decides "nearest" (OKLab, CIELAB, two RGB variants, greyscale), and which dither breaks up the
+  banding (ordered, random, or error diffusion). Mapping only fills dominoes that were unassigned
+  when the mode was switched on, so anything colored by hand is safe from it.
+
 ### Undo / Redo
 
 Undo/Redo covers both DDObject-level edits (create/delete/move/resize/properties) and domino color changes, hiding included, on one shared history — undoing a color change works even after leaving domino editing mode, and editing or deleting an inventory color's RGB immediately updates every domino painted with it.
+
+A picture's placement — adding, moving, resizing, replacing and deleting one — is undoable too, but only for as long as you are editing that element's dominoes. Pressing **Done** clears those steps out of the history: a picture is only ever drawn inside domino editing mode, so an undo from outside it would have nothing visible to show for itself.
 

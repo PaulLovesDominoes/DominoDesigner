@@ -1,11 +1,11 @@
-import { DOMINO_SIZE } from "../dimensions";
 import { nearestColor } from "../color-distance/registry";
 import type { AnyColorDistanceDefinition, PreparedColor } from "../color-distance/base";
 import { scanRunsForward, type AnyDitherDefinition, type Rgb } from "../dither/base";
-import { getDDObjectBounds, getDominoExpansion, getDominoRowCol } from "../object-types/registry";
+import { getDDObjectBounds, getDominoRowCol } from "../object-types/registry";
 import type { DDObject } from "../object-types/registry";
 import type { DominoData } from "../dominoes/object-model";
 import type { ImageAsset } from "./assetStore";
+import { dominoPatchHalfExtents } from "./coverage";
 import { imageOriginFor, imageWorldRect, type DominoImageMap } from "./object-model";
 import type { AnyPatchSampleDefinition } from "./patch-sample/base";
 import { resolvePatchBounds } from "./patch-sample/patchBounds";
@@ -90,17 +90,10 @@ export function createColorMappingJob(
   const rect = imageWorldRect(image, origin);
   if (rect.width <= 0 || rect.height <= 0) return undefined;
 
-  // How much build plane each domino owns. The element type already answers
-  // this for the Expand toggle — for a field it is half the spacing on each
-  // side, which makes the patch exactly one pitch, so the patches tile the grid
-  // with no gaps and no overlap. Note this is the raw registry accessor and NOT
-  // dominoes/expansion.ts's resolveDominoExpansion, which deliberately reports
-  // zeroes unless the user has Expand switched on.
-  const room = getDominoExpansion(ddObject);
-  const halfLeft = DOMINO_SIZE.thickness / 2 + (room?.x0 ?? 0);
-  const halfRight = DOMINO_SIZE.thickness / 2 + (room?.x1 ?? 0);
-  const halfDown = DOMINO_SIZE.width / 2 + (room?.y0 ?? 0);
-  const halfUp = DOMINO_SIZE.width / 2 + (room?.y1 ?? 0);
+  // How much build plane each domino owns — see coverage.ts, which is shared
+  // with the panel's count of how many dominoes the picture reaches so the two
+  // cannot disagree about it.
+  const half = dominoPatchHalfExtents(ddObject);
 
   const { candidates, metric, patchSample, dither, ditherAmplitude, ditherStrength, rgbById } =
     settings;
@@ -198,10 +191,10 @@ export function createColorMappingJob(
 
         const patch = resolvePatchBounds(
           pixels,
-          (centreX - halfLeft - rect.x) * pixelsPerMmX,
-          (rectTop - (centreY + halfUp)) * pixelsPerMmY,
-          (centreX + halfRight - rect.x) * pixelsPerMmX,
-          (rectTop - (centreY - halfDown)) * pixelsPerMmY,
+          (centreX - half.left - rect.x) * pixelsPerMmX,
+          (rectTop - (centreY + half.up)) * pixelsPerMmY,
+          (centreX + half.right - rect.x) * pixelsPerMmX,
+          (rectTop - (centreY - half.down)) * pixelsPerMmY,
         );
         if (!patch) continue;
 

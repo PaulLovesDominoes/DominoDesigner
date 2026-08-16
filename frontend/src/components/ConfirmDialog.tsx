@@ -4,11 +4,14 @@ import styles from "./ConfirmDialog.module.css";
 
 interface Props {
   message: string;
-  /** Label for the destructive/affirmative action. */
-  confirmLabel: string;
+  /**
+   * Label for the destructive/affirmative action. Leave it out — along with
+   * onConfirm — for a dialog that only has something to say; see below.
+   */
+  confirmLabel?: string;
   /** Label for backing out — also what Escape and a scrim click do. */
   cancelLabel: string;
-  onConfirm: () => void;
+  onConfirm?: () => void;
   onCancel: () => void;
 }
 
@@ -22,6 +25,12 @@ interface Props {
  * direction, so a reflexive dismissal can never be the one that throws work
  * away. Cancel is the focused default for the same reason. Note this is a
  * genuine modal, unlike PropertiesDialog: nothing behind it stays interactive.
+ *
+ * **Omit confirmLabel/onConfirm and it becomes an acknowledge-only dialog** —
+ * one button, which does what Escape and the scrim already did. That is what
+ * keeps this the app's single modal rather than there being a near-identical
+ * second one for telling the user something. The dismissing button is `onCancel`
+ * in both shapes, so nothing about the keyboard or the scrim changes.
  */
 export default function ConfirmDialog({
   message,
@@ -54,9 +63,11 @@ export default function ConfirmDialog({
       <div className={styles.dialog} role="alertdialog" aria-modal="true" aria-label={message}>
         <div className={styles.message}>{message}</div>
         <div className={styles.footer}>
-          <button className={styles.button} onClick={onConfirm}>
-            {confirmLabel}
-          </button>
+          {confirmLabel !== undefined && onConfirm && (
+            <button className={styles.button} onClick={onConfirm}>
+              {confirmLabel}
+            </button>
+          )}
           <button className={`${styles.button} ${styles.primary}`} onClick={onCancel} autoFocus>
             {cancelLabel}
           </button>

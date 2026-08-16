@@ -5,6 +5,7 @@ import ModeHintBar from "../designer/ModeHintBar";
 import Sidebar from "../designer/Sidebar";
 import { useStore } from "../store";
 import { useClipboardStore } from "../clipboard/store";
+import { loadImageForElement } from "../image-map/loadImage";
 import styles from "./DesignerScreen.module.css";
 
 export default function DesignerScreen() {
@@ -66,6 +67,26 @@ export default function DesignerScreen() {
         if (!s.dominoEditingId) return;
         e.preventDefault();
         useStore.getState().selectAllDominoes();
+      } else if (key === "i" && !e.shiftKey) {
+        // Show or hide the overlay picture, or ask for one if the element has
+        // none — the keyboard equivalent of the toolbar's image button.
+        //
+        // Gated on the mode first and only then preventDefault'd, exactly as
+        // Ctrl+A above is, so outside domino editing the browser keeps whatever
+        // Ctrl+I means to it. !e.shiftKey matters: `key` was lowercased above,
+        // so without it this would also swallow Ctrl+Shift+I, which opens the
+        // browser's developer tools.
+        if (!s.dominoEditingId) return;
+        // Unlike the branches above, this one can fire while the pointer is in
+        // the image mapping sidebar, which does hold form controls — hence the
+        // typing guard the rest of this handler does without.
+        const el = e.target as HTMLElement | null;
+        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
+          return;
+        }
+        e.preventDefault();
+        if (s.imageMaps[s.dominoEditingId]) s.toggleImageVisible(s.dominoEditingId);
+        else void loadImageForElement(s.dominoEditingId);
       }
     };
     window.addEventListener("keydown", onKeyDown);

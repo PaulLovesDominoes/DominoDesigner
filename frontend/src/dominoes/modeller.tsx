@@ -236,11 +236,10 @@ export function DominoModeller({
   const dominoExpanded = useStore((s) => s.dominoExpanded);
   const dominoEditingId = useStore((s) => s.dominoEditingId);
   const ddObject = useStore((s) => s.ddObjects[ddObjectId]);
-  // The two resolveUnpaintedTopZ reads beyond dominoEditingId. Same reasoning as
+  // The one resolveUnpaintedTopZ read beyond dominoEditingId. Same reasoning as
   // above: subscribe to the inputs, call the resolver in the effect. The image
   // record is the store's own reference, not a computed object, so it is exempt
   // from useShallow.
-  const imageMapActive = useStore((s) => s.imageMapActive);
   const imageMap = useStore((s) => s.imageMaps[ddObjectId]);
 
   const capacity = data?.capacity ?? 0;
@@ -395,10 +394,10 @@ export function DominoModeller({
     dominoExpanded,
     dominoEditingId,
     ddObject,
-    // Likewise for resolveUnpaintedTopZ: without these, switching a picture
+    // Likewise for resolveUnpaintedTopZ: without this, switching a picture
     // between above and below (or showing and hiding it) would leave the
     // unpainted dominoes at whatever height they were last drawn at.
-    imageMapActive,
+    // dominoEditingId, the resolver's other input, is already listed above.
     imageMap,
   ]);
 

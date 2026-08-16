@@ -15,7 +15,17 @@
   margin-bottom: 10px;
 }
 
+/* The title and the close button on one row. */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Takes the spare width, which is what pushes the close button to the right —
+   the same trick HelpPanel's header uses rather than a margin. */
 .title {
+  flex: 1;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -23,38 +33,26 @@
   color: var(--color-text-dim);
 }
 
-/* The four picture commands, laid out as a miniature toolbar. */
-.tools {
-  display: flex;
-  gap: 4px;
-}
-
-.iconBtn {
-  width: 34px;
-  height: 34px;
-  display: flex;
+/* Matches HelpPanel's close button rather than this panel's old command
+   buttons: it dismisses the panel, so it should read as chrome rather than as
+   one of the controls inside it. */
+.closeBtn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 26px;
+  height: 26px;
   padding: 0;
-  background: var(--color-chrome-2);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--color-text-dim);
   cursor: pointer;
 }
 
-.iconBtn:hover:not(:disabled) {
-  background: var(--color-border);
-}
-
-.iconBtn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.iconBtn.active {
-  background: var(--color-accent-dim);
-  border-color: var(--color-accent);
+.closeBtn:hover {
+  background: var(--color-chrome-2);
+  color: var(--color-text);
 }
 
 .row {
@@ -177,6 +175,42 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* How many dominoes a run will fill, with its (?) beside it. Reads as a fact
+   about the picture rather than as a control, so it borrows the file name's
+   dimmed weight rather than a row label's. */
+.targetCount {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-dim);
+}
+
+/* A plain round "?" rather than an icon: at this size a glyph would be
+   indistinguishable from the punctuation, and this is the shape people already
+   read as "explain this". */
+.helpBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  color: var(--color-text-dim);
+  cursor: pointer;
+}
+
+.helpBtn:hover {
+  background: var(--color-chrome-2);
+  color: var(--color-text);
 }
 
 .message {
