@@ -66,6 +66,15 @@ export default function DesignerScreen() {
         // sidebar is the swatch panel, with no text inputs in it.
         if (!s.dominoEditingId) return;
         e.preventDefault();
+        // Inside image mapping it means the swatch palette instead. Nothing
+        // there acts on the domino selection — setImageMapActive clears it on
+        // the way in — so selecting every domino would only light the field up
+        // with boxes no tool could use. With Use Colors on "all" there is
+        // nothing to tick either, so this does nothing at all.
+        if (s.imageMapActive) {
+          if (s.imageMapColorScope === "selected") s.setAllImageMapColors(true);
+          return;
+        }
         useStore.getState().selectAllDominoes();
       } else if (key === "i" && !e.shiftKey) {
         // Show or hide the overlay picture, or ask for one if the element has

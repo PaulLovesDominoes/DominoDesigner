@@ -42,8 +42,11 @@ export interface ColorDistanceDefinition<TPrepared extends PreparedColor, TSampl
    *
    * Filtering here is deliberate, not incidental: it is what lets "greyscale"
    * be an ordinary metric rather than a special case somewhere else, since the
-   * only thing that makes it different is which colors are on the table. It is
-   * also the seam a future "only use the swatches I picked" feature widens.
+   * only thing that makes it different is which colors are on the table.
+   *
+   * "Only use the swatches I picked" narrows the *entries* before they get here
+   * (image-map/palette.ts) rather than widening this contract, so a metric's own
+   * filter simply composes on top and no metric needed changing for it.
    */
   prepare(entries: readonly InventoryEntry[]): TPrepared[];
 

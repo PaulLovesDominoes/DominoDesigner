@@ -7,6 +7,7 @@ import { COLOR_DISTANCE_LIST, type ColorDistanceId } from "../color-distance/reg
 import { DITHER_LIST, type DitherId } from "../dither/registry";
 import { useDominoDataStore } from "../dominoes/store";
 import { makeDominoUnderImageTest } from "./coverage";
+import { imageMapPaletteEntries } from "./palette";
 import { PATCH_SAMPLE_LIST, type PatchSampleId } from "./patch-sample/registry";
 import styles from "./ImageMapPanel.module.css";
 
@@ -58,6 +59,15 @@ export default function ImageMapPanel() {
   );
   const targetCount = targets?.length ?? 0;
   const imageMapEntryWarning = useStore((s) => s.imageMapEntryWarning);
+  // Whether there is a colour to map *with*, read through the same function the
+  // run itself uses (palette.ts), so a greyed-out button and an empty run can
+  // never disagree about why.
+  const inventoryEntries = useStore((s) => s.inventoryEntries);
+  const imageMapColorScope = useStore((s) => s.imageMapColorScope);
+  const imageMapExcludedColorIds = useStore((s) => s.imageMapExcludedColorIds);
+  const paletteIsEmpty =
+    imageMapPaletteEntries(inventoryEntries, imageMapColorScope, imageMapExcludedColorIds)
+      .length === 0;
   const [explaining, setExplaining] = useState(false);
 
   const setImageMapActive = useStore((s) => s.setImageMapActive);
@@ -250,7 +260,7 @@ export default function ImageMapPanel() {
         <button
           className={styles.mapBtn}
           onClick={() => { startColorMapping(); }}
-          disabled={!image || mapping}
+          disabled={!image || mapping || paletteIsEmpty}
           title="Give each domino this mode may color the nearest inventory color to the image"
         >
           <RiMagicLine size={GLYPH_PX} />

@@ -109,7 +109,7 @@ the one `AppState`. Five exist today:
 | `dominoes/appStoreSlice.ts` | the selected swatch and the shortcut buffer, every domino-colour write (including a paint stroke's), select-by-swatch, the Expand toggle, and domino editing mode's cancel snapshot |
 | `shape-select/appStoreSlice.ts` | which shape-select gesture is armed inside domino editing mode, and its hint text |
 | `paint-brush/appStoreSlice.ts` | which paint brush is armed inside domino editing mode, and each brush's chosen size |
-| `image-map/appStoreSlice.ts` | the picture laid over each element, the two image sub-modes' view state, the chosen patch sampler, colour-distance metric and dither, which dominoes a mapping run may colour, whether entering mapping found anything to do, and the run itself |
+| `image-map/appStoreSlice.ts` | the picture laid over each element, the two image sub-modes' view state, the chosen patch sampler, colour-distance metric and dither, which colours a run may pick from and which dominoes it may colour, whether entering mapping found anything to do, and the run itself |
 
 What's left in `store.ts` is the state that isn't any one feature's: screen/menu/help, the
 DDObject hierarchy and its actions, domino editing mode, the properties dialog, and the camera
@@ -929,7 +929,9 @@ drag does — so its trigger should render the armed mode's own icon.
 ### Domino color editing
 
 While in domino editing mode, `Sidebar.tsx` shows `DominoColorPanel.tsx` — a grid of **swatches**
-— instead of the object hierarchy.
+— instead of the object hierarchy. Everything below describes the panel outside image mapping; that
+mode gives it two further states, in which it drops the specials and the carets and either does
+nothing at all or picks a mapping palette (see *Which colours a run may use*).
 
 **A swatch is anything the panel offers as a click target**, and the abstraction is the point:
 `Hide` and `Unassigned` sit above one swatch per **active** domino-inventory entry, and everything
@@ -1283,8 +1285,9 @@ likely to collapse back.
   gestures and the paint brushes. It is switched on and off from the toolbar's image button, and it
   is not a mode at all.
 - **Mapping its colours** (`imageMapActive`) is a mode. The toolbar's other buttons go `disabled`
-  (not hidden, so the user can see what was switched off and where it comes back), the swatches go
-  inert, and `DominoEditor` gives up its catch plane and its keyboard, keeping only the mode outline.
+  (not hidden, so the user can see what was switched off and where it comes back), the swatches stop
+  painting (they choose the run's palette instead — see *Which colours a run may use*), and
+  `DominoEditor` gives up its catch plane and its keyboard, keeping only the mode outline.
 
 **The two were one thing, and splitting them was the point of the change.** While the picture only
 existed inside the mapping mode, its best use was impossible: showing it meant giving up every tool
@@ -1415,6 +1418,43 @@ subscribe to the values it reads and call it, never call it inside a selector. I
 thing about images that `dominoes/modeller.tsx`, the shared drawing half for every element type,
 knows about; keep the signature a plain id in and a number out.
 
+#### Which colours a run may use
+
+`imageMapColorScope` (`"all" | "selected"`) plus `imageMapExcludedColorIds` narrow a run's palette
+to swatches the user ticks. `image-map/ImageColorScopeBar.tsx` is the Use Colors dropdown and its
+Select All/None, a third sidebar sibling between `ImageMapPanel` and `DominoColorPanel`; on
+`"selected"` the swatch panel's buttons become tick boxes. Six things are load-bearing:
+
+- **`image-map/palette.ts`'s `imageMapPaletteEntries` is the single answer both consumers read** —
+  `ImageMapPanel`, which greys Map Colors out on an empty palette, and `startColorMapping`, which
+  hands the result to `prepare`. The same one-answer-both-consumers-read idiom as
+  `dominoes/expansion.ts`, and for the same reason: a greyed-out button and an empty run must not
+  disagree about why. It filters `active` too, so a palette that looks non-empty there can never
+  come out empty inside `prepare`.
+- **Membership is stored as the colours turned *off*.** An empty record means "every colour", which
+  needs no initialisation — the slice cannot read `inventoryEntries` while building its own initial
+  state — and a colour added to the inventory later starts out included. The positive set would need
+  either an init step (fighting the decision that picks are *remembered* across mode entries) or a
+  `null`-means-all sentinel, which is two encodings of one state.
+- **The narrowing happens before `prepare`, never inside it.** See the colour-distance registry
+  below: it composes with Greyscale's own filter, and `resolveDitherAmplitude` measures the narrowed
+  palette for free, which is the wanted behaviour — three chosen colours must dither as three.
+- **Both fields are settings, not session state**, and `setImageMapActive` deliberately does not
+  touch either — unlike `imageMapTargets`, which is re-frozen on every entry.
+- **The two special swatches are dropped whenever `imageMapActive`**, via `dominoSwatches`'
+  `includeSpecials` parameter rather than a filter in the panel's JSX. Neither means anything to a
+  palette, and their absence is also what lets the panel treat every swatch it draws in that mode as
+  an inventory entry (the one `as InventoryEntryId` cast in `DominoColorPanel`).
+- **Ticked swatches are never dimmed.** The `.inert` dim belongs to scope *All* only; `.noCaret` was
+  split out of it because both mapping states draw a swatch with no caret and so need its closed-up
+  right edge, while only one of them may hide the colour the user is choosing between. A tick sits
+  inside the swatch alongside the accent ring, because the ring alone says "ticked" only by contrast
+  with its neighbours, and fails when all or none are ticked.
+
+`Ctrl+A` means the palette inside the mode (`DesignerScreen`'s one Ctrl-chord dispatcher). Selecting
+every domino there would light the field up with boxes no tool can act on — `setImageMapActive`
+clears the selection on the way in precisely because nothing in the mode uses it.
+
 #### The colour-distance registry
 
 `color-distance/` follows the usual four-part accessor shape (map → `Id` → `_LIST` → `get`), with
@@ -1433,8 +1473,11 @@ the only metric doing real work.
 
 `prepare` both filters the inventory and precomputes per colour, which is what makes Greyscale an
 ordinary metric rather than a special case somewhere else — the only thing that distinguishes it is
-which colours are on the table. It is also the seam the intended "only use the swatches I picked"
-feature widens.
+which colours are on the table. **"Only use the swatches I picked" narrows the *entries* before they
+reach `prepare` rather than widening this contract** (`image-map/palette.ts`, below), so a metric's
+own filter composes on top of it and not one metric changed when that landed. Don't move the
+narrowing inside `prepare`: five metrics would each have to reimplement it, and it would then be
+invisible to `resolveDitherAmplitude`, which is handed the prepared candidates.
 
 Five metrics today. **OKLab is the default and CIELAB is kept beside it deliberately** — the two
 mostly agree and part company in the deep blues, where CIELAB's hue drifts towards purple as a
@@ -2318,9 +2361,11 @@ otherwise "correct" backwards:
 - **Image mapping exists now** (`image-map/` with its `patch-sample/`, plus `color-distance/` and
   `dither/`, see *Image mapping*)
   — the third route to a domino's colour, and the only one that chooses colours rather than being
-  told them. One thing about it is the current version's line rather than the design's: a run
-  **assumes unlimited dominoes of every colour**, ignoring the inventory's `available` counts. That
-  is a scoped decision, not an oversight to be quietly corrected.
+  told them. **Which colours it may choose from is the user's now**, via the sidebar's Use Colors
+  setting and the swatches under it (see *Which colours a run may use*) — the swatches are no longer
+  simply inert during mapping. One thing about it is still the current version's line rather than
+  the design's: a run **assumes unlimited dominoes of every colour**, ignoring the inventory's
+  `available` counts. That is a scoped decision, not an oversight to be quietly corrected.
 - **A picture is now an overlay first and a colour source second**, and the two were deliberately
   split apart (see *Image mapping*). Showing one is an ordinary part of domino editing — tracing a
   sponsor's logo with the shape gestures and brushes is the use that motivated it — while mapping

@@ -45,8 +45,29 @@ const UNASSIGNED_COLOR = rgbBytesToHex(DEFAULT_DOMINO_COLOR);
  * The specials' shortcutLabels name the *keys* that apply them, which the
  * shortcut-typing buffer can never match — it only ever compares against
  * inventory entries' own `shortcut` field, so typing D-E-L does nothing here.
+ *
+ * `includeSpecials` is false while image mapping is on: neither special means
+ * anything to a palette of colours a picture can be mapped onto. Leaving them
+ * out here rather than in the panel's JSX is also what lets the panel treat
+ * every swatch it draws in that mode as an inventory entry.
  */
-export function dominoSwatches(entries: InventoryEntry[]): DominoSwatch[] {
+export function dominoSwatches(
+  entries: InventoryEntry[],
+  includeSpecials = true,
+): DominoSwatch[] {
+  const inventorySwatches = entries
+    .filter((e) => e.active)
+    .map((e) => ({
+      id: e.id,
+      name: e.colorName,
+      shortcutLabel: e.shortcut,
+      background: e.color,
+      textColor: readableTextColor(e.color),
+      tip: `${e.colorName} — ${e.material}, ${e.finish}, ${e.brand}`,
+      canUnhide: false,
+    }));
+  if (!includeSpecials) return inventorySwatches;
+
   return [
     {
       id: HIDE_SWATCH_ID,
@@ -68,16 +89,6 @@ export function dominoSwatches(entries: InventoryEntry[]): DominoSwatch[] {
       tip: null,
       canUnhide: false,
     },
-    ...entries
-      .filter((e) => e.active)
-      .map((e) => ({
-        id: e.id,
-        name: e.colorName,
-        shortcutLabel: e.shortcut,
-        background: e.color,
-        textColor: readableTextColor(e.color),
-        tip: `${e.colorName} — ${e.material}, ${e.finish}, ${e.brand}`,
-        canUnhide: false,
-      })),
+    ...inventorySwatches,
   ];
 }

@@ -27,7 +27,8 @@
 /*
  * The selected swatch — the colour a paint brush lays down. Also borrowed while
  * a shortcut is being typed, to mark every candidate the buffer could still
- * resolve to; see DominoColorPanel.tsx.
+ * resolve to, and again while image mapping is picking a palette, where it marks
+ * a ticked colour; see DominoColorPanel.tsx.
  *
  * On the *row*, so it rings the swatch and its caret together. On the swatch
  * alone the outline-offset put its right-hand edge underneath the caret, which
@@ -53,6 +54,8 @@
   border-radius: 4px 0 0 4px;
   border-right: none;
   cursor: pointer;
+  /* So the tick below can be placed against this button's own corner. */
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -61,18 +64,46 @@
 }
 
 /*
- * Shown but doing nothing, while image mapping mode owns domino editing.
+ * Drawn without its caret, which is both of image mapping's states.
  *
- * The full radius and the right-hand border are not decoration: the caret is not
- * rendered in this mode, and .swatch above is squared off on its right and has
- * no border there precisely because the caret normally closes it up. Without
- * these the swatch would sit with one open edge.
+ * The full radius and the right-hand border are not decoration: .swatch above is
+ * squared off on its right and has no border there precisely because the caret
+ * normally closes it up. Without these the swatch would sit with one open edge.
  */
-.swatch.inert {
+.swatch.noCaret {
   border-radius: 4px;
   border-right: 1px solid var(--color-border);
+}
+
+/*
+ * Shown but doing nothing, while image mapping is using every colour. It is
+ * only the dimming — the edge above is a separate modifier, because the other
+ * image-mapping state draws the same closed-up swatch at full strength, where a
+ * dimmed one would misrepresent the colour the user is choosing.
+ */
+.swatch.inert {
   opacity: 0.55;
   cursor: default;
+}
+
+/*
+ * Marks a swatch that is in the mapping palette. It sits inside the swatch
+ * rather than beside it so the colour it belongs to is unmistakable, and in the
+ * top-left because the shortcut label is centred and the caret's old strip is on
+ * the right.
+ *
+ * text-shadow rather than a plate behind it: a plate would cover the very colour
+ * this panel exists to show, and the shadow is what keeps the tick legible where
+ * the readable text colour is close to the swatch's own — a mid-grey, say.
+ */
+.check {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 12px;
+  line-height: 1;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
 }
 
 /*

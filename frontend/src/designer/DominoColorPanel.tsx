@@ -3,6 +3,8 @@ import { RiArrowDownSLine } from "@remixicon/react";
 
 import { useStore } from "../store";
 import type { DominoSwatchId } from "../dominoes/swatches";
+import type { InventoryEntryId } from "../domino-inventory/object-model";
+import { isImageMapColorPicked } from "../image-map/palette";
 import FloatingTip from "../components/FloatingTip";
 import DominoSwatchMenu from "./DominoSwatchMenu";
 import { dominoSwatches, type DominoSwatch } from "./dominoSwatches";
@@ -33,6 +35,14 @@ import styles from "./DominoColorPanel.module.css";
  * are selected, they apply, they have menus. Only three things distinguish them:
  * they carry no hover tip, their labels name keys rather than typeable
  * shortcuts, and Hide alone offers Unhide in its menu.
+ *
+ * Image mapping gives the panel two further states, chosen by the Use Colors
+ * dropdown above it (image-map/ImageColorScopeBar). On "all" the swatches are
+ * shown but do nothing; on "selected" they become tick boxes choosing which
+ * colours a mapping run may use. Both drop the two specials, which mean nothing
+ * to a palette, and both drop the carets, since every item in a swatch's menu
+ * changes which dominoes are selected and nothing in this mode acts on a
+ * selection.
  */
 export default function DominoColorPanel() {
   const dominoEditingId = useStore((s) => s.dominoEditingId);
@@ -44,15 +54,24 @@ export default function DominoColorPanel() {
   // key flashes the same button a mouse click presses. A click needs nothing
   // stored — CSS :active covers it.
   const dominoPressedSwatchId = useStore((s) => s.dominoPressedSwatchId);
-  // Image mapping mode owns the whole of domino editing while it is on, so the
-  // swatches are shown but do nothing. Inert rather than `disabled`, for two
-  // reasons: a disabled button takes no pointer events in most browsers, which
-  // would silently kill the hover tip below, and this is one small step from the
-  // intended next version, where picking swatches chooses which colours the
-  // mapping is allowed to use.
-  const inert = useStore((s) => s.imageMapActive);
+  const imageMapActive = useStore((s) => s.imageMapActive);
+  const imageMapColorScope = useStore((s) => s.imageMapColorScope);
+  const imageMapExcludedColorIds = useStore((s) => s.imageMapExcludedColorIds);
+  const toggleImageMapColor = useStore((s) => s.toggleImageMapColor);
 
-  const swatches = useMemo(() => dominoSwatches(inventoryEntries), [inventoryEntries]);
+  // Picking: the swatches choose which colours a mapping run may use. Inert:
+  // image mapping is on but using every colour, so they are shown and do
+  // nothing. Inert rather than `disabled`, because a disabled button takes no
+  // pointer events in most browsers, which would silently kill the hover tip.
+  const picking = imageMapActive && imageMapColorScope === "selected";
+  const inert = imageMapActive && !picking;
+
+  // No Hide or Unassigned swatch while image mapping is on, which is also what
+  // makes every swatch below an inventory entry in both of those states.
+  const swatches = useMemo(
+    () => dominoSwatches(inventoryEntries, !imageMapActive),
+    [inventoryEntries, imageMapActive],
+  );
 
   // Which swatch is hovered, and where it sits on screen. The tip is rendered
   // once outside the grid rather than inside each button, so it can escape the
@@ -88,11 +107,17 @@ export default function DominoColorPanel() {
         // user can see what they are narrowing towards; the moment the buffer
         // resolves and clears, it settles onto the swatch that matched — which
         // is the same swatch the match just selected.
-        const isHighlighted =
-          !inert &&
-          (shortcutCandidates
-            ? shortcutCandidates.has(swatch.id)
-            : swatch.id === dominoSelectedSwatchId);
+        //
+        // The same ring marks a ticked swatch while picking a mapping palette.
+        // Reusing it is safe because it has no other meaning in that state: the
+        // selected swatch is a paint brush's colour, and no brush can be armed
+        // while image mapping is on.
+        const isHighlighted = picking
+          ? isImageMapColorPicked(imageMapExcludedColorIds, swatch.id as InventoryEntryId)
+          : !inert &&
+            (shortcutCandidates
+              ? shortcutCandidates.has(swatch.id)
+              : swatch.id === dominoSelectedSwatchId);
         const isMenuOpen = menu?.swatch.id === swatch.id;
 
         return (
@@ -111,15 +136,30 @@ export default function DominoColorPanel() {
                     styles.swatch,
                     swatch.id === dominoPressedSwatchId ? styles.pressed : "",
                     inert ? styles.inert : "",
+                    // The caret closes up the swatch's right-hand edge, so a
+                    // swatch drawn without one has to close itself.
+                    imageMapActive ? styles.noCaret : "",
                   ]
                     .filter(Boolean)
                     .join(" ")
                 }
                 style={{ background: swatch.background, color: swatch.textColor }}
-                // Always picks, never un-picks: clicking the swatch already
-                // selected is a harmless re-apply. A toggle would make a paint
-                // brush go inert on a second click.
-                onClick={inert ? undefined : () => pickDominoSwatch(swatch.id)}
+                // Picking a mapping palette is the one state where a click can
+                // un-pick. Everywhere else a click always picks: clicking the
+                // swatch already selected is a harmless re-apply, and a toggle
+                // would make a paint brush go inert on a second click.
+                //
+                // The cast holds because dominoSwatches leaves the two specials
+                // out whenever image mapping is on, so every swatch here is an
+                // inventory entry.
+                onClick={
+                  picking
+                    ? () => toggleImageMapColor(swatch.id as InventoryEntryId)
+                    : inert
+                      ? undefined
+                      : () => pickDominoSwatch(swatch.id)
+                }
+                aria-pressed={picking ? isHighlighted : undefined}
                 aria-disabled={inert || undefined}
                 onMouseEnter={(e) =>
                   swatch.tip && setHovered({ swatch, anchor: e.currentTarget.getBoundingClientRect() })
@@ -132,11 +172,16 @@ export default function DominoColorPanel() {
                 aria-label={swatch.name}
               >
                 <span>{swatch.shortcutLabel}</span>
+                {/* The ring alone would say "ticked" only by contrast with its
+                    neighbours, which fails when every swatch is ticked or none
+                    is. The tick is drawn in the swatch's own readable text
+                    colour, so it stays visible on any colour in the inventory. */}
+                {picking && isHighlighted && <span className={styles.check}>✓</span>}
               </button>
               {/* No caret at all while image mapping is on: every item in that
                   menu changes which dominoes are selected, and nothing in this
                   mode acts on a selection. */}
-              {!inert && (
+              {!imageMapActive && (
                 <button
                   className={isMenuOpen ? `${styles.caret} ${styles.caretOpen}` : styles.caret}
                   onClick={openMenu(swatch)}
@@ -157,7 +202,7 @@ export default function DominoColorPanel() {
         <FloatingTip anchor={hovered.anchor}>{hovered.swatch.tip}</FloatingTip>
       )}
 
-      {menu && !inert && (
+      {menu && !imageMapActive && (
         <DominoSwatchMenu
           swatch={menu.swatch}
           anchor={menu.anchor}

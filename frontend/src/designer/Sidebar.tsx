@@ -2,6 +2,7 @@ import { useStore } from "../store";
 import DDObjectsPanel from "./DDObjectsPanel";
 import DominoColorPanel from "./DominoColorPanel";
 import ImageMapPanel from "../image-map/ImageMapPanel";
+import ImageColorScopeBar from "../image-map/ImageColorScopeBar";
 import styles from "./Sidebar.module.css";
 
 export default function Sidebar() {
@@ -14,11 +15,13 @@ export default function Sidebar() {
     <aside className={styles.sidebar}>
       {editingDominoes ? (
         <>
-          {/* Stacked above the swatches, and shows itself only while image
-              mapping mode is on. The swatches stay below it in that mode but go
-              inert — nothing there acts on anything while a picture is being
-              placed. */}
+          {/* Both stack above the swatches and show themselves only while image
+              mapping mode is on. The bar's Use Colors setting decides what the
+              swatches below it do in that mode: on "all" they go inert, since
+              nothing there acts on anything; on "selected" they become tick
+              boxes choosing which colours a mapping run may use. */}
           <ImageMapPanel />
+          <ImageColorScopeBar />
           <DominoColorPanel />
         </>
       ) : (

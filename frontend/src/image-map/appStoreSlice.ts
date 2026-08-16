@@ -23,8 +23,14 @@ import {
   getPatchSample,
   type PatchSampleId,
 } from "./patch-sample/registry";
+import type { InventoryEntryId } from "../domino-inventory/object-model";
 import { getImageAsset } from "./assetStore";
 import { makeDominoUnderImageTest } from "./coverage";
+import {
+  imageMapPaletteEntries,
+  type ImageMapColorScope,
+  type ImageMapExcludedColorIds,
+} from "./palette";
 import { resolveDitherAmplitude } from "./ditherAmplitude";
 import { createColorMappingJob, type ColorMappingJob } from "./mapping";
 // A value import, unlike the type-only one it replaces. Safe: object-model
@@ -68,6 +74,16 @@ const NO_TARGETS_MESSAGE =
   "Every domino already had a color when image mapping was switched on, so there " +
   "is nothing to map. Leave image mapping, unassign the dominoes you want filled " +
   "in, then switch it back on.";
+
+/**
+ * Shown when Use Colors is on "selected" and nothing is ticked. Unreachable
+ * while the panel greys Map Colors out for exactly this case; it is here so the
+ * metric's own "no colours" message can never be shown for a reason that is not
+ * the metric's.
+ */
+const NO_PICKED_COLORS_MESSAGE =
+  "No colors are selected, so there is nothing to map with. Select some swatches " +
+  'or set Use Colors back to "All".';
 
 /**
  * What was wrong, if anything, when image mapping was switched on.
@@ -122,6 +138,24 @@ export interface ImageMapSlice {
 
   /** How hard the dither nudges each domino, 0 to 1. */
   ditherStrength: number;
+
+  /**
+   * Whether a run may use every active inventory colour, or only the swatches
+   * the user has ticked. The sidebar's Use Colors dropdown.
+   */
+  imageMapColorScope: ImageMapColorScope;
+
+  /**
+   * Which swatches are ticked, stored as the ones turned *off* — see
+   * palette.ts for why that way round.
+   *
+   * This and imageMapColorScope are settings, not session state: neither is
+   * touched by setImageMapActive, so leaving image mapping and coming back finds
+   * the palette as it was left, exactly as the metric and dither choices are.
+   * They sit outside imageMapTargets, which is the opposite — deliberately
+   * re-frozen on every entry.
+   */
+  imageMapExcludedColorIds: ImageMapExcludedColorIds;
 
   /** 0..1 while a mapping run is going, null when none is. Drives the progress bar. */
   colorMappingProgress: number | null;
@@ -237,6 +271,11 @@ export interface ImageMapSlice {
   setPatchSample(id: PatchSampleId): void;
   setDither(id: DitherId): void;
   setDitherStrength(strength: number): void;
+  setImageMapColorScope(scope: ImageMapColorScope): void;
+  /** Tick or untick one swatch. */
+  toggleImageMapColor(entryId: InventoryEntryId): void;
+  /** Tick every active swatch, or none of them — the Select All / None buttons. */
+  setAllImageMapColors(picked: boolean): void;
   setImageMapMessage(message: string | null): void;
 
   /** Start mapping the picture onto the edited element's target dominoes. */
@@ -381,6 +420,10 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
     patchSampleId: DEFAULT_PATCH_SAMPLE,
     ditherId: DEFAULT_DITHER,
     ditherStrength: DEFAULT_DITHER_STRENGTH,
+    imageMapColorScope: "all",
+    // Empty means every colour is in, so this needs no initialising — see
+    // palette.ts on why membership is stored as the colours turned off.
+    imageMapExcludedColorIds: {},
     colorMappingProgress: null,
     imageMapTargets: {},
     imageMapMessage: null,
@@ -548,6 +591,34 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
 
     setDitherStrength: (ditherStrength) => set({ ditherStrength }),
 
+    // The three palette actions clear the message for the same reason the metric
+    // and dither setters do: they change what a run would do, so whatever the
+    // last one complained about may no longer be true.
+    setImageMapColorScope: (imageMapColorScope) =>
+      set({ imageMapColorScope, imageMapMessage: null }),
+
+    toggleImageMapColor: (entryId) =>
+      set((s) => {
+        const imageMapExcludedColorIds = { ...s.imageMapExcludedColorIds };
+        if (imageMapExcludedColorIds[entryId]) delete imageMapExcludedColorIds[entryId];
+        else imageMapExcludedColorIds[entryId] = true;
+        return { imageMapExcludedColorIds, imageMapMessage: null };
+      }),
+
+    setAllImageMapColors: (picked) =>
+      set((s) => {
+        // Ticking everything is simply "nothing excluded". Unticking lists the
+        // active entries only, since an inactive one is not shown as a swatch
+        // and never reaches a run anyway.
+        const imageMapExcludedColorIds: ImageMapExcludedColorIds = {};
+        if (!picked) {
+          for (const entry of s.inventoryEntries) {
+            if (entry.active) imageMapExcludedColorIds[entry.id] = true;
+          }
+        }
+        return { imageMapExcludedColorIds, imageMapMessage: null };
+      }),
+
     setImageMapMessage: (imageMapMessage) => set({ imageMapMessage }),
 
     startColorMapping: () => {
@@ -571,7 +642,21 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
       // and converted here rather than tens of thousands of times inside the
       // loop. An empty list means this metric has nothing it is willing to use.
       const metric = getColorDistance(s.colorDistanceId);
-      const candidates = metric.prepare(s.inventoryEntries);
+      // Narrowed to the ticked swatches *before* the metric sees it, rather than
+      // by widening what prepare() is told. That way Greyscale's own grey filter
+      // simply composes on top with no change to any metric, and the amplitude
+      // measured below is measured over the colours a run will really use — so
+      // three chosen colours dither as three rather than as the whole inventory.
+      const palette = imageMapPaletteEntries(
+        s.inventoryEntries,
+        s.imageMapColorScope,
+        s.imageMapExcludedColorIds,
+      );
+      if (palette.length === 0) {
+        set({ imageMapMessage: NO_PICKED_COLORS_MESSAGE });
+        return;
+      }
+      const candidates = metric.prepare(palette);
       if (candidates.length === 0) {
         set({ imageMapMessage: metric.emptyMessage });
         return;

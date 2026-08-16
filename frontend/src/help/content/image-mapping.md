@@ -10,7 +10,9 @@ This topic is about *choosing the colors*. Getting a picture onto the element in
 
 Open the image menu in the toolbar (the arrow beside the picture button) and choose **Map Image Colors**. A panel appears at the top of the sidebar with the settings below, and the mode hint bar gains a **Close Image Mapping** button. Either that button or the **✕** at the top of the panel switches it off again.
 
-While it is on, the rest of the domino editing tools are switched off and shown greyed out: selection, the shapes, the paint brushes, and the color swatches. This is deliberate — mapping fills in a set of dominoes decided the moment you switch the mode on, and letting you paint dominoes in the middle of that would make the result hard to predict. Everything comes back the moment you leave.
+While it is on, the rest of the domino editing tools are switched off and shown greyed out: selection, the shapes and the paint brushes. This is deliberate — mapping fills in a set of dominoes decided the moment you switch the mode on, and letting you paint dominoes in the middle of that would make the result hard to predict. Everything comes back the moment you leave.
+
+The color swatches stay on screen but stop painting anything. Instead they can be used to choose which colors the mapping is allowed to pick from — see *Which colors get used*, below.
 
 Two things stay usable:
 
@@ -59,7 +61,28 @@ This chooses how "closest color" is decided. Different answers suit different pi
 
 -  **Greyscale** uses only the black, white and grey dominoes in your inventory, matching each patch of the picture on lightness alone. If you have no greys marked active, it will tell you so and change nothing.
 
-Only colors marked **active** in your inventory are ever used.
+Only colors marked **active** in your inventory are ever used, and you can narrow that further — see *Which colors get used*, below.
+
+## Which colors get used
+
+By default a mapping run may reach for any color marked **active** in your inventory. Often you want less than that: two colors for a silhouette, a handful of greys for a portrait, or just the colors you actually have enough of on the table.
+
+Above the swatches is a **Use Colors** setting.
+
+-  **All** is the default and uses every active color. The swatches below are dimmed and do nothing.
+-  **Selected** turns the swatches into tick boxes. Click one to take it out of the palette, click it again to put it back. A ticked swatch is ringed and carries a **✓**; the colors are never dimmed, so you can always see exactly what you are choosing between.
+
+Beside the setting are **Select: All** and **None**, and **Ctrl+A** ticks everything, as it does everywhere else in domino editing.
+
+The two special swatches, Hide and Unassigned, are not shown while image mapping is on. Neither is a color a picture could be mapped onto.
+
+Untick everything and **Map Colors** greys out, since there would be nothing to map with.
+
+Narrowing the palette changes more than which colors appear. Dither Strength is measured against the colors actually in play, so three chosen colors dither as three — a much larger shift than the same setting would give across a full inventory. That is automatic; there is nothing to re-tune.
+
+Greyscale narrows what you have chosen further still, to the greys among them. Choose only colored swatches and it will have nothing left to work with, and will say so.
+
+Your choice is remembered for the rest of the session, like the other settings on this panel.
 
 ## Dither
 
@@ -145,4 +168,4 @@ Like Map Colors, it is a single step in the undo history.
 
 The picture and everything about it survives leaving this mode and survives clicking **Done** in domino editing — see [Using an image](using-an-image) for the details, including what is and is not undoable.
 
-The settings on this panel — Sampling, Color Distance, Dither and Dither Strength — stay as you left them for the rest of the session, on every element.
+The settings on this panel — Sampling, Color Distance, Dither and Dither Strength — stay as you left them for the rest of the session, on every element. So do Use Colors and the swatches you ticked under it.

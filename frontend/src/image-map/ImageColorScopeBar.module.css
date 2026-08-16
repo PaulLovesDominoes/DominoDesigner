@@ -1,0 +1,53 @@
+/*
+ * One row above the swatch grid. `flex: 0 0 auto` for the same reason
+ * ImageMapPanel's panel has it: the sidebar is a column flex box and the swatch
+ * grid below has no basis of its own, so without this the two would compete for
+ * the height.
+ *
+ * It wraps rather than squeezing, because the sidebar is narrow and the two
+ * Select buttons are the part that can drop to a second line without the row
+ * losing its meaning.
+ */
+.bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 10px;
+}
+
+.label {
+  font-size: 11px;
+  color: var(--color-text-dim);
+}
+
+/* The dropdown takes the spare width; the buttons are sized to their labels. */
+.select {
+  flex: 1;
+  min-width: 72px;
+  padding: 4px 6px;
+  background: var(--color-input-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.button {
+  padding: 4px 8px;
+  background: var(--color-chrome-2);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--color-border);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
