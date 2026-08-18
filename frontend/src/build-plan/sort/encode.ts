@@ -1,4 +1,5 @@
 import type { PlanModel } from "../model";
+import { PLAN_GAP, planColorIndexGrid } from "../planGrid";
 import type { SortPlanOptions } from "./object-model";
 
 /**
@@ -38,21 +39,13 @@ export interface SortRow {
  */
 const SKIP_LABEL = "skip";
 
-/** PlanDomino.colorIndex for a hidden domino, and for a position holding none. */
-const GAP = -1;
-
 export function encodeSortRows(
   model: PlanModel,
   options: SortPlanOptions,
 ): SortRow[] {
-  // Lay the dominoes out by row and column once, pre-filled with the same -1
-  // that marks a hidden domino. A position with no domino at all then reads the
-  // same as a hidden one with no second array to track it — which is right, since
-  // from a builder's point of view both are a tooth of the template left empty.
-  const cells = new Int32Array(model.rows * model.cols).fill(GAP);
-  for (const domino of model.dominoes) {
-    cells[domino.row * model.cols + domino.col] = domino.colorIndex;
-  }
+  // Lay the dominoes out by row and column once. Shared with the CSV export, so
+  // the two can't disagree about which positions hold nothing.
+  const cells = planColorIndexGrid(model);
 
   const batchSize =
     options.batching && options.batchSize >= 1 ? Math.floor(options.batchSize) : 0;
@@ -66,7 +59,7 @@ export function encodeSortRows(
     // before and between dominoes are kept, because someone loading a template
     // has to know which teeth to leave empty.
     let length = model.cols;
-    while (length > 0 && cells[base + length - 1] === GAP) length--;
+    while (length > 0 && cells[base + length - 1] === PLAN_GAP) length--;
     if (length === 0) continue;
 
     const batches: SortRun[][] = [];

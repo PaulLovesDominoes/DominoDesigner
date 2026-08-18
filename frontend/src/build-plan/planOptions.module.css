@@ -26,6 +26,19 @@
 }
 
 /*
+ * A note about the rows just above it — what a setting means, or what leaving it
+ * alone will do. Indented to the control column so it reads as belonging to
+ * those rows rather than heading the next group, and quiet enough not to compete
+ * with the labels.
+ */
+.hint {
+  margin: 8px 0 0 146px;
+  color: var(--color-text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/*
  * Says why a setting will print badly, rather than quietly overriding it. Amber
  * rather than red: the plan will still print, it just will not be readable.
  */

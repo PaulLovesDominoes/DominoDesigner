@@ -1,6 +1,7 @@
 import { RiListOrdered } from "@remixicon/react";
 
 import type { BuildPlanDefinition } from "../base";
+import { openPlanTab } from "../html";
 import type { PageOrientation, PaperSizeId } from "../paper";
 import { emitSortHtml } from "./emitHtml";
 import { encodeSortRows } from "./encode";
@@ -42,4 +43,6 @@ export const sortPlanDefinition: BuildPlanDefinition<SortPlanOptions> = {
   Options: SortPlanEditor,
   documentTitle: (model) => `Sort Plan — ${model.ddObjectName}`,
   render: (model, options) => emitSortHtml(model, options, encodeSortRows(model, options)),
+  actionLabel: "Output for Print",
+  deliver: (document) => openPlanTab(document),
 };

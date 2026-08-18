@@ -239,8 +239,12 @@ registry seam and nowhere else.
 
 `DDObjectsPanel.tsx` renders the hierarchy by recursing from `rootId` through `children`,
 driven entirely by store selectors so it updates automatically as DDObjects are created. Each
-row carries a hover-revealed **⋯** button opening `DDObjectMenu` (Delete / Properties);
-Delete is disabled for the root, and the store's `removeDDObject` refuses it as well.
+row carries a hover-revealed **⋯** button opening `DDObjectMenu` (Delete / Properties / Edit
+Colors, plus one item per registered build plan); Delete is disabled for the root, and the
+store's `removeDDObject` refuses it as well. **Edit Colors is the named way into domino editing
+mode** — double-clicking the row or the element on the canvas does exactly the same thing, and
+all three gate on the same `isDominoEditable`. It is *hidden* rather than disabled when the type
+declares no such mode, matching the build-plan items below it.
 
 ### Property editing
 
@@ -250,11 +254,28 @@ controls come from `getDDObjectEditor`, so adding a DDObject type never means ed
 
 The three pieces relate like this: a type's **`editor.tsx`** is a plain set of rows built from
 the reusable controls in **`components/PropertyFields.tsx`** (`TextField`, `NumberField`,
-`NumberPairField`, `UnitNumberField`, `ColorField`, `SelectField`, `CheckboxField`, `Steppers`,
-plus `Separator` and `SectionHeader` for grouping) — it holds no dialog chrome and
-never imports `PropertiesDialog`. Note the module-private **`NumberInput`** holds the
-half-typed-value handling that `NumberField` and `NumberPairField` share; a third control wanting a
-number box should use it rather than copying the draft logic a third time.
+`OptionalNumberField`, `NumberPairField`, `UnitNumberField`, `ColorField`, `SelectField`,
+`CheckboxField`, `ReadOnlyField`, `Steppers`, plus `Separator` and `SectionHeader` for grouping)
+— it holds no dialog chrome and never imports `PropertiesDialog`. Note the module-private
+**`NumberInput`** holds the half-typed-value handling that `NumberField`, `NumberPairField` and
+`OptionalNumberField` share; a fourth control wanting a number box should use it rather than
+copying the draft logic a fourth time.
+
+Two of those need saying apart, because the difference between them is easy to collapse:
+
+- **`OptionalNumberField` may be left empty, and empty is a value** — it hands back `null`, and
+  whoever reads the setting decides what that means. `NumberInput`'s `allowBlank` is what
+  distinguishes it from every other box, where an empty box is a *transient editing state* that
+  is deliberately never committed (a zero-width plane in the scene, a divide-by-zero in the
+  camera's fit). It is a separate control rather than a flag on `NumberField` because an
+  optional value returns `number | null`, and widening `NumberField`'s `onChange` to match would
+  push that null onto every existing call site to no purpose. Its `placeholder` is how the box
+  says what leaving it empty will do — "auto". The print layout's page counts are the case it
+  was written for (see *Build plans*).
+- **`ReadOnlyField` is never editable at all**, so it renders plain text and takes no
+  `onChange`. `NumberField`'s `disabled` covers the neighbouring case — a derived value the
+  control *could* have edited, shown in a real (greyed) box. `fieldElement`'s "Total dominoes"
+  row is the first user.
 **`PropertiesDialog.tsx`** looks the editor up through the
 registry (`getDDObjectEditor`) and hosts it, passing each editor an `update` callback wired to
 `updateDDObject`. So a new control shared across types is added to `PropertyFields.tsx`; a new
@@ -696,6 +717,27 @@ consequences are load-bearing:
 - **Escape mid-drag restores `before`** — a preview that wrote to the store has to be undone by
   `cancelSequence`, which used to have nothing to put back. It covers shape gestures too, which
   preview identically (see *Shape select*).
+
+**A band whose pointerup never arrived is finished by the next press, not thrown away.** Nothing
+in this app captures the pointer, so a button released outside the canvas is never delivered and
+the gesture is left open. `onPointerDown` therefore has a `live?.dragging` branch, ahead of the
+fresh gesture it would otherwise build, that commits the band at the press point and clears the
+ref. Four things make that the right behaviour rather than a guess:
+
+- **`onPointerMove` is not gated on the button being down**, so once the pointer comes back the
+  band has gone on tracking it. The rectangle on screen at the moment of the press is one the user
+  can see, and committing it at the press point commits exactly that.
+- **Closing on the press, not the release** — the same idiom oval uses. The trailing pointerup
+  arrives with the gesture already gone and is absorbed by `onPointerUp`'s existing
+  `if (!g) return`.
+- **Without it the press was destructive.** The fresh gesture overwrote the band, and that press's
+  own pointerup fell into the plain-click branches: on empty space the whole selection cleared.
+- **Escape still backs out**, through `cancelSequence` as always, so there are two ways to end a
+  stranded band and neither is a surprise.
+
+`onPointerLeave` is deliberately still brush-only and does nothing for a band. It has nothing to
+rescue: the band writes its preview into the selection store on every frame, so leaving the canvas
+loses nothing.
 
 `sameIndices` skips the store write when a frame swept nothing new; the modeller's redraw is
 per-domino matrix/colour/attribute work, so that integer compare is orders cheaper than the
@@ -1913,18 +1955,41 @@ element can hold a target set with no picture — the mode was switched on and n
 
 ### Build plans
 
-`build-plan/` produces the two printed documents a design has to become before it can be built:
-the **Layout** (a picture of the element, one cell per domino, in colour, with a legend number in
-each) and the **Sort Plan** (each row written as run-length runs of colour, for counting dominoes
-into stacks in advance). Both are **template-aware** — a template is a comb 10–50 teeth wide that a
-row is slotted into and slid into place, so both mark batch boundaries at the template width, each
-with its own size setting since there is no reason sorting and setting up use the same comb.
+`build-plan/` produces the documents a design has to become before it can be built. Two are
+printed: the **Layout** (a picture of the element, one cell per domino, in colour, with a legend
+number in each) and the **Sort Plan** (each row written as run-length runs of colour, for counting
+dominoes into stacks in advance). Both are **template-aware** — a template is a comb 10–50 teeth
+wide that a row is slotted into and slid into place, so both mark batch boundaries at the template
+width, each with its own size setting since there is no reason sorting and setting up use the same
+comb. The third, **Export CSV**, is the same layout as data rather than as paper, so a design can
+be counted, re-ordered or priced somewhere else.
 
 It follows the `object-types/` layout: `base.ts` (`BuildPlanDefinition<TOptions>` plus the
 `AnyBuildPlanDefinition` erasure), `registry.ts` (`BUILD_PLANS` and its accessors), shared
-`model.ts`/`paper.ts`/`html.ts`, one folder per document, and `appStoreSlice.ts`. **Adding a
-document is a folder plus one line in `BUILD_PLANS`** — `DDObjectMenu` and `BuildPlanDialog` are
-driven off the map and neither names a plan.
+`model.ts`/`planGrid.ts`/`paper.ts`/`html.ts`/`download.ts`, one folder per document, and
+`appStoreSlice.ts`. **Adding a document is a folder plus one line in `BUILD_PLANS`** —
+`DDObjectMenu` and `BuildPlanDialog` are driven off the map and neither names a plan.
+
+#### How a finished document reaches the user
+
+A plan's `render` produces the document as a **string**, and `actionLabel`/`deliver` on the
+definition say what to do with it: the dialog's primary button takes its wording from the first
+and calls the second. That pair is what lets a plan be *saved* rather than *printed* with no
+branch in `BuildPlanDialog` — the two ways of delivering one live in `html.ts`'s `openPlanTab` and
+`download.ts`'s `downloadTextFile`, and a definition just names the one it wants. Three things
+about it:
+
+- **Both return `string | null`** — null having worked, or the message to show. The pop-up-blocked
+  wording therefore sits beside `openPlanTab`, which is the only thing that can be blocked, rather
+  than in the dialog, which no longer knows a tab is involved.
+- **Both must be reached synchronously from the click**, and for the same reason: a browser
+  allows `window.open`, and trusts a download, only while it can still see the user gesture. The
+  whole path — build the model, paginate, emit, deliver — is synchronous by construction.
+- **`downloadTextFile` clicks a link the user never sees**, an `<a download>` added to the
+  document and removed again. That is the only way to save a file the app made up itself, short of
+  the File System Access API, which not every browser has. Its object URL is revoked on the same
+  60-second timer `openPlanTab` uses, and revoking early gives an empty file rather than a blank
+  tab.
 
 #### It is HTML, and that is not a stopgap
 
@@ -2015,6 +2080,16 @@ valid index. Two consequences worth keeping:
   pre-filled into its grid — a position holding no domino and a hidden one are the same thing to a
   builder, and now the same value.
 
+**That pre-filled grid is `planGrid.ts`'s `planColorIndexGrid`, and it is its own module rather
+than a function in `model.ts` for a specific reason.** `model.ts` value-imports
+`object-types/registry` and the domino stores, because building a plan means reading them, and
+that drags a large part of the app in behind it. Laying an *already built* model out by row and
+column needs none of that, and both `sort/encode.ts` and `csv/encode.ts` want it — so it sits in a
+module whose only import is a type, which TypeScript erases entirely. Same reasoning as
+`image-map/visibility.ts`. `PLAN_GAP` lives there with it, so the two encoders cannot disagree
+about which value means "nothing here". (`layout/emitHtml.ts`'s `indexByRowCol` stays separate: it
+holds whole `PlanDomino`s, which is a different payload, not a fourth copy of this.)
+
 #### Legibility drives capacity, not the other way round
 
 The number in each cell is how a builder tells two near-identical colours apart while sorting and
@@ -2025,10 +2100,26 @@ the user's numbers win and **warn** rather than silently overriding — the same
 `imageMapEntryWarning`. `resolveCapacity` is split out from `paginateLayout` because the options
 dialog shows the cell size and page count live as the user types, and has no use for the page list.
 
-**Automatic is two steps, and the second one is the fix for a real bug.** Settle the page count at
-the smallest legible cell — which is the fewest pages possible — then **grow the cell as far as that
-same page count allows**, capped at `MAX_CELL_WIDTH_MM`. Both halves are load-bearing and each
-without the other was wrong:
+**Automatic and Fit to Pages are one branch of `resolveCapacity`, not two, and merging them is
+what let a page count be left blank.** They were always the same calculation; the only thing that
+differs is where the two page counts come from. Automatic works both out — the fewest pages an
+axis needs at the smallest legible cell — and Fit to Pages uses whichever the user typed and works
+out the rest. So **a blank box means "size this axis to fit"**, both blank behaves *exactly* like
+Paginate Automatically, and `pagesWide`/`pagesLong` are `number | null` starting at null. Two
+details hold it together:
+
+- **The legibility floor applies only when nothing was typed.** A page count the user asked for
+  wins outright and the warning says when it will print too small; with both blank there is nobody
+  to overrule, so the cell never drops below `minScale`. That one `if` is the whole of the old
+  difference between the two modes.
+- **The panel says so rather than leaving it to be discovered** — a hint line under the two boxes,
+  and `placeholder="auto"` in each. What a blank axis actually came out as is in the summary,
+  which re-paginates live.
+
+**Automatic is then two steps, and the second one is the fix for a real bug.** Settle the page
+count at the smallest legible cell — which is the fewest pages possible — then **grow the cell as
+far as that same page count allows**, capped at `MAX_CELL_WIDTH_MM`. Both halves are load-bearing
+and each without the other was wrong:
 
 - **Without the growth step the grid stopped short of the right margin.** The scale stayed pinned at
   the legibility floor however much room was going spare, so there was *always* leftover width: 20%
@@ -2084,7 +2175,8 @@ page is arithmetic and `auto` leaves nothing to do it with.
 Pages arrived. Each mode reads one pair of fields (`rowsPerPage`/`colsPerPage`, or
 `pagesWide`/`pagesLong`) and Automatic reads neither, so the panel **hides** the pair not in use
 rather than disabling it — and what Automatic worked out appears in the summary, which is then the
-only place those figures exist.
+only place those figures exist. Note only the Fit to Pages pair may be blank: Manual's counts are
+what that mode *is*, so there is nothing for a blank one to fall back to.
 
 **Fit to Pages fills each page, it does not spread the element evenly over them.** The requested
 page counts decide the *cell size* — the fewest dominoes a page must hold to reach that count,
@@ -2117,6 +2209,28 @@ Four encoding decisions, all verified against the worked example in the original
 - **The batch counter resets at each row**, since a template is loaded one row at a time, and a run
   crossing a boundary is **cut with both halves keeping the colour name**.
 
+#### The CSV export
+
+`csv/encode.ts` is the whole document — the layout grid with its rows and columns numbered from 1
+at the upper left, the legend under it, then the totals. **There is no emit step beside it**,
+unlike the other two: a CSV has no pages, so there is nothing to paginate and nothing to lay out.
+For the same reason there is nothing to set, which is why `CsvPlanOptions` is empty and the panel
+spends itself saying what the file will hold instead. Five decisions:
+
+- **A gap is an empty cell, and it cannot be a `0`.** Unassigned took 0 as its legend number, so 0
+  is an ordinary colour a builder has to leave blank on the floor. Empty also reads as a hole in a
+  spreadsheet, which is what it is. Deliberately not the sort plan's `skip`, whose job — not
+  mistaking a gap for a colour named "Skip" in a column of *text* — does not arise here.
+- **The BOM is load-bearing for Excel only.** Without it Excel reads a `.csv` in the machine's
+  local code page and the `×` in "34 rows × 86 columns", along with any accented colour name,
+  comes out as rubbish. Everything else skips it silently. CRLF for the same audience.
+- **`csvCell` quotes only when it has to** — a comma, quote or newline in the value. Colour names
+  and the element's name are typed by the user, so all three turn up.
+- **The legend carries a hex column the printed one does not.** On paper the swatch says it
+  better than six characters could; in a spreadsheet there is no swatch.
+- **The closing lines are each a single value in the first column**, matching the printed legend
+  page's totals word for word — including the gaps line, which appears only when there are gaps.
+
 #### What is and isn't state
 
 `buildPlanOptions` is **settings, not document state** — remembered globally rather than per
@@ -2126,6 +2240,10 @@ a **true modal**, like `ConfirmDialog` and unlike `PropertiesDialog`: its scrim 
 `DesignerScreen`'s Ctrl chords and `DominoEditor`'s Delete cannot keep editing the element being
 printed, and it is not draggable. It sits one z-index band below `ConfirmDialog` so the
 pop-ups-are-blocked message it raises still lands on top of it.
+
+**A CSV export is state in exactly the same sense the printed plans are: none.** It reads the
+element and writes a file, so there is no undo entry and no operation kind — the same rule
+recorded under *Current state and direction*.
 
 **The menu items are gated on capability, never on type** — `getDominoRowCol(ddObject) !== undefined`
 plus a non-zero domino count. The build plane declares neither and is excluded structurally rather
@@ -2627,7 +2745,7 @@ otherwise "correct" backwards:
   contrast. Don't try to solve it inside `color-distance/`. Note error diffusion narrows the gap
   without closing it — it can suggest a tone between two the inventory holds, but not one outside
   the range of every colour in it.
-- **Printed build plans exist now** (`build-plan/`, see *Build plans*) — the first thing in the app
+- **Build plans exist now** (`build-plan/`, see *Build plans*) — the first thing in the app
   that leaves it, and the point the rest of the design has been building towards. Three decisions
   there are scoped rather than oversights: a run **assumes unlimited dominoes of every colour**, as
   image mapping does, so the legend's counts are a requirement rather than a check against the
@@ -2636,9 +2754,15 @@ otherwise "correct" backwards:
   document, not a redesign); and **page cutting assumes columns map to a rectangle**, which is true
   for a field and would need thought for a spiral. Everything else about a non-grid type is already
   handled, since the geometry is read from the dominoes' own positions.
+- **A build plan is no longer necessarily printed.** Export CSV writes a file instead, which is
+  what `actionLabel`/`deliver` on `BuildPlanDefinition` are for — the seam is about *delivery*, and
+  is deliberately not the same seam a PDF backend would use (that one is `emitHtml`'s neighbour
+  inside a document's own folder, and would still be delivered by `openPlanTab`). A data export
+  wanting a different shape — JSON, or a per-template pick list — is now a folder and a registry
+  line, with nothing in `BuildPlanDialog` to change.
 - **A build plan is not a document-state change and records no history.** It reads the element and
-  writes nothing, so there is no undo entry, and its options are settings in the same class as image
-  transparency. Don't add an operation kind for it.
+  writes nothing back into it, so there is no undo entry, and its options are settings in the same
+  class as image transparency. Don't add an operation kind for it — saving a file is not an edit.
 - **Locked-colour mode existed and was deliberately removed.** A swatch could be locked
   (double-click, or its menu's `Lock`), after which *every* selection change repainted whatever it
   had just selected. It was a pre-brush stand-in for a brush, and once real brushes existed it was

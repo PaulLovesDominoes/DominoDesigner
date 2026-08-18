@@ -223,9 +223,14 @@ export function legendHtml(model: PlanModel): string {
     </div>`;
 }
 
+const POPUP_BLOCKED_MESSAGE =
+  "The plan could not be opened because this browser blocked the new tab. " +
+  "Allow pop-ups for this site and try again.";
+
 /**
- * Opens a finished document in a new tab. Returns false when the browser's
- * pop-up blocker refused it, which is the caller's cue to say so.
+ * Opens a finished document in a new tab. Returns null when that worked, or the
+ * message to show when the browser's pop-up blocker refused it — the shape every
+ * plan's `deliver` returns.
  *
  * Must be reached synchronously from the click that asked for it — a pop-up
  * blocker allows `window.open` only while it can still see the user gesture that
@@ -238,13 +243,13 @@ export function legendHtml(model: PlanModel): string {
  * loading leaves that tab blank; holding one document string for a minute costs
  * nothing.
  */
-export function openPlanTab(html: string): boolean {
+export function openPlanTab(html: string): string | null {
   const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
   const opened = window.open(url, "_blank");
   if (!opened) {
     URL.revokeObjectURL(url);
-    return false;
+    return POPUP_BLOCKED_MESSAGE;
   }
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  return true;
+  return null;
 }

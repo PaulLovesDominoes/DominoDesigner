@@ -1,5 +1,6 @@
 import {
   NumberField,
+  ReadOnlyField,
   SelectField,
 } from "../../components/PropertyFields";
 import type { DDObjectEditorProps } from "../base";
@@ -62,6 +63,14 @@ export default function FieldElementEditor({
         min={1}
         step={1}
         onChange={(dominoes_per_row) => set({ dominoes_per_row })}
+      />
+      {/* Exactly rows x dominoes/row, not an estimate: a field's grid is fully
+          rectangular, so every position holds a domino. Derived from the two
+          counts rather than read from the domino store, whose count only catches
+          up once the modeller has regenerated. */}
+      <ReadOnlyField
+        label="Total dominoes"
+        value={(ddObject.rows * ddObject.dominoes_per_row).toLocaleString()}
       />
 
       {/* Both spacings are the clear gap between neighbours, not centre-to-

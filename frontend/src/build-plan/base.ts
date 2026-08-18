@@ -34,6 +34,19 @@ export interface BuildPlanDefinition<TOptions> {
   /** Names the browser tab and the document, e.g. "Layout — Main Field". */
   documentTitle(model: PlanModel): string;
   render(model: PlanModel, options: TOptions): string;
+  /** The options dialog's primary button, e.g. "Output for Print". */
+  actionLabel: string;
+  /**
+   * Hands the finished document to the user — opens it in a tab for printing, or
+   * saves it as a file. Returns null when that worked, or the message to show
+   * when the browser refused; a pop-up blocker is the case that happens.
+   *
+   * On the definition rather than in the dialog so that a document which is
+   * saved rather than printed needs no branch there. The two ways of delivering
+   * one live in html.ts and download.ts, and a definition just names the one it
+   * wants.
+   */
+  deliver(document: string, model: PlanModel): string | null;
 }
 
 export interface BuildPlanOptionsProps<TOptions> {

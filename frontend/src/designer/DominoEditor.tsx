@@ -1074,6 +1074,32 @@ export default function DominoEditor() {
       return;
     }
 
+    // A rubber band whose pointerup never arrived. Nothing captures the pointer,
+    // so a button released outside the canvas is never delivered here and the
+    // band is left open. onPointerMove is not gated on the button being down, so
+    // it has gone on tracking the cursor ever since — meaning the rectangle on
+    // screen right now is one the user drew and can see, and this press finishes
+    // it rather than throwing it away.
+    //
+    // Without this the fresh gesture below would overwrite the band, and this
+    // press's own pointerup would fall into the plain-click branches: an empty
+    // spot would clear the selection outright.
+    //
+    // Closing on the press rather than the release, the same way a multi-step
+    // shape does. The trailing pointerup then arrives with the gesture already
+    // gone, which onPointerUp's existing `if (!g) return` absorbs.
+    if (live?.dragging) {
+      const data = useDominoDataStore.getState().get(dominoEditingId);
+      if (data) {
+        const entry = resolveDragToSelection(data, live, { x: e.point.x, y: e.point.y }, true);
+        if (entry) useDominoSelectionStore.getState().replace(dominoEditingId, entry);
+      }
+      gestureSequenceRef.current = null;
+      setDragCurrent(null);
+      invalidate();
+      return;
+    }
+
     const g: GestureSequenceState = {
       startWorld: { x: e.point.x, y: e.point.y },
       // Needed whatever is armed: a press that never travels far enough to

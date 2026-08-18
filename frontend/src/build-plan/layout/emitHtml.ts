@@ -21,7 +21,7 @@ import { EDGE_BLEED_MM, type PaginatedLayout } from "./paginate";
 
 /** Hairline round each domino, so the grid reads as cells even in one colour. */
 const CELL_STROKE_MM = 0.08;
-const MAJOR_RULE_MM = 1.2;
+const MAJOR_RULE_MM = 1.0;
 const MINOR_RULE_MM = 0.45;
 /** The grid's own outline, where no division falls on it. */
 const BORDER_RULE_MM = 0.5;

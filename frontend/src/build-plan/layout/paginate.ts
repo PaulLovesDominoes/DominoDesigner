@@ -16,9 +16,9 @@ import type { LayoutPlanOptions, PageBreakRule } from "./object-model";
  * colours apart while sorting and checking, so it is never dropped and never
  * shrunk past reading size. That makes the smallest readable cell the *input* to
  * how many dominoes fit on a page, rather than something sacrificed to fit more
- * on. In Auto mode that is the whole calculation. In Manual mode the user's
- * counts win and we say so when the result would be too small, rather than
- * silently overriding them.
+ * on. In Auto mode that is the whole calculation. In Manual mode, and for a page
+ * count typed into Fit to Pages, the user's counts win and we say so when the
+ * result would be too small, rather than silently overriding them.
  */
 
 /** Smallest number height that still reads reliably in print — about 7.4pt. */
@@ -287,48 +287,15 @@ export function resolveCapacity(
     colsPerPage = Math.max(1, Math.floor(options.colsPerPage));
     rowsPerPage = Math.max(1, Math.floor(options.rowsPerPage));
     scale = Math.min(scaleHolding(colsPerPage, rowsPerPage), maxScale);
-  } else if (options.pagination === "Fit to Pages") {
-    // The page counts are what the user asked for, so the cell size is derived
-    // from them: work out the fewest dominoes a page must hold to reach the
-    // requested count, rounded **up** to a whole division (rounding down would
-    // need one more page than was asked for), and size the cell to hold that.
-    const pagesWide = Math.max(1, Math.floor(options.pagesWide));
-    const pagesLong = Math.max(1, Math.floor(options.pagesLong));
-    const neededCols = perPageUp(
-      Math.ceil(model.cols / pagesWide),
-      model.cols,
-      colStep,
-    );
-    const neededRows = perPageUp(
-      Math.ceil(model.rows / pagesLong),
-      model.rows,
-      rowStep,
-    );
-    scale = Math.min(scaleHolding(neededCols, neededRows), maxScale);
-
-    // Then **fill each page as far as it will go** at that size, rather than
-    // spreading the element evenly over the pages asked for. Only one axis can
-    // bind the cell size, so the other is usually left with room to spare — and
-    // an even spread wastes it: 86 dominoes over two pages came out 43/43 with
-    // space for 64 on each, where filling gives 60/26 and puts the whole of the
-    // first page to use. The leftovers land on the last page, which is what a
-    // builder working left to right expects.
-    //
-    // This cannot overrun the request: the scale above already guarantees at
-    // least `neededCols` fit, and `neededCols` is a whole number of divisions,
-    // so flooring what fits can only land on or above it.
-    const room = fitsAt(scale);
-    colsPerPage = perPageDown(room.cols, model.cols, colStep);
-    rowsPerPage = perPageDown(room.rows, model.rows, rowStep);
   } else {
-    // Automatic, and the whole of the rule is: settle the page count at the
-    // smallest legible cell — which is the fewest pages possible — then grow the
-    // cell as far as that same page count allows.
+    // "Paginate Automatically" and "Fit to Pages" are the same calculation. The
+    // only thing that differs is where the two page counts come from: Automatic
+    // works out both, and Fit to Pages uses the ones the user typed and works
+    // out the rest — which is exactly what a blank box means there.
     //
-    // Growing without this second step is what left the grid ending short of the
-    // right margin: the scale stayed at the legibility floor however much room
-    // was going spare. Growing without the page-count guard would be the
-    // opposite mistake, silently turning a one-sheet layout into two.
+    // The worked-out answer for an axis is the fewest pages it needs at the
+    // smallest cell whose number still reads, which is the fewest pages
+    // possible.
     const atMin = fitsAt(minScale);
     const fewestPagesWide = Math.ceil(
       model.cols / perPageDown(atMin.cols, model.cols, colStep),
@@ -337,23 +304,61 @@ export function resolveCapacity(
       model.rows / perPageDown(atMin.rows, model.rows, rowStep),
     );
 
-    // The fewest dominoes a page may hold and still land on that page count.
+    // Only "Fit to Pages" reads these, so Automatic asks for nothing and takes
+    // both worked-out counts.
+    const fitToPages = options.pagination === "Fit to Pages";
+    const requestedWide =
+      fitToPages && options.pagesWide !== null
+        ? Math.max(1, Math.floor(options.pagesWide))
+        : null;
+    const requestedLong =
+      fitToPages && options.pagesLong !== null
+        ? Math.max(1, Math.floor(options.pagesLong))
+        : null;
+
+    // The fewest dominoes a page may hold and still land on that page count,
+    // rounded **up** to a whole division — rounding down would need one more
+    // page than was asked for.
     const neededCols = perPageUp(
-      Math.ceil(model.cols / fewestPagesWide),
+      Math.ceil(model.cols / (requestedWide ?? fewestPagesWide)),
       model.cols,
       colStep,
     );
     const neededRows = perPageUp(
-      Math.ceil(model.rows / fewestPagesLong),
+      Math.ceil(model.rows / (requestedLong ?? fewestPagesLong)),
       model.rows,
       rowStep,
     );
 
-    scale = Math.max(minScale, Math.min(scaleHolding(neededCols, neededRows), maxScale));
+    scale = Math.min(scaleHolding(neededCols, neededRows), maxScale);
 
-    const grown = fitsAt(scale);
-    colsPerPage = perPageDown(grown.cols, model.cols, colStep);
-    rowsPerPage = perPageDown(grown.rows, model.rows, rowStep);
+    // A page count the user typed wins outright, and the warning below says so
+    // when it will print too small to read. With nothing typed there is nobody
+    // to overrule, so the cell never drops below the legibility floor.
+    if (requestedWide === null && requestedLong === null) {
+      scale = Math.max(minScale, scale);
+    }
+
+    // Then **fill each page as far as it will go** at that size, rather than
+    // spreading the element evenly over the pages. Only one axis can bind the
+    // cell size, so the other is usually left with room to spare — and an even
+    // spread wastes it: 86 dominoes over two pages came out 43/43 with space for
+    // 64 on each, where filling gives 60/26 and puts the whole of the first page
+    // to use. The leftovers land on the last page, which is what a builder
+    // working left to right expects.
+    //
+    // This cannot overrun a requested count: the scale above already guarantees
+    // at least `neededCols` fit, and `neededCols` is a whole number of
+    // divisions, so flooring what fits can only land on or above it.
+    //
+    // Growing the cell at all is the other half of the Automatic rule, and
+    // leaving it out is what once left the grid ending short of the right
+    // margin: the scale stayed at the legibility floor however much room was
+    // going spare. Growing without settling the page count first would be the
+    // opposite mistake, silently turning a one-sheet layout into two.
+    const room = fitsAt(scale);
+    colsPerPage = perPageDown(room.cols, model.cols, colStep);
+    rowsPerPage = perPageDown(room.rows, model.rows, rowStep);
   }
 
   const cellWidthMm = tracks.cellWidthMm * scale;

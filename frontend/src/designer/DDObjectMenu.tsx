@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { RiDeleteBinLine, RiPencilLine } from "@remixicon/react";
+import { RiDeleteBinLine, RiPaletteLine, RiPencilLine } from "@remixicon/react";
 
 import { useStore } from "../store";
 import type { DDObjectId } from "../object-types/base";
-import { getDominoRowCol } from "../object-types/registry";
+import { getDominoRowCol, isDominoEditable } from "../object-types/registry";
 import { useDominoDataStore } from "../dominoes/store";
 import { BUILD_PLANS, BUILD_PLAN_LIST } from "../build-plan/registry";
 import styles from "./DDObjectMenu.module.css";
@@ -25,6 +25,7 @@ export default function DDObjectMenu({ ddObjectId, anchor, onClose }: Props) {
   const removeDDObject = useStore((s) => s.removeDDObject);
   const openProperties = useStore((s) => s.openProperties);
   const openBuildPlan = useStore((s) => s.openBuildPlan);
+  const enterDominoEditing = useStore((s) => s.enterDominoEditing);
 
   // Whether this DDObject can produce a printed build plan at all. A capability
   // test, not a type test: the build plane names no dominoes by row and column
@@ -36,6 +37,11 @@ export default function DDObjectMenu({ ddObjectId, anchor, onClose }: Props) {
   );
   const canBuildPlan =
     !!ddObject && getDominoRowCol(ddObject) !== undefined && dominoCount > 0;
+
+  // The same capability test the sidebar row's double-click and the canvas pick
+  // plane use, so the three ways into domino editing mode agree on which
+  // DDObjects have one.
+  const canEditDominoes = !!ddObject && isDominoEditable(ddObject);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: anchor.left, top: anchor.bottom + 4 });
@@ -83,6 +89,20 @@ export default function DDObjectMenu({ ddObjectId, anchor, onClose }: Props) {
           <RiPencilLine size={16} />
           Properties
         </button>
+        {/* The named way into domino editing mode. Double-clicking the row or
+            the element on the canvas does the same thing; this is the one that
+            says so. Hidden rather than disabled when the type has no such mode,
+            matching the build-plan items below. */}
+        {canEditDominoes && (
+          <button
+            className={styles.item}
+            role="menuitem"
+            onClick={run(() => enterDominoEditing(ddObjectId))}
+          >
+            <RiPaletteLine size={16} />
+            Edit Colors
+          </button>
+        )}
         {/* One item per registered build plan — this menu names none of them, so
             a third document is a folder plus a line in the registry. */}
         {canBuildPlan && <hr className={styles.separator} />}

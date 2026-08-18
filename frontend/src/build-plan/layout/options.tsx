@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import {
   NumberField,
   NumberPairField,
+  OptionalNumberField,
   SectionHeader,
   SelectField,
   Separator,
@@ -98,6 +99,7 @@ export default function LayoutPlanEditor({
 
       <Separator />
 
+      <SectionHeader>Pagination</SectionHeader>
       <SelectField
         label="Pagination"
         value={options.pagination}
@@ -127,22 +129,32 @@ export default function LayoutPlanEditor({
       )}
       {options.pagination === "Fit to Pages" && (
         <>
-          <NumberField
+          <OptionalNumberField
             label="Pages wide"
             value={options.pagesWide}
             min={1}
             unit="pg"
+            placeholder="auto"
             onChange={(pagesWide) => update({ pagesWide })}
           />
-          <NumberField
+          <OptionalNumberField
             label="Pages long"
             value={options.pagesLong}
             min={1}
             unit="pg"
+            placeholder="auto"
             onChange={(pagesLong) => update({ pagesLong })}
           />
+          {/* An axis left blank takes the count Automatic would have chosen for
+              it — the fewest pages it needs at a readable size. What that came
+              out as is in the summary below. */}
+          <div className={styles.hint}>
+            Blank values will be automatically sized to fit
+          </div>
         </>
       )}
+
+      <Separator />
 
       <div className={styles.summary}>
         <div>

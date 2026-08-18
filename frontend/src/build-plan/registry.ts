@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 
 import type { AnyBuildPlanDefinition, BuildPlanOptionsProps } from "./base";
+import { csvPlanDefinition } from "./csv/object-model";
 import { layoutPlanDefinition } from "./layout/object-model";
 import { sortPlanDefinition } from "./sort/object-model";
 
@@ -14,6 +15,7 @@ import { sortPlanDefinition } from "./sort/object-model";
 export const BUILD_PLANS = {
   layout: layoutPlanDefinition,
   sort: sortPlanDefinition,
+  csv: csvPlanDefinition,
 } satisfies Record<string, AnyBuildPlanDefinition>;
 
 export type BuildPlanId = keyof typeof BUILD_PLANS;

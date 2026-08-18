@@ -1,6 +1,7 @@
 import { RiLayoutGridLine } from "@remixicon/react";
 
 import type { BuildPlanDefinition } from "../base";
+import { openPlanTab } from "../html";
 import type { PageOrientation, PaperSizeId } from "../paper";
 import { emitLayoutHtml } from "./emitHtml";
 import LayoutPlanEditor from "./options";
@@ -28,8 +29,8 @@ export type PageBreakRule = (typeof PAGE_BREAK_RULES)[number];
  */
 export const PAGINATION_MODES = [
   "Paginate Automatically",
-  "Paginate Manually",
   "Fit to Pages",
+  "Paginate Manually",
 ] as const;
 export type PaginationMode = (typeof PAGINATION_MODES)[number];
 
@@ -50,9 +51,14 @@ export interface LayoutPlanOptions {
   /** Read only under "Paginate Manually". */
   rowsPerPage: number;
   colsPerPage: number;
-  /** Read only under "Fit to Pages". */
-  pagesWide: number;
-  pagesLong: number;
+  /**
+   * Read only under "Fit to Pages", and each may be left blank — null meaning
+   * "work this axis out for me", which is the same answer Automatic would give
+   * for it. Both blank therefore behaves exactly like "Paginate Automatically",
+   * which is where they start.
+   */
+  pagesWide: number | null;
+  pagesLong: number | null;
   rowBreak: PageBreakRule;
   colBreak: PageBreakRule;
   orientation: PageOrientation;
@@ -78,8 +84,8 @@ const LAYOUT_DEFAULT_OPTIONS: LayoutPlanOptions = {
   pagination: "Paginate Automatically",
   rowsPerPage: 10,
   colsPerPage: 40,
-  pagesWide: 1,
-  pagesLong: 1,
+  pagesWide: null,
+  pagesLong: null,
   rowBreak: "Major or minor",
   colBreak: "Major",
   orientation: "Landscape",
@@ -95,4 +101,6 @@ export const layoutPlanDefinition: BuildPlanDefinition<LayoutPlanOptions> = {
   Options: LayoutPlanEditor,
   documentTitle: (model) => `Layout — ${model.ddObjectName}`,
   render: (model, options) => emitLayoutHtml(paginateLayout(model, options)),
+  actionLabel: "Output for Print",
+  deliver: (document) => openPlanTab(document),
 };

@@ -101,6 +101,27 @@
   opacity: 0.6;
 }
 
+/*
+ * ReadOnlyField's value. Padded down the left by the same amount an input's own
+ * border and padding add, so a figure that was never editable still lines up
+ * with the boxes above and below it.
+ */
+.readOnlyValue {
+  padding-left: 11px;
+  color: var(--color-text);
+}
+
+/*
+ * The greyed-out word an empty box shows in place of a value — "auto", where the
+ * setting works itself out. Dimmer than the value it stands in for, and italic,
+ * so an empty box never reads as one holding text.
+ */
+.control input::placeholder {
+  color: var(--color-text-dim);
+  font-style: italic;
+  opacity: 0.75;
+}
+
 /* A pull-down. Same chrome as the text/number inputs above. */
 .select {
   padding: 8px 10px;

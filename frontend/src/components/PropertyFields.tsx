@@ -91,14 +91,25 @@ export const sanitizeNumber = (raw: string, float: boolean) => {
 export const parseNumber = (text: string, float: boolean) =>
   float ? parseFloat(text) : parseInt(text, 10);
 
+/** What the box shows for a value that is not there. */
+const blankDraft = (value: number | null) => (value === null ? "" : String(value));
+
 interface NumberInputProps {
   id?: string;
-  value: number;
+  value: number | null;
   min: number;
   float: boolean;
   disabled: boolean;
-  onChange: (value: number) => void;
+  /**
+   * Whether clearing the box means something. Off by default, so an empty box
+   * stays a transient editing state; on, an empty box commits null and the
+   * setting falls back to whatever it works out for itself.
+   */
+  allowBlank: boolean;
+  onChange: (value: number | null) => void;
   className?: string;
+  /** Greyed-out text shown while the box is empty, e.g. "auto". */
+  placeholder?: string;
   /** Only needed where the row's own label does not name this box. */
   ariaLabel?: string;
 }
@@ -106,7 +117,7 @@ interface NumberInputProps {
 /**
  * Just the box. Split out of NumberField so a row holding two of them —
  * NumberPairField — gets the same half-typed-value handling rather than a second
- * copy of it that drifts.
+ * copy of it that drifts. OptionalNumberField shares it for the same reason.
  */
 function NumberInput({
   id,
@@ -114,23 +125,34 @@ function NumberInput({
   min,
   float,
   disabled,
+  allowBlank,
   onChange,
   className,
+  placeholder,
   ariaLabel,
 }: NumberInputProps) {
   // The box holds a string so it can be empty or mid-edit while the committed
   // value stays valid.
-  const [draft, setDraft] = useState(String(value));
+  const [draft, setDraft] = useState(() => blankDraft(value));
 
   // Re-sync when the value moves underneath us — a cancelled edit rolls the
-  // store back, and the box has to follow.
+  // store back, and the box has to follow. An empty draft already matches a null
+  // value, so leave it alone rather than fighting the user's own deletion.
   useEffect(() => {
-    setDraft((d) => (parseNumber(d, float) === value ? d : String(value)));
+    setDraft((d) => {
+      if (value === null) return d === "" ? d : "";
+      return parseNumber(d, float) === value ? d : String(value);
+    });
   }, [value, float]);
 
   const change = (e: ChangeEvent<HTMLInputElement>) => {
     const text = sanitizeNumber(e.target.value, float);
     setDraft(text);
+
+    if (allowBlank && text === "") {
+      onChange(null);
+      return;
+    }
 
     const parsed = parseNumber(text, float);
     // An empty or too-small box is a transient editing state, not a value.
@@ -149,8 +171,9 @@ function NumberInput({
       disabled={disabled}
       onChange={change}
       // Whatever was left uncommitted snaps back to the real value.
-      onBlur={() => setDraft(String(value))}
+      onBlur={() => setDraft(blankDraft(value))}
       className={className}
+      placeholder={placeholder}
       aria-label={ariaLabel}
     />
   );
@@ -192,7 +215,10 @@ export function NumberField({
       min={min}
       float={float}
       disabled={disabled}
-      onChange={onChange}
+      // Never blank, so the box can only ever hand back a number and this
+      // control's own onChange stays the simpler one every call site already has.
+      allowBlank={false}
+      onChange={(next) => onChange(next as number)}
       className={step !== undefined ? styles.stepInput : undefined}
     />
   );
@@ -211,6 +237,79 @@ export function NumberField({
             <Steppers onStep={stepBy} disabled={disabled} label={label} />
           </div>
         )}
+        <span className={styles.unit}>{unit ?? ""}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A number box that may be left empty.
+ *
+ * For a setting that can work itself out when the user says nothing — the print
+ * layout's page counts are the case it was written for. Empty means null, and
+ * whoever reads the setting decides what to do with that; the placeholder is how
+ * the box says so ("auto").
+ *
+ * Deliberately a separate control rather than a flag on NumberField: an optional
+ * value hands back `number | null`, and widening NumberField's onChange to match
+ * would push that null onto every existing call site to no purpose.
+ */
+export function OptionalNumberField({
+  label,
+  value,
+  min = 0,
+  unit,
+  placeholder,
+  onChange,
+}: FieldProps & {
+  value: number | null;
+  /** Values below this are treated as mid-edit and not committed. */
+  min?: number;
+  unit?: string;
+  placeholder?: string;
+  onChange: (value: number | null) => void;
+}) {
+  const id = useId();
+
+  return (
+    <div className={styles.field}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <div className={styles.control}>
+        <NumberInput
+          id={id}
+          value={value}
+          min={min}
+          float={false}
+          disabled={false}
+          allowBlank
+          onChange={onChange}
+          placeholder={placeholder}
+        />
+        <span className={styles.unit}>{unit ?? ""}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A value worked out from other fields on the same dialog: shown, never typed
+ * into.
+ *
+ * NumberField's `disabled` covers a derived value that is still a number the
+ * control could have edited; this is for one that was never editable at all, so
+ * it renders plain text and needs no onChange to ignore.
+ */
+export function ReadOnlyField({
+  label,
+  value,
+  unit,
+}: FieldProps & { value: string; unit?: string }) {
+  return (
+    <div className={`${styles.field} ${styles.fieldDisabled}`}>
+      <FieldLabel>{label}</FieldLabel>
+      <div className={styles.control}>
+        <span className={styles.readOnlyValue}>{value}</span>
         <span className={styles.unit}>{unit ?? ""}</span>
       </div>
     </div>
@@ -253,12 +352,14 @@ export function NumberPairField({
     <div className={`${styles.field} ${disabled ? styles.fieldDisabled : ""}`}>
       <FieldLabel>{label}</FieldLabel>
       <div className={styles.control}>
+        {/* Neither box may be blank, so neither can hand back null. */}
         <NumberInput
           value={first}
           min={min}
           float={false}
           disabled={disabled}
-          onChange={onChangeFirst}
+          allowBlank={false}
+          onChange={(next) => onChangeFirst(next as number)}
           className={styles.pairInput}
           ariaLabel={firstLabel}
         />
@@ -268,7 +369,8 @@ export function NumberPairField({
           min={min}
           float={false}
           disabled={disabled}
-          onChange={onChangeSecond}
+          allowBlank={false}
+          onChange={(next) => onChangeSecond(next as number)}
           className={styles.pairInput}
           ariaLabel={secondLabel}
         />
