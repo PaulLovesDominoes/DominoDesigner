@@ -21,6 +21,12 @@ everything. For a faster check without bundling, run `npx tsc --noEmit`.
 invent commands for them. Verification is `npm run build` plus exercising the app in the dev
 server.
 
+**`vite.config.ts` sets `build.sourcemap: true`**, so an error in the *built* app served through
+FastAPI reports a real file and line in `src/` rather than an offset into the minified bundle. The
+`.map` sits beside the bundle and is only fetched when devtools is open, so it costs nothing at
+runtime; it does publish the source, and `"hidden"` is the setting to switch to if that ever
+matters. `npm run dev` has always had accurate stacks — this is only for the production build.
+
 Serving the production build through the FastAPI server (it only serves `frontend/dist`; it
 has no API endpoints, so a frontend rebuild is required after frontend changes):
 
@@ -100,7 +106,7 @@ becomes a **slice** of the app store instead.
 
 `store.ts` grew past a thousand lines holding every feature's state inline, so a feature's
 members live in an `appStoreSlice.ts` under that feature's own folder while remaining part of
-the one `AppState`. Five exist today:
+the one `AppState`. Six exist today:
 
 | Slice | Holds |
 |---|---|
@@ -110,6 +116,7 @@ the one `AppState`. Five exist today:
 | `shape-select/appStoreSlice.ts` | which shape-select gesture is armed inside domino editing mode, and its hint text |
 | `paint-brush/appStoreSlice.ts` | which paint brush is armed inside domino editing mode, and each brush's chosen size |
 | `image-map/appStoreSlice.ts` | the picture laid over each element, the two image sub-modes' view state, the chosen patch sampler, colour-distance metric and dither, which colours a run may pick from and which dominoes it may colour, whether entering mapping found anything to do, and the run itself |
+| `build-plan/appStoreSlice.ts` | which printed plan's options dialog is open and for which element, and each plan's remembered settings |
 
 What's left in `store.ts` is the state that isn't any one feature's: screen/menu/help, the
 DDObject hierarchy and its actions, domino editing mode, the properties dialog, and the camera
@@ -243,8 +250,12 @@ controls come from `getDDObjectEditor`, so adding a DDObject type never means ed
 
 The three pieces relate like this: a type's **`editor.tsx`** is a plain set of rows built from
 the reusable controls in **`components/PropertyFields.tsx`** (`TextField`, `NumberField`,
-`UnitNumberField`, `ColorField`, `SelectField`, `Steppers`) — it holds no dialog chrome and
-never imports `PropertiesDialog`. **`PropertiesDialog.tsx`** looks the editor up through the
+`NumberPairField`, `UnitNumberField`, `ColorField`, `SelectField`, `CheckboxField`, `Steppers`,
+plus `Separator` and `SectionHeader` for grouping) — it holds no dialog chrome and
+never imports `PropertiesDialog`. Note the module-private **`NumberInput`** holds the
+half-typed-value handling that `NumberField` and `NumberPairField` share; a third control wanting a
+number box should use it rather than copying the draft logic a third time.
+**`PropertiesDialog.tsx`** looks the editor up through the
 registry (`getDDObjectEditor`) and hosts it, passing each editor an `update` callback wired to
 `updateDDObject`. So a new control shared across types is added to `PropertyFields.tsx`; a new
 type's editor consumes those controls and is wired only via its own definition.
@@ -1751,7 +1762,7 @@ Four consequences, each load-bearing:
   strand the previous result outside the new footprint. `clearMappedColors` (the panel's Clear) is
   the same write on its own.
 - **A domino's patch comes from `getDominoExpansion`**, the type's own statement of how much room
-  each domino owns, via `image-map/coverage.ts`'s `dominoPatchHalfExtents`. For a field that is half
+  each domino owns, via `dominoes/footprint.ts`'s `dominoFootprintHalfExtents`. For a field that is half
   the spacing on each side, which makes the patch exactly
   one pitch in each axis — note `thickness` goes with X and `width` with Y, matching `pitchX`/
   `pitchY`, which is the part that would be easy to get backwards. So the patches tile the grid
@@ -1771,8 +1782,11 @@ and watching nothing happen. Three parts:
 
 - `image-map/coverage.ts`'s `makeDominoUnderImageTest` builds the "does the picture reach this
   domino" test once and then answers it in a few comparisons per domino. It shares
-  `dominoPatchHalfExtents` with `mapping.ts` **specifically so the count and the run cannot disagree
+  `dominoFootprintHalfExtents` with `mapping.ts` **specifically so the count and the run cannot disagree
   about what the picture covers** — a count that contradicted the button would be worse than none.
+  (That helper lived here, as `dominoPatchHalfExtents`, until *Build plans* needed the same answer.
+  It is not about pictures — it is "how much build plane does a domino own" — so it moved to
+  `dominoes/footprint.ts`, where a third consumer can reach it without importing from `image-map/`.)
   The **geometry is exact**, and it is worth knowing why rather than assuming it is approximate:
   `resolvePatchBounds` decides a patch misses the picture *before* it rounds outward to whole
   pixels, and that decision, with the mm-to-pixel factors cancelled, is literally this overlap test.
@@ -1896,6 +1910,229 @@ undoing a field delete must bring its picture back; a *decoded picture* goes whe
 no `"imageMap"` operation on either stack names its `assetId`. It watches `imageMaps` as well as
 `ddObjects` and both stacks, and iterates the union of `imageMaps` and `imageMapTargets`, because an
 element can hold a target set with no picture — the mode was switched on and nothing was loaded.
+
+### Build plans
+
+`build-plan/` produces the two printed documents a design has to become before it can be built:
+the **Layout** (a picture of the element, one cell per domino, in colour, with a legend number in
+each) and the **Sort Plan** (each row written as run-length runs of colour, for counting dominoes
+into stacks in advance). Both are **template-aware** — a template is a comb 10–50 teeth wide that a
+row is slotted into and slid into place, so both mark batch boundaries at the template width, each
+with its own size setting since there is no reason sorting and setting up use the same comb.
+
+It follows the `object-types/` layout: `base.ts` (`BuildPlanDefinition<TOptions>` plus the
+`AnyBuildPlanDefinition` erasure), `registry.ts` (`BUILD_PLANS` and its accessors), shared
+`model.ts`/`paper.ts`/`html.ts`, one folder per document, and `appStoreSlice.ts`. **Adding a
+document is a folder plus one line in `BUILD_PLANS`** — `DDObjectMenu` and `BuildPlanDialog` are
+driven off the map and neither names a plan.
+
+#### It is HTML, and that is not a stopgap
+
+A plan is a whole standalone document — its own `<style>`, no React, no CSS modules, no webfonts —
+opened in a new tab from `html.ts`'s `openPlanTab`, and printed by the browser's own dialog, which
+is also where the PDF comes from. That was chosen over a PDF library because the print engine
+already knows paper sizes, orientation and Save-as-PDF, and a library would mean hand-rolling text
+layout and colour fills to get back to where `@page` starts. Four things about it are load-bearing:
+
+- **`print-color-adjust: exact`** (with the `-webkit-` prefix). Browsers drop background colours
+  when printing unless asked not to, and without it every domino prints white — the whole document
+  gone. It is an inherited property, so `html.ts` sets it once at the top.
+- **`@page { margin: 0 }` with our own padding inside `.page`.** Left alone the browser adds a
+  margin over ours and every measurement the pagination made is wrong by that much.
+- **`.page + .page { break-before: page }`, never a break *after* every page.** A break after the
+  last one prints a blank sheet.
+- **`window.open` must be reached synchronously from the click.** A pop-up blocker only allows it
+  while it can still see the gesture. Everything a plan needs is already in memory, so the whole
+  path — build the model, paginate, emit, open — is synchronous by construction; a `false` return
+  raises the acknowledge-only `ConfirmDialog`. The URL is a blob (a real, reloadable address, and
+  it prints more predictably than writing into `about:blank`), released on a **timer** rather than
+  at once — revoking before the new tab has loaded leaves it blank.
+- **`planDocument`'s `script` is `{ name, code }`, and the name is not optional.** It becomes a
+  `//# sourceURL=` comment, which is what gives the script its own entry in devtools. A plan opens
+  from a blob URL, so without it an error reads `77f30707-85d3-…:204` — an opaque id and a line
+  counted from the top of the whole generated page. It cannot do better than a name: these scripts
+  are template strings in the emitting module rather than compiled output, so there is nothing for
+  a source map to point back at. Requiring the name here rather than leaving each document to
+  remember it is what stops the next scripted document shipping without one.
+
+**The Layout is drawn as one inline SVG per page**, and that is the answer to "what about spirals
+and rings", which would otherwise read as a reason to want PDF. SVG has the same vector primitives
+(`path`, arcs, rotated `rect`, text on a path), the browser rasterises it at *printer* resolution,
+and it survives Save-as-PDF as vectors. It also makes the thick division rules plain `<line>`
+elements: drawn as cell *borders* they would shrink the cells they landed on and make the grid
+uneven. What genuinely would not carry over to a non-grid type is page **cutting**, which assumes a
+column range maps to a rectangle. That is honest future work.
+
+**Each document is split into `paginate`/`encode` (pure geometry or data, no markup) and
+`emitHtml`.** The split is inside each folder rather than on `BuildPlanDefinition`, because that is
+where a second backend would go — a PDF writer would consume the same paginated geometry and sit
+beside `emitHtml`, with the model, the pagination and the options untouched. Putting it on the
+contract would add a second type parameter to every definition for no gain today.
+
+#### `model.ts` — where a DDObject becomes a plan
+
+The one place that reads the domino columns, resolves colours, or decides which way up the page is,
+so the two documents can never disagree about a colour number or a row number. It names no element
+type. **Two existing sources answer two different questions, and keeping them apart is the point:**
+
+- **`DominoData.positions` plus `dominoes/footprint.ts`'s `dominoFootprintHalfExtents`** answer
+  *where a domino is drawn and how big*. The type's own modeller already wrote the positions, and
+  the footprint is the room the type says each domino owns. **This is what makes the printed cell
+  proportions match the canvas with no ratio computed anywhere** — a field's cell comes out about
+  twice as tall as it is wide because that is what it measures. It must use the **raw**
+  `getDominoExpansion` and never `resolveDominoExpansion`, which reports zeroes unless the Expand
+  toggle is on; a printed plan cannot depend on a view toggle, the same rule a mapping run follows.
+- **`dominoRowCol`** answers *what a domino is called* — row and column numbers on the page, where
+  the division rules fall, and the order the sort plan walks in.
+
+So a future spiral or ring type needs no new geometry code here. The one real gap is **rotation**:
+`DominoData.orientations` is standing/sideways/flat with no angle, so a type whose dominoes turn
+would need that column widened.
+
+**Two flips happen in `model.ts` and nowhere else**, and getting either backwards mirrors both
+documents: `planRow = maxRow - row`, because `fieldElement`'s row 0 is its *bottom* row and plan row
+1 is the top one; and `planY = maxY - (posY + halfUp)`, because the build plane's Y grows up while a
+printed page's grows down.
+
+**Colour numbering is `compareColor`**, the inventory table's own Color-column comparator, reused
+rather than reimplemented. An id with no live inventory entry resolves to Unassigned — deliberately
+the same fallback `rgbById` misses into, so a plan can never show a colour the build plane doesn't.
+
+**Unassigned prints as 0 and the real colours count up from 1**, so the numbers a builder actually
+has to go and fetch start at 1. It is pulled out of the sort and listed first rather than left to
+land among the greys, and when nothing is unassigned it is simply absent and the numbering starts at
+1 with no gap.
+
+**That is why `PlanDomino.colorIndex` and `PlanColor.number` are different things, and they must
+stay different.** `colorIndex` is a position in `colors`; `number` is what gets printed. They were
+one field until Unassigned took 0 — at which point 0 became a perfectly ordinary colour and could no
+longer double as the "no domino here" sentinel. The sentinel is now **`-1`**, which can never be a
+valid index. Two consequences worth keeping:
+
+- **Nothing adds or subtracts one.** `colors[domino.colorIndex]` is the whole lookup; the old
+  `colors[n - 1]` is gone from both emitters.
+- **`sort/encode.ts` needed no parallel "is there a domino here" array** once the sentinel could be
+  pre-filled into its grid — a position holding no domino and a hidden one are the same thing to a
+  builder, and now the same value.
+
+#### Legibility drives capacity, not the other way round
+
+The number in each cell is how a builder tells two near-identical colours apart while sorting and
+checking, so it is **never dropped and never shrunk past reading size**. That inverts the obvious
+design: the smallest readable cell is the *input* to how many dominoes fit on a page.
+`resolveCapacity` starts from `MIN_NUMBER_FONT_MM` and works outward. Manual and Fit to Pages let
+the user's numbers win and **warn** rather than silently overriding — the same tell-them-why tone as
+`imageMapEntryWarning`. `resolveCapacity` is split out from `paginateLayout` because the options
+dialog shows the cell size and page count live as the user types, and has no use for the page list.
+
+**Automatic is two steps, and the second one is the fix for a real bug.** Settle the page count at
+the smallest legible cell — which is the fewest pages possible — then **grow the cell as far as that
+same page count allows**, capped at `MAX_CELL_WIDTH_MM`. Both halves are load-bearing and each
+without the other was wrong:
+
+- **Without the growth step the grid stopped short of the right margin.** The scale stayed pinned at
+  the legibility floor however much room was going spare, so there was *always* leftover width: 20%
+  on Letter portrait, and 22% on Legal landscape for a field narrower than the page. It read as
+  orientation-specific because a portrait page is narrow enough that the field usually fills it, and
+  Legal landscape is the widest paper in the list.
+- **Without the page-count guard the growth silently costs paper.** A one-sheet layout would become
+  two with much larger dominoes, which nobody asked for.
+- **`perPageUp` vs `perPageDown` is the whole mechanism.** Rounding a page's capacity *down* to a
+  whole division is right when asking how much fits; rounding *up* is right when the page count is
+  already settled and the question is how few dominoes a page may hold without adding one. Rounding
+  down in that second place lets an extra page appear.
+- **`MAX_CELL_WIDTH_MM = 8` applies in every mode.** Without it a 10 × 5 field on Letter printed
+  19.6mm dominoes — a handful of giant squares with nothing gained.
+- **`fitsAt`'s `FIT_EPS` is load-bearing and reads exactly like a fudge factor.** The growth step
+  picks a scale at which *exactly* `neededCols` fill the width; `fitsAt` then divides the width back
+  by that cell size, and floating point returns `59.999999999999996` rather than `60`. Flooring that
+  loses a whole division, `perPageDown` drops from three majors to two, and a two-page layout prints
+  on three — silently, and only for the fields that happen to land on a boundary. An 86-column field
+  was the report that found it. `fieldElement`'s `GEOMETRY_EPS` exists for the same reason in
+  `fitCount`; the slack is orders of magnitude smaller than any real difference in fit.
+
+**A shape mismatch is not a bug and cannot be scaled away.** A near-square field on wide paper still
+leaves a gap, because closing it would need a second page and the cell aspect ratio is fixed by the
+element's real geometry. Portrait, or Fit to Pages, is the answer there — not a change to this rule.
+
+Four more decisions in `layout/`:
+
+- **Cell size is global, not per page.** Sizing each page to its own content would draw larger
+  dominoes on the last, narrower column of pages, and taped-together sheets would not tile.
+- **`pageCuts`'s `Math.max(step, …)`** is what keeps a page making progress when a division is
+  wider than a page will hold: it carries one oversized division rather than taking zero columns
+  forever.
+- **Columns break on `Major` by default and rows on `Major or minor`.** A page ending part-way
+  through a template means carrying a half-loaded template across a page turn, which is the friction
+  batching exists to remove; a row is not a template, so the looser rule there just wastes less
+  paper.
+- **`EDGE_BLEED_MM` is subtracted from the page in `resolveCapacity` and added back in
+  `emitHtml`.** An SVG stroke straddles the line it sits on, so the page-edge rules would lose their
+  outer half off the side of the drawing; the bleed is room for that half. Both halves are needed —
+  widening the drawing without shrinking the grid would push it past the margin.
+
+**A division landing on a page edge draws its own weight, on all four edges.** The four edges used
+to be one `<rect>` at `BORDER_RULE_MM`, so a template ending exactly at the edge of a sheet looked
+like an ordinary border and gave no sign that it did not continue overleaf. All four rather than
+only the trailing pair, because the right edge of one sheet and the left edge of the next are the
+*same* boundary and have to match when the sheets are laid side by side.
+
+**Paper size is an option rather than `@page { size: auto }`**, because fitting cells to an exact
+page is arithmetic and `auto` leaves nothing to do it with.
+
+**`pagination` is a three-way mode, not a boolean.** It was `autoCapacity: boolean` until Fit to
+Pages arrived. Each mode reads one pair of fields (`rowsPerPage`/`colsPerPage`, or
+`pagesWide`/`pagesLong`) and Automatic reads neither, so the panel **hides** the pair not in use
+rather than disabling it — and what Automatic worked out appears in the summary, which is then the
+only place those figures exist.
+
+**Fit to Pages fills each page, it does not spread the element evenly over them.** The requested
+page counts decide the *cell size* — the fewest dominoes a page must hold to reach that count,
+rounded up to a whole division — and then the pages are filled as far as that size and the break
+rule allow, leftovers landing on the last page. Only one axis can bind the cell size, so an even
+spread strands whatever room the other axis had: 86 dominoes over two pages came out 43/43 with
+space for 64 on each. Filling gives 60/26 under a major break rule, or 64/22 under `Any`, and is
+what a builder working left to right expects. It cannot overrun the request, because the scale
+already guarantees at least `neededCols` fit and `neededCols` is a whole number of divisions, so
+flooring what fits can only land on or above it — and it may well come *under* the request, which
+is correct.
+
+#### The sort plan, and why its pages are measured
+
+`encode.ts` is pure and paper-free; `emitHtml.ts` carries a short script that runs once the document
+is parsed and moves **whole** row blocks into fixed-height pages. A row's runs wrap to a number of
+lines nothing can predict in advance, so the pages are measured rather than computed — safe at parse
+time only because the document uses **system fonts only** and so never reflows afterwards. A row too
+tall for an empty page gets a page that grows (`pageOverflow`) and is broken by the browser, which
+is worse than not splitting it and far better than clipping it away.
+
+Four encoding decisions, all verified against the worked example in the original request:
+
+- **Gaps are lowercase `skip(xN)`**, so scanning a column of counts never mistakes one for a colour
+  named "Skip". A hidden domino and a position with no domino at all read the same, which is right:
+  both are a tooth left empty.
+- **Trailing gaps are trimmed, leading and interior ones kept.** The row simply stops; but someone
+  loading a template has to know which teeth to leave empty.
+- **A gap consumes a batch slot.** Boundaries count positions, not dominoes.
+- **The batch counter resets at each row**, since a template is loaded one row at a time, and a run
+  crossing a boundary is **cut with both halves keeping the colour name**.
+
+#### What is and isn't state
+
+`buildPlanOptions` is **settings, not document state** — remembered globally rather than per
+element, never undoable, exactly like image transparency and the Expand toggle. `BuildPlanDialog` is
+a **true modal**, like `ConfirmDialog` and unlike `PropertiesDialog`: its scrim dims the canvas
+(there is no live preview worth keeping bright), it swallows keydown in the capture phase so
+`DesignerScreen`'s Ctrl chords and `DominoEditor`'s Delete cannot keep editing the element being
+printed, and it is not draggable. It sits one z-index band below `ConfirmDialog` so the
+pop-ups-are-blocked message it raises still lands on top of it.
+
+**The menu items are gated on capability, never on type** — `getDominoRowCol(ddObject) !== undefined`
+plus a non-zero domino count. The build plane declares neither and is excluded structurally rather
+than by naming it, and a future element type is included the day it declares the same members. The
+domino-count subscription reads a primitive, so it needs no `useShallow`. The menu is already
+unreachable inside domino editing mode, since `Sidebar` swaps `DDObjectsPanel` out for
+`DominoColorPanel`.
 
 ### The clipboard
 
@@ -2390,6 +2627,18 @@ otherwise "correct" backwards:
   contrast. Don't try to solve it inside `color-distance/`. Note error diffusion narrows the gap
   without closing it — it can suggest a tone between two the inventory holds, but not one outside
   the range of every colour in it.
+- **Printed build plans exist now** (`build-plan/`, see *Build plans*) — the first thing in the app
+  that leaves it, and the point the rest of the design has been building towards. Three decisions
+  there are scoped rather than oversights: a run **assumes unlimited dominoes of every colour**, as
+  image mapping does, so the legend's counts are a requirement rather than a check against the
+  inventory's `available`; there is **no PDF backend**, deliberately, the browser's print dialog
+  being where the PDF comes from (the seam for one is recorded in *Build plans* and is a file per
+  document, not a redesign); and **page cutting assumes columns map to a rectangle**, which is true
+  for a field and would need thought for a spiral. Everything else about a non-grid type is already
+  handled, since the geometry is read from the dominoes' own positions.
+- **A build plan is not a document-state change and records no history.** It reads the element and
+  writes nothing, so there is no undo entry, and its options are settings in the same class as image
+  transparency. Don't add an operation kind for it.
 - **Locked-colour mode existed and was deliberately removed.** A swatch could be locked
   (double-click, or its menu's `Lock`), after which *every* selection change repainted whatever it
   had just selected. It was a pre-brush stand-in for a brush, and once real brushes existed it was

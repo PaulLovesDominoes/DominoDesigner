@@ -36,6 +36,10 @@ import {
   createImageMapSlice,
   type ImageMapSlice,
 } from "./image-map/appStoreSlice";
+import {
+  createBuildPlanSlice,
+  type BuildPlanSlice,
+} from "./build-plan/appStoreSlice";
 import { applyRemoveDDObject, ddObjectsEqual } from "./ddObjectOps";
 
 /**
@@ -87,7 +91,8 @@ export interface AppState
     DominoColorSlice,
     ShapeSelectSlice,
     PaintBrushSlice,
-    ImageMapSlice {
+    ImageMapSlice,
+    BuildPlanSlice {
   // Which screen is showing.
   screen: ScreenId;
   setScreen: (screen: ScreenId) => void;
@@ -559,4 +564,5 @@ export const useStore = create<AppState>()((set, get, api) => ({
   ...createShapeSelectSlice(set, get, api),
   ...createPaintBrushSlice(set, get, api),
   ...createImageMapSlice(set, get, api),
+  ...createBuildPlanSlice(set, get, api),
 }));

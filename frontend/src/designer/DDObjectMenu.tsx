@@ -3,6 +3,9 @@ import { RiDeleteBinLine, RiPencilLine } from "@remixicon/react";
 
 import { useStore } from "../store";
 import type { DDObjectId } from "../object-types/base";
+import { getDominoRowCol } from "../object-types/registry";
+import { useDominoDataStore } from "../dominoes/store";
+import { BUILD_PLANS, BUILD_PLAN_LIST } from "../build-plan/registry";
 import styles from "./DDObjectMenu.module.css";
 
 interface Props {
@@ -21,6 +24,18 @@ export default function DDObjectMenu({ ddObjectId, anchor, onClose }: Props) {
   const rootId = useStore((s) => s.rootId);
   const removeDDObject = useStore((s) => s.removeDDObject);
   const openProperties = useStore((s) => s.openProperties);
+  const openBuildPlan = useStore((s) => s.openBuildPlan);
+
+  // Whether this DDObject can produce a printed build plan at all. A capability
+  // test, not a type test: the build plane names no dominoes by row and column
+  // and holds none, so it is left out structurally rather than by naming it — and
+  // a future element type is included the day it declares the same members.
+  const ddObject = useStore((s) => s.ddObjects[ddObjectId]);
+  const dominoCount = useDominoDataStore(
+    (s) => s.dominoes.get(ddObjectId)?.count ?? 0,
+  );
+  const canBuildPlan =
+    !!ddObject && getDominoRowCol(ddObject) !== undefined && dominoCount > 0;
 
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: anchor.left, top: anchor.bottom + 4 });
@@ -68,6 +83,25 @@ export default function DDObjectMenu({ ddObjectId, anchor, onClose }: Props) {
           <RiPencilLine size={16} />
           Properties
         </button>
+        {/* One item per registered build plan — this menu names none of them, so
+            a third document is a folder plus a line in the registry. */}
+        {canBuildPlan && <hr className={styles.separator} />}
+        {canBuildPlan &&
+          BUILD_PLAN_LIST.map((planId) => {
+            const plan = BUILD_PLANS[planId];
+            const Icon = plan.icon;
+            return (
+              <button
+                key={planId}
+                className={styles.item}
+                role="menuitem"
+                onClick={run(() => openBuildPlan(planId, ddObjectId))}
+              >
+                <Icon size={16} />
+                {plan.menuLabel}
+              </button>
+            );
+          })}
       </div>
     </>
   );

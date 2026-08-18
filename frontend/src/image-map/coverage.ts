@@ -1,7 +1,7 @@
-import { DOMINO_SIZE } from "../dimensions";
-import { getDDObjectBounds, getDominoExpansion } from "../object-types/registry";
+import { getDDObjectBounds } from "../object-types/registry";
 import type { DDObject } from "../object-types/registry";
 import type { DominoData } from "../dominoes/object-model";
+import { dominoFootprintHalfExtents } from "../dominoes/footprint";
 import { imageOriginFor, imageWorldRect, type DominoImageMap } from "./object-model";
 
 /**
@@ -12,33 +12,6 @@ import { imageOriginFor, imageWorldRect, type DominoImageMap } from "./object-mo
  * fill before they press the button. A count that disagreed with the run would
  * be worse than no count at all.
  */
-
-/**
- * How much build plane a domino owns, as a half-extent on each side of its
- * centre.
- *
- * The element type answers this for itself through `dominoExpansion` — the same
- * member the Expand toggle uses. For a field it is half the spacing on each
- * side, which makes a domino's share exactly one pitch, so the shares tile the
- * grid with no gaps and no overlap.
- *
- * Note this is the raw registry accessor and NOT dominoes/expansion.ts's
- * resolveDominoExpansion, which deliberately reports zeroes unless the user has
- * Expand switched on. What a mapping run reads off the picture must not depend
- * on a view toggle.
- *
- * The pairing is easy to get backwards: a domino's `thickness` runs along X and
- * its `width` along Y, matching the field's pitchX/pitchY.
- */
-export function dominoPatchHalfExtents(ddObject: DDObject) {
-  const room = getDominoExpansion(ddObject);
-  return {
-    left: DOMINO_SIZE.thickness / 2 + (room?.x0 ?? 0),
-    right: DOMINO_SIZE.thickness / 2 + (room?.x1 ?? 0),
-    down: DOMINO_SIZE.width / 2 + (room?.y0 ?? 0),
-    up: DOMINO_SIZE.width / 2 + (room?.y1 ?? 0),
-  };
-}
 
 /**
  * Builds a test for "does the picture reach this domino", or returns undefined
@@ -81,7 +54,7 @@ export function makeDominoUnderImageTest(
   const rect = imageWorldRect(image, origin);
   if (rect.width <= 0 || rect.height <= 0) return undefined;
 
-  const half = dominoPatchHalfExtents(ddObject);
+  const half = dominoFootprintHalfExtents(ddObject);
   const rectRight = rect.x + rect.width;
   const rectTop = rect.y + rect.height;
 

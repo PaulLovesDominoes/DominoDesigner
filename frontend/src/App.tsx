@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 
+import BuildPlanDialog from "./build-plan/BuildPlanDialog";
 import PropertiesDialog from "./components/PropertiesDialog";
 import TitleBar from "./components/TitleBar";
 import DesignerScreen from "./screens/DesignerScreen";
@@ -27,6 +28,9 @@ export default function App() {
       {/* Mounted above every screen so it can be dragged anywhere on
           screen, clear of the sidebar's and canvas area's clipping. */}
       <PropertiesDialog />
+      {/* Alongside it rather than inside a screen, for the same reason: it is a
+          modal over everything, not part of any one screen's layout. */}
+      <BuildPlanDialog />
     </>
   );
 }

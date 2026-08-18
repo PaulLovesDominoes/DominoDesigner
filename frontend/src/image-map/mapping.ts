@@ -5,7 +5,7 @@ import { getDDObjectBounds, getDominoRowCol } from "../object-types/registry";
 import type { DDObject } from "../object-types/registry";
 import type { DominoData } from "../dominoes/object-model";
 import type { ImageAsset } from "./assetStore";
-import { dominoPatchHalfExtents } from "./coverage";
+import { dominoFootprintHalfExtents } from "../dominoes/footprint";
 import { imageOriginFor, imageWorldRect, type DominoImageMap } from "./object-model";
 import type { AnyPatchSampleDefinition } from "./patch-sample/base";
 import { resolvePatchBounds } from "./patch-sample/patchBounds";
@@ -93,7 +93,7 @@ export function createColorMappingJob(
   // How much build plane each domino owns — see coverage.ts, which is shared
   // with the panel's count of how many dominoes the picture reaches so the two
   // cannot disagree about it.
-  const half = dominoPatchHalfExtents(ddObject);
+  const half = dominoFootprintHalfExtents(ddObject);
 
   const { candidates, metric, patchSample, dither, ditherAmplitude, ditherStrength, rgbById } =
     settings;

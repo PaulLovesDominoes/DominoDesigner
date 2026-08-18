@@ -59,5 +59,17 @@ export default defineConfig({
   ],
   build: {
     outDir: "dist",
+    // Without this a production build reports errors against minified bundle
+    // offsets — `index-HMCDrBOU.js:1:48213` — which say nothing about the code
+    // that caused them. With it the browser maps a stack back to the real file
+    // and line in src/, so a bug found while running the built app through the
+    // FastAPI server is as easy to place as one found under `npm run dev`.
+    //
+    // The .map files sit beside the bundle in dist/ and are only fetched when
+    // devtools is open, so this costs nothing at runtime. It does publish the
+    // source to anyone who looks; `"hidden"` would emit the maps without the
+    // comment pointing at them, which is the choice to make if that ever
+    // matters. It does not today — this is a local tool.
+    sourcemap: true,
   },
 });

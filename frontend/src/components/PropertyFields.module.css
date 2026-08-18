@@ -22,6 +22,17 @@
   border-top: 1px solid var(--color-border);
 }
 
+/*
+ * Names a group of rows. Aligned with the label column's left edge rather than
+ * right-justified like a label, so it reads as heading the rows rather than
+ * belonging to one of them.
+ */
+.sectionHeader {
+  margin-top: 18px;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
 .label {
   color: var(--color-text-dim);
   text-align: right;
@@ -55,6 +66,19 @@
 /* Reserve room on the right for the overlaid Steppers (see Steppers.module.css). */
 .control input.stepInput {
   padding-right: 20px;
+}
+
+/*
+ * Two numbers on one row (NumberPairField). Narrower than a lone box so the
+ * pair plus its separator and unit still fits the control column.
+ */
+.control input.pairInput {
+  width: 62px;
+  text-align: center;
+}
+
+.pairSeparator {
+  color: var(--color-text-dim);
 }
 
 .unit {
@@ -92,6 +116,19 @@
 .select:focus {
   outline: none;
   border-color: var(--color-accent);
+}
+
+/*
+ * A tick box. `accent-color` recolors the native control's checked fill without
+ * having to rebuild it out of a hidden input and a styled box, which is the only
+ * other way to get it off the browser's default blue.
+ */
+.checkbox {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
 }
 
 /* Hex value reads as data, so it gets a monospace treatment. */

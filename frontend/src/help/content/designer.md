@@ -25,6 +25,8 @@ The sidebar shows a list of all elements in your build.
 
 - Hover over an element in the sidebar to see a three-dot menu
     - Use this menu to delete the element or edit its properties
+    - For an element that holds dominoes, this menu also prints its
+      [build plans](build-plans) — the layout and the sort plan
 
 ## The Build Plane
 

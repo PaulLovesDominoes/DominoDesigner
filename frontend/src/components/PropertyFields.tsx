@@ -39,6 +39,15 @@ export function Separator() {
   return <hr className={styles.separator} />;
 }
 
+/**
+ * A named group of rows, for editors long enough that a rule alone does not say
+ * what the group is. Colon-suffixed to match FieldLabel, so a heading and a
+ * label read as the same kind of thing.
+ */
+export function SectionHeader({ children }: { children: string }) {
+  return <div className={styles.sectionHeader}>{children}:</div>;
+}
+
 export function TextField({
   label,
   value,
@@ -82,6 +91,71 @@ export const sanitizeNumber = (raw: string, float: boolean) => {
 export const parseNumber = (text: string, float: boolean) =>
   float ? parseFloat(text) : parseInt(text, 10);
 
+interface NumberInputProps {
+  id?: string;
+  value: number;
+  min: number;
+  float: boolean;
+  disabled: boolean;
+  onChange: (value: number) => void;
+  className?: string;
+  /** Only needed where the row's own label does not name this box. */
+  ariaLabel?: string;
+}
+
+/**
+ * Just the box. Split out of NumberField so a row holding two of them —
+ * NumberPairField — gets the same half-typed-value handling rather than a second
+ * copy of it that drifts.
+ */
+function NumberInput({
+  id,
+  value,
+  min,
+  float,
+  disabled,
+  onChange,
+  className,
+  ariaLabel,
+}: NumberInputProps) {
+  // The box holds a string so it can be empty or mid-edit while the committed
+  // value stays valid.
+  const [draft, setDraft] = useState(String(value));
+
+  // Re-sync when the value moves underneath us — a cancelled edit rolls the
+  // store back, and the box has to follow.
+  useEffect(() => {
+    setDraft((d) => (parseNumber(d, float) === value ? d : String(value)));
+  }, [value, float]);
+
+  const change = (e: ChangeEvent<HTMLInputElement>) => {
+    const text = sanitizeNumber(e.target.value, float);
+    setDraft(text);
+
+    const parsed = parseNumber(text, float);
+    // An empty or too-small box is a transient editing state, not a value.
+    // Committing it would put a zero-width plane into the scene and make the
+    // camera's fit-zoom divide by zero. A half-typed "1." parses as 1, which is
+    // a fine thing to commit while the draft keeps the trailing point.
+    if (!Number.isNaN(parsed) && parsed >= min) onChange(parsed);
+  };
+
+  return (
+    <input
+      id={id}
+      type="text"
+      inputMode="numeric"
+      value={draft}
+      disabled={disabled}
+      onChange={change}
+      // Whatever was left uncommitted snaps back to the real value.
+      onBlur={() => setDraft(String(value))}
+      className={className}
+      aria-label={ariaLabel}
+    />
+  );
+}
+
 export function NumberField({
   label,
   value,
@@ -105,27 +179,6 @@ export function NumberField({
   onChange: (value: number) => void;
 }) {
   const id = useId();
-  // The box holds a string so it can be empty or mid-edit while the committed
-  // value stays valid.
-  const [draft, setDraft] = useState(String(value));
-
-  // Re-sync when the value moves underneath us — a cancelled edit rolls the
-  // store back, and the box has to follow.
-  useEffect(() => {
-    setDraft((d) => (parseNumber(d, float) === value ? d : String(value)));
-  }, [value, float]);
-
-  const change = (e: ChangeEvent<HTMLInputElement>) => {
-    const text = sanitizeNumber(e.target.value, float);
-    setDraft(text);
-
-    const parsed = parseNumber(text, float);
-    // An empty or too-small box is a transient editing state, not a value.
-    // Committing it would put a zero-width plane into the scene and make the
-    // camera's fit-zoom divide by zero. A half-typed "1." parses as 1, which is
-    // a fine thing to commit while the draft keeps the trailing point.
-    if (!Number.isNaN(parsed) && parsed >= min) onChange(parsed);
-  };
 
   const stepBy = (dir: 1 | -1) => {
     if (step === undefined) return;
@@ -133,15 +186,13 @@ export function NumberField({
   };
 
   const input = (
-    <input
+    <NumberInput
       id={id}
-      type="text"
-      inputMode="numeric"
-      value={draft}
+      value={value}
+      min={min}
+      float={float}
       disabled={disabled}
-      onChange={change}
-      // Whatever was left uncommitted snaps back to the real value.
-      onBlur={() => setDraft(String(value))}
+      onChange={onChange}
       className={step !== undefined ? styles.stepInput : undefined}
     />
   );
@@ -161,6 +212,94 @@ export function NumberField({
           </div>
         )}
         <span className={styles.unit}>{unit ?? ""}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Two numbers that belong together on one row, as in
+ * `Major/minor rows: [10]/[5] rows`.
+ *
+ * A pair like that reads as one setting, and splitting it over two rows made the
+ * print-layout options a flat list of near-identical labels. The separator is
+ * part of the label's phrasing — "Major/minor" — so it stays a plain "/" rather
+ * than anything configurable.
+ */
+export function NumberPairField({
+  label,
+  first,
+  second,
+  firstLabel,
+  secondLabel,
+  min = 0,
+  unit,
+  disabled = false,
+  onChangeFirst,
+  onChangeSecond,
+}: FieldProps & {
+  first: number;
+  second: number;
+  /** Names the two boxes for screen readers, since the row's label covers both. */
+  firstLabel: string;
+  secondLabel: string;
+  min?: number;
+  unit?: string;
+  disabled?: boolean;
+  onChangeFirst: (value: number) => void;
+  onChangeSecond: (value: number) => void;
+}) {
+  return (
+    <div className={`${styles.field} ${disabled ? styles.fieldDisabled : ""}`}>
+      <FieldLabel>{label}</FieldLabel>
+      <div className={styles.control}>
+        <NumberInput
+          value={first}
+          min={min}
+          float={false}
+          disabled={disabled}
+          onChange={onChangeFirst}
+          className={styles.pairInput}
+          ariaLabel={firstLabel}
+        />
+        <span className={styles.pairSeparator}>/</span>
+        <NumberInput
+          value={second}
+          min={min}
+          float={false}
+          disabled={disabled}
+          onChange={onChangeSecond}
+          className={styles.pairInput}
+          ariaLabel={secondLabel}
+        />
+        <span className={styles.unit}>{unit ?? ""}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * An on/off tick box. Like SelectField it holds no draft — there is no such
+ * thing as a half-typed checkbox, so the value is driven entirely by the caller.
+ */
+export function CheckboxField({
+  label,
+  value,
+  onChange,
+}: FieldProps & { value: boolean; onChange: (value: boolean) => void }) {
+  const id = useId();
+
+  return (
+    <div className={styles.field}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <div className={styles.control}>
+        <input
+          id={id}
+          className={styles.checkbox}
+          type="checkbox"
+          checked={value}
+          onChange={(e) => onChange(e.target.checked)}
+        />
       </div>
     </div>
   );

@@ -1,0 +1,97 @@
+/*
+ * A true modal, like ConfirmDialog and unlike PropertiesDialog: the scrim dims
+ * the canvas too, because a print plan has no live preview underneath worth
+ * keeping bright. Same z-index band as ConfirmDialog for the same reason — this
+ * is the frontmost thing on screen while it is up. It sits one below, so the
+ * "pop-ups are blocked" confirmation it can raise still lands on top of it.
+ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 78;
+}
+
+.dialog {
+  position: fixed;
+  z-index: 79;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  /* Wide enough for a NumberPairField's two boxes, separator and unit to sit
+     beside the shared 130px label column without wrapping. */
+  width: max(560px, 42vw);
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  background: var(--color-chrome-2);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  user-select: none;
+}
+
+.headerIcon {
+  flex: 0 0 auto;
+  color: var(--color-text-dim);
+}
+
+.title {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Only the options scroll; header and footer stay put. */
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.button {
+  padding: 8px 18px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-chrome);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: var(--color-text-dim);
+}
+
+.primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.primary:hover {
+  border-color: var(--color-accent);
+  filter: brightness(1.08);
+}

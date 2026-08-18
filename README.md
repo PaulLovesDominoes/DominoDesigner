@@ -9,8 +9,8 @@ more.
 
 This is **v1**: the expandable app framework — a title bar with menu-driven screen switching
 and a Designer screen with a working pan/zoom 2D canvas, an extensible object model for the
-build's contents, live property editing, and editing of domino colors — by hand, by brush, or
-by mapping a picture onto them.
+build's contents, live property editing, editing of domino colors — by hand, by brush, or
+by mapping a picture onto them — and printed build plans to take to the build site.
 
 Future plans:
 - Uploading / downloading personal domino inventories (lists of domino colors and counts)
@@ -93,6 +93,8 @@ Note that nothing is persisted today; every load starts a fresh default project.
     -  Also includes a **⋯** menu to edit the **Properties** for any element in a modeless dialog that previews edits live on the canvas, with Save/Cancel. Properties include:
     - For the build plane:  Plane size and color
     - For Domino Fields:  number of rows, row spacing, number of dominoes / row, and domino spacing
+    -  The same menu prints the element's [build plans](#printed-build-plans) — the layout and the
+       sort plan
 
 ### Domino Editing Mode
 
@@ -173,6 +175,37 @@ second is a mode:
   decides "nearest" (OKLab, CIELAB, two RGB variants, greyscale), and which dither breaks up the
   banding (ordered, random, or error diffusion). Mapping only fills dominoes that were unassigned
   when the mode was switched on, so anything colored by hand is safe from it.
+
+### Printed Build Plans
+
+A design on the screen still has to be built in the real world, so an element's **⋯** menu (outside
+domino editing mode) prints the two documents that get you there. Both open in a new tab and print
+through the browser's own dialog, which is also where a PDF comes from.
+
+Both are **template-aware**. Dominoes are usually set up with a *template* — a comb 10–50 teeth
+wide that a row is slotted into and slid into place — so both documents mark where one template
+load ends and the next begins, and each has its own setting for how wide the template is.
+
+- **Layout** — a picture of the element, one cell per domino, in the assigned colors, with a legend
+  number in every cell. Colors on paper are much harder to tell apart than colors on a screen, so
+  the number is never dropped or shrunk past reading size; instead it works the other way round and
+  the smallest readable number decides how many dominoes fit on a sheet. Thick and thin rules mark
+  the major and minor divisions, and a division landing on the edge of a page draws its own weight
+  there — the sign that a template stops at that sheet and does not carry on to the next. Pages
+  are labelled `Page 1:2 — Rows 1-10, Columns 49-96`, and dominoes print at the same size on every
+  sheet so pages tile when laid side by side. Pagination can be automatic, set by hand, or fitted
+  to a chosen number of pages wide and long.
+- **Sort Plan** — each row written out as runs of color, for counting dominoes into stacks in
+  advance, usually at home days before anything is set up:
+
+      Row 1: White(x14) - Khaki(x1) - White(x5) || White(x10) - Light Gray(x1) ...
+
+  The `||` marks each template load. Dominoes hidden from the build appear as `skip`, since a
+  builder loading a template has to know which teeth to leave empty.
+
+Dominoes with no color yet are numbered **0** and listed first in the legend, so every number from
+1 up is a color you actually have to go and fetch — a part-finished field still prints a complete,
+usable plan.
 
 ### Undo / Redo
 

@@ -43,3 +43,10 @@
   opacity: 0.35;
   cursor: default;
 }
+
+/* Splits the actions on the DDObject itself from the plans it can print. */
+.separator {
+  margin: 4px 6px;
+  border: none;
+  border-top: 1px solid var(--color-border);
+}

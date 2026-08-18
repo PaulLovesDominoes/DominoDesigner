@@ -1,0 +1,41 @@
+/*
+ * Shared by every plan's options panel, the way PropertyFields.module.css is
+ * shared by every DDObject editor. A plan's own panel is just rows of those
+ * controls plus the two blocks below.
+ */
+
+/*
+ * What the current settings will actually produce — cell size, page count. It
+ * matters far more before printing than after, and it is a pure function of the
+ * plan and the options, so it can be shown live as they are typed.
+ */
+.summary {
+  margin-top: 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-input-bg);
+  color: var(--color-text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.summary strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+/*
+ * Says why a setting will print badly, rather than quietly overriding it. Amber
+ * rather than red: the plan will still print, it just will not be readable.
+ */
+.warning {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #8a6d1f;
+  border-radius: 6px;
+  background: rgba(180, 140, 40, 0.16);
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.5;
+}

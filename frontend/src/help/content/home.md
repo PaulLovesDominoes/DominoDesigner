@@ -6,6 +6,7 @@ The main pages available are:
 
 - [The Main Build Designer](designer)
 - [Editing Domino Colors](domino-editing.md)
+- [Printing a Build Plan](build-plans)
 
 Further help is still under construction.
 
@@ -26,6 +27,9 @@ Completed:
     -  Many other options
 -  [Mapping an image onto the dominoes](image-mapping) to set their colors automatically
     -  Including moving, resizing and fading the image over the build
+-  [Printing a build plan](build-plans) so a design can be built in the real world
+    -  A layout to work from on site, and a sort plan to count dominoes from in advance
+    -  Both aware of templates, so dominoes can be sorted a template's worth at a time
 
 Next to do:
 -  Upload / download a domino inventory
