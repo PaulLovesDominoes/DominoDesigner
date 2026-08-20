@@ -1,24 +1,28 @@
 /**
- * Saving a finished build plan as a file, the other way a plan can be delivered.
+ * Handing the user a file the app made up itself.
  *
- * The sibling of html.ts's `openPlanTab`, and it returns the same thing — null
- * when the file was handed over, or the message to show when it was not — so a
+ * The mechanism is a link they never see: a browser downloads whatever an anchor
+ * carrying a `download` attribute points at, and clicking one from code counts.
+ * There is no other way short of the File System Access API, which only some
+ * browsers have.
+ *
+ * It returns the same thing build-plan/html.ts's `openPlanTab` does — null when
+ * the file was handed over, or the message to show when it was not — so a build
  * plan's `deliver` can be either of them with nothing else changing.
  *
- * The mechanism is a link the user never sees: a browser downloads whatever an
- * anchor carrying a `download` attribute points at, and clicking one from code
- * counts. There is no other way to save a file the app made up itself, short of
- * the File System Access API, which only some browsers have.
+ * This lived in build-plan/ until the inventory export wanted it too. Neither
+ * function names anything about plans, so it sits at the top level beside
+ * color.ts and csv.ts rather than being reached for across a folder boundary.
  */
 
 /**
- * Characters a file name may not hold on Windows. A plan is named after its
- * element, and an element's name is whatever the user typed into the properties
- * dialog, so any of these can turn up.
+ * Characters a file name may not hold on Windows. A downloaded file is usually
+ * named after something the user typed — an element's name, a colour's — so any
+ * of these can turn up.
  */
 const UNSAFE_FILE_NAME_CHARS = /[<>:"/\\|?*]/g;
 
-/** Turns an element's name into something a file can be called. */
+/** Turns a user-typed name into something a file can be called. */
 export function safeFileName(name: string): string {
   const cleaned = name
     .replace(UNSAFE_FILE_NAME_CHARS, " ")

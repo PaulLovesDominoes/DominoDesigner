@@ -1,7 +1,7 @@
 import { RiFileExcelLine } from "@remixicon/react";
 
 import type { BuildPlanDefinition } from "../base";
-import { downloadTextFile, safeFileName } from "../download";
+import { downloadTextFile, safeFileName } from "../../download";
 import type { PlanModel } from "../model";
 import { encodeLayoutCsv } from "./encode";
 import CsvPlanEditor from "./options";

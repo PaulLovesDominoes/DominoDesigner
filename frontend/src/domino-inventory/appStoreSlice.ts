@@ -40,6 +40,18 @@ export interface InventorySlice {
   updateInventoryEntry: (id: InventoryEntryId, patch: Partial<InventoryEntry>) => void;
   // Bulk delete (the trash-can button), called only after the confirm dialog.
   removeInventoryEntries: (ids: readonly InventoryEntryId[]) => void;
+  /**
+   * Swaps the whole catalog out, for an uploaded CSV. Called only after the
+   * confirm dialog, and — like every other action here — records no undo entry:
+   * nothing about this screen is undoable, which is why its prompts say so.
+   *
+   * The counter has to come in alongside the entries rather than be derived
+   * here, because it must clear the numbers the *replaced* inventory used as
+   * well as the ones arriving (see inventoryCsv.ts's resolveIds). Dominoes on
+   * the build plane hold colour numbers, so reissuing one to a different colour
+   * would recolour them.
+   */
+  replaceInventory: (entries: InventoryEntry[], nextNumber: number) => void;
 
   // Row ids checked via the Select column, for bulk delete.
   inventorySelectedIds: Record<InventoryEntryId, true>;
@@ -104,6 +116,13 @@ export const createInventorySlice: StateCreator<AppState, [], [], InventorySlice
           inventorySelectedIds: {},
         };
       }),
+    replaceInventory: (entries, nextNumber) =>
+      set(() => ({
+        inventoryEntries: entries,
+        nextInventoryNumber: nextNumber,
+        // The checked ids named rows that no longer exist.
+        inventorySelectedIds: {},
+      })),
 
     inventorySelectedIds: {},
     toggleInventorySelected: (id) =>

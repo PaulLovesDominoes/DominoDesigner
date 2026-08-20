@@ -11,10 +11,9 @@ import {
 } from "./TableCells";
 import {
   BRAND_OPTIONS,
-  compareInventoryEntries,
   FINISH_OPTIONS,
-  isNewEntry,
   MATERIAL_OPTIONS,
+  sortInventoryEntries,
   type InventoryEntry,
   type InventoryEntryId,
   type InventorySortColumn,
@@ -147,22 +146,11 @@ export default function InventoryTable() {
   // Derived, not stored: sorting must never mutate inventoryEntries, and a
   // selector must never return a fresh array (see CLAUDE.md's useShallow
   // rule) — so this is a useMemo over the stored array, not part of a selector.
-  //
-  // A not-yet-renamed "New ..." entry always sorts to the top, regardless of
-  // the active column/direction — it's a primary key ahead of whatever column
-  // is chosen, not something `.reverse()` should be allowed to flip to the
-  // bottom on a descending sort. So direction is applied to the column
-  // comparator directly rather than reversing the whole result.
-  const sorted = useMemo(() => {
-    const directionSign = sortDirection === "desc" ? -1 : 1;
-    return [...entries].sort((a, b) => {
-      const newA = isNewEntry(a);
-      const newB = isNewEntry(b);
-      if (newA !== newB) return newA ? -1 : 1;
-      if (!sortColumn) return 0;
-      return directionSign * compareInventoryEntries(a, b, sortColumn);
-    });
-  }, [entries, sortColumn, sortDirection]);
+  // The ordering itself lives in object-model.ts, shared with the CSV export.
+  const sorted = useMemo(
+    () => sortInventoryEntries(entries, sortColumn, sortDirection),
+    [entries, sortColumn, sortDirection],
+  );
 
   const allIds = useMemo(() => entries.map((e) => e.id), [entries]);
   const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds[id]);

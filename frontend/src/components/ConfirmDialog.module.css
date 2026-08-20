@@ -31,9 +31,22 @@
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
 
+/*
+ * A message may be several paragraphs with a list under them (the inventory
+ * upload's summary), so its newlines have to survive — pre-line keeps them while
+ * still wrapping a long line, which `pre` would not. A very long list scrolls
+ * inside the dialog rather than pushing its buttons off the screen.
+ */
 .message {
   padding: 20px;
   color: var(--color-text);
+  white-space: pre-line;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.wide {
+  width: max(480px, 36vw);
 }
 
 .footer {

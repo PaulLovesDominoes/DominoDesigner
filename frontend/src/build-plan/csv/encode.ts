@@ -1,3 +1,4 @@
+import { csvRow, LINE_END, UTF8_BOM } from "../../csv";
 import type { PlanModel } from "../model";
 import { PLAN_GAP, planColorIndexGrid } from "../planGrid";
 
@@ -13,35 +14,6 @@ import { PLAN_GAP, planColorIndexGrid } from "../planGrid";
  * plan there is nothing here about cell sizes, page breaks or orientation. That
  * also makes this the whole of the document, with no emit step beside it.
  */
-
-/**
- * A leading marker that says the file is UTF-8.
- *
- * Excel otherwise reads a .csv in the machine's local code page, which turns the
- * multiplication sign in "34 rows x 86 columns" and any accented colour name
- * into rubbish. Every other spreadsheet skips it silently.
- */
-const UTF8_BOM = "﻿";
-
-/**
- * CRLF, because that is what the CSV format says and what Excel is happiest
- * with. Everything else accepts it too.
- */
-const LINE_END = "\r\n";
-
-/**
- * One value, quoted only if it has to be.
- *
- * Colour names and the element's name are typed by the user, so a comma or a
- * quote can turn up in one. Inside quotes, a quote is written twice — that is
- * the whole of CSV escaping.
- */
-function csvCell(value: string): string {
-  if (!/[",\r\n]/.test(value)) return value;
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
-const csvRow = (cells: string[]): string => cells.map(csvCell).join(",");
 
 export function encodeLayoutCsv(model: PlanModel): string {
   const cells = planColorIndexGrid(model);

@@ -13,6 +13,13 @@ interface Props {
   cancelLabel: string;
   onConfirm?: () => void;
   onCancel: () => void;
+  /**
+   * A roomier dialog, for a message that is a list rather than a sentence — the
+   * inventory upload's summary of skipped rows and adjusted values, which is
+   * unreadable at the default width. Opt-in so every existing caller keeps the
+   * width it was written for.
+   */
+  wide?: boolean;
 }
 
 /**
@@ -38,6 +45,7 @@ export default function ConfirmDialog({
   cancelLabel,
   onConfirm,
   onCancel,
+  wide = false,
 }: Props) {
   // Swallows *every* keydown in the capture phase, not just Escape: the window
   // listeners behind this (DominoEditors's Delete, its colour shortcuts, and
@@ -60,7 +68,12 @@ export default function ConfirmDialog({
   return (
     <>
       <div className={styles.scrim} onClick={onCancel} />
-      <div className={styles.dialog} role="alertdialog" aria-modal="true" aria-label={message}>
+      <div
+        className={wide ? `${styles.dialog} ${styles.wide}` : styles.dialog}
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={message}
+      >
         <div className={styles.message}>{message}</div>
         <div className={styles.footer}>
           {confirmLabel !== undefined && onConfirm && (

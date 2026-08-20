@@ -236,7 +236,7 @@ export function isNewEntry(entry: InventoryEntry): boolean {
   return entry.colorName.startsWith(NEW_ENTRY_NAME_PREFIX);
 }
 
-/** Comparator dispatch used by InventoryTable for every sortable column. */
+/** Comparator dispatch used by sortInventoryEntries for every sortable column. */
 export function compareInventoryEntries(
   a: InventoryEntry,
   b: InventoryEntry,
@@ -256,4 +256,32 @@ export function compareInventoryEntries(
     case "shortcut":
       return a[column].localeCompare(b[column]);
   }
+}
+
+/**
+ * The inventory in the order the table shows it: a fresh copy, never a sort in
+ * place, since sorting must not disturb the stored array.
+ *
+ * A not-yet-renamed "New ..." entry always comes first, whatever column is
+ * chosen and whichever way round it points — it is a primary key ahead of the
+ * chosen column, not something a descending sort should be allowed to bury at
+ * the bottom. That is why the direction is applied to the column comparator
+ * rather than by reversing the finished result.
+ *
+ * Shared with the CSV export, so a downloaded file lists the colours in the
+ * order the user is looking at rather than in whatever order the store holds.
+ */
+export function sortInventoryEntries(
+  entries: readonly InventoryEntry[],
+  column: InventorySortColumn | null,
+  direction: "asc" | "desc",
+): InventoryEntry[] {
+  const directionSign = direction === "desc" ? -1 : 1;
+  return [...entries].sort((a, b) => {
+    const newA = isNewEntry(a);
+    const newB = isNewEntry(b);
+    if (newA !== newB) return newA ? -1 : 1;
+    if (!column) return 0;
+    return directionSign * compareInventoryEntries(a, b, column);
+  });
 }

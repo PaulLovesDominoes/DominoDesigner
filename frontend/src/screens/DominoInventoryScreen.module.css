@@ -13,8 +13,8 @@
   gap: 8px;
 }
 
-.newButton,
-.deleteButton {
+/* One rule for every button on this toolbar — they differ only in their icon. */
+.toolbarButton {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -26,12 +26,11 @@
   cursor: pointer;
 }
 
-.newButton:hover,
-.deleteButton:hover:not(:disabled) {
+.toolbarButton:hover:not(:disabled) {
   background: var(--color-border);
 }
 
-.deleteButton:disabled {
+.toolbarButton:disabled {
   opacity: 0.4;
   cursor: default;
   pointer-events: none;
