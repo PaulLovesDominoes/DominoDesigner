@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 
-import DesignerCanvas from "../designer/DesignerCanvas";
-import ModeHintBar from "../designer/ModeHintBar";
-import Sidebar from "../designer/Sidebar";
+import DesignerCanvas from "./DesignerCanvas";
+import ModeHintBar from "./ModeHintBar";
+import Sidebar from "./Sidebar";
 import { useStore } from "../store";
 import { useClipboardStore } from "../clipboard/store";
 import { loadImageForElement } from "../image-map/loadImage";

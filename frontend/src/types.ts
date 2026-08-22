@@ -1,4 +1,4 @@
-export type ScreenId = "dominoInventory" | "designer";
+export type ScreenId = "dominoInventory" | "designer" | "structureDesigner";
 
 /**
  * An axis-aligned rectangle on the build plane, in mm, measured from the plane's

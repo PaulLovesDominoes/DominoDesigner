@@ -9,6 +9,9 @@ __pycache__/
 node_modules/
 frontend/dist/
 .vite/
+# Vite's convention for a personal override of a committed .env.* file — e.g.
+# turning a build flag on locally without changing what everyone else builds.
+*.local
 
 # Claude Code local settings
 .claude/settings.local.json

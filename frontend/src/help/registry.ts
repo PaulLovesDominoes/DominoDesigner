@@ -2,7 +2,14 @@ import type { ScreenId, ToolId } from "../types";
 
 // Map a screen to a specific help topic id (see help/content/*.md). Leave a
 // screen out to fall back to the home topic below.
-const SCREEN_TOPIC: Partial<Record<ScreenId, string>> = {};
+//
+// The Structure Designer's page is reachable only from the Structure Designer
+// itself, and deliberately isn't linked from the home topic: while the screen
+// is hidden by its build flag (structure-designer/enabled.ts) there is no way
+// to reach this screen, and so no way to reach its page either.
+const SCREEN_TOPIC: Partial<Record<ScreenId, string>> = {
+  structureDesigner: "structure-designer",
+};
 
 // Map an active tool or mode to a topic. What the user is *doing* is more
 // specific than where they are, so these win over SCREEN_TOPIC — without this,

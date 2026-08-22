@@ -1,0 +1,80 @@
+.column {
+  flex: 0 0 auto;
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  background: var(--color-chrome);
+  border-left: 1px solid var(--color-border);
+  /* Nothing in this column is text to be read or copied, and a press that
+     starts a selection takes the pointer away from a drag in progress. */
+  user-select: none;
+}
+
+.readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+
+.caption {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-dim);
+}
+
+.value {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+/*
+ * The draggable area. Wider than the line drawn down it so the dot is easy to
+ * catch, and `touch-action: none` so a touch drag scrolls nothing and the
+ * pointer events reach this instead.
+ */
+.track {
+  flex: 1;
+  min-height: 0;
+  width: 32px;
+  position: relative;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.track:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* The line the dot travels along, inset top and bottom by the dot's radius so
+   the dot's centre can reach both ends without overhanging the track. */
+.line {
+  position: absolute;
+  left: 50%;
+  top: 11px;
+  bottom: 11px;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--color-border);
+  border-radius: 1px;
+}
+
+.dot {
+  position: absolute;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  border: 2px solid var(--color-chrome);
+  pointer-events: none;
+}

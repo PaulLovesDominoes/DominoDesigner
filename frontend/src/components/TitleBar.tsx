@@ -4,12 +4,14 @@ import { useStore } from "../store";
 import HamburgerMenu from "./HamburgerMenu";
 import HelpPanel from "./HelpPanel";
 import Toolbar from "../designer/Toolbar";
+import StructureToolbar from "../structure-designer/StructureToolbar";
 import styles from "./TitleBar.module.css";
 import logo from "../assets/logo-small.png";
 
 export default function TitleBar() {
   const toggleMenu = useStore((s) => s.toggleMenu);
   const toggleHelp = useStore((s) => s.toggleHelp);
+  const screen = useStore((s) => s.screen);
 
   return (
     <header className={styles.bar}>
@@ -41,10 +43,12 @@ export default function TitleBar() {
       </div>
 
       <div className={styles.toolbarSection}>
-        {/* Designer-only; renders null on other screens (Toolbar.tsx's own
-            screen gate). Help stays put via its own margin-left: auto below,
-            which is what keeps it flush-right even when Toolbar is absent. */}
-        <Toolbar />
+        {/* Only ever one toolbar at a time. The Designer's renders null on the
+            inventory screen through its own screen gate, so the two together
+            cover all three screens. Help stays put via its own
+            margin-left: auto below, which is what keeps it flush-right even
+            when no toolbar is showing. */}
+        {screen === "structureDesigner" ? <StructureToolbar /> : <Toolbar />}
 
         <button
           className={styles.helpButton}

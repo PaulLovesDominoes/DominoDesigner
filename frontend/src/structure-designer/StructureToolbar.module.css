@@ -1,0 +1,60 @@
+/*
+ * Deliberately its own copy of the toolbar chrome rather than importing the
+ * Designer's Toolbar.module.css. The two toolbars will fill up with entirely
+ * different tools; sharing the stylesheet would tie every change to one of
+ * them to a check against the other. Built from the same colour tokens, so
+ * they look identical without being coupled.
+ */
+.bar {
+  /* Sits inside TitleBar's own row, which supplies the height, background and
+     border — this only has to stretch to meet the Help button beside it. */
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Holds two or more .group clusters together, so .bar's space-between treats
+   them as one right-hand block with visible separation between the clusters. */
+.clusterGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--color-text-dim);
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  background: var(--color-chrome-2);
+  color: var(--color-text);
+}
+
+.iconBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.iconBtn:disabled:hover {
+  background: transparent;
+  color: var(--color-text-dim);
+}

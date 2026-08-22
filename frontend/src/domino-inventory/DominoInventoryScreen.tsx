@@ -1,9 +1,9 @@
 import { RiAddLine, RiDeleteBinLine, RiDownloadLine, RiUploadLine } from "@remixicon/react";
 
 import ConfirmDialog from "../components/ConfirmDialog";
-import InventoryTable from "../domino-inventory/InventoryTable";
-import type { InventoryEntryId } from "../domino-inventory/object-model";
-import { useInventoryCsv } from "../domino-inventory/useInventoryCsv";
+import InventoryTable from "./InventoryTable";
+import type { InventoryEntryId } from "./object-model";
+import { useInventoryCsv } from "./useInventoryCsv";
 import { useStore } from "../store";
 import styles from "./DominoInventoryScreen.module.css";
 
