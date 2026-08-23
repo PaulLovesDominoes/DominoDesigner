@@ -49,6 +49,13 @@
   color: var(--color-text);
 }
 
+/* A toggle that is currently on. Same treatment as the Designer's toolbar. */
+.active {
+  background: var(--color-accent-dim);
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
 .iconBtn:disabled {
   opacity: 0.35;
   cursor: default;

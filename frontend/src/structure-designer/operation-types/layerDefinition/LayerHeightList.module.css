@@ -1,0 +1,157 @@
+/*
+ * Row height in one place. **LAYER_ROW_HEIGHT_PX in LayerHeightList.tsx must
+ * match this**, because the drag works out which gap the pointer is over by
+ * dividing by it. Nothing checks that they agree, and the symptom when they
+ * drift is a drop landing one row away from where the line was drawn.
+ */
+.wrap {
+  --layer-row-height: 34px;
+}
+
+/* The four columns, shared by the header and every row so they line up. */
+.header,
+.row {
+  display: grid;
+  grid-template-columns: 22px 1fr 74px 22px;
+  align-items: center;
+  gap: 8px;
+  height: var(--layer-row-height);
+  padding: 0 4px;
+}
+
+.header {
+  color: var(--color-text-dim);
+  font-size: 12px;
+}
+
+/* The header's Height label sits over a right-aligned box. */
+.headerHeight {
+  text-align: center;
+}
+
+/*
+ * Exactly four rows tall whatever the list holds, so a long list scrolls
+ * instead of pushing the Repeat controls off the dialog. One or two rows is
+ * the usual case; the room for four is what stops the list looking cramped.
+ */
+.list {
+  position: relative;
+  height: calc(4 * var(--layer-row-height));
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-input-bg);
+}
+
+.row:hover {
+  background: var(--color-chrome-2);
+}
+
+/*
+ * The grip and the trashcan appear on hover, so a short list is not a row of
+ * icons competing with the values. :focus-visible keeps them reachable by
+ * keyboard, where there is no hover to depend on.
+ */
+.rowAction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--color-text-dim);
+  opacity: 0;
+}
+
+.row:hover .rowAction,
+.rowAction:focus-visible {
+  opacity: 1;
+}
+
+.rowAction:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+.grip {
+  cursor: grab;
+  /* Without this a touch drag on the grip is taken over by the list's own
+     scrolling before the pointer handlers ever see it. */
+  touch-action: none;
+}
+
+.grip:active {
+  cursor: grabbing;
+}
+
+.trash:hover {
+  color: #e0645c;
+}
+
+/* The row being dragged, faded so the insertion line reads as the live edit. */
+.dragging {
+  opacity: 0.4;
+}
+
+/*
+ * Where the dragged row will land. Absolutely positioned within the scroller,
+ * so it moves with the content when the list auto-scrolls during a drag.
+ */
+.dropLine {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* Same chrome as the shared property controls, without their label column. */
+.select {
+  width: 100%;
+  padding: 4px 6px;
+  background: var(--color-chrome);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.heightInput {
+  width: 100%;
+  padding: 4px 6px;
+  background: var(--color-chrome);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: right;
+}
+
+.heightInput:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/*
+ * A height that comes from the chosen type rather than from the user. Shown so
+ * the figure stays visible, but reads as inert rather than broken.
+ */
+.heightInput:disabled {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-dim);
+  cursor: default;
+}

@@ -22,10 +22,18 @@ interface OrbitLike {
  * How far the camera sits from the point it is looking at. With an orthographic
  * camera this does not affect how big anything looks — that is the zoom — it
  * only decides how much room there is in front of and behind the scene, and it
- * is the radius the camera swings around on when the view is rotated. Well
- * clear of the tallest structure the layers allow.
+ * is the radius the camera swings around on when the view is rotated.
+ *
+ * It has to clear the tallest stack the layer controls can *describe*, which is
+ * not the same as the tallest structure anyone would build: a layer definition
+ * repeating forever at a standing domino's full length reaches a little under
+ * five metres. Nothing that tall is buildable, but it can be drawn, and with an
+ * orthographic camera anything beyond this distance falls outside the near plane
+ * and is cut away — so the top of such a preview would simply not be there. If a
+ * layer limit or a layer height ever grows, this is the number that has to grow
+ * with it.
  */
-const EYE_DISTANCE_MM = 4000;
+export const EYE_DISTANCE_MM = 5000;
 
 /**
  * How far the view may be zoomed out, as a fraction of the zoom that fits the

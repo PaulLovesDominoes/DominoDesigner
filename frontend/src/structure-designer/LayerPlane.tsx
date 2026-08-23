@@ -1,19 +1,28 @@
 import * as THREE from "three";
 
 import {
-  DEFAULT_LAYER_HEIGHT_MM,
   LAYER_PLANE_COLOR,
   LAYER_PLANE_OPACITY,
-  MIN_LAYER,
   STRUCTURE_PLANE_HEIGHT_MM,
   STRUCTURE_PLANE_WIDTH_MM,
 } from "./constants";
+// Reaching into one operation type's folder from the screen's own chrome. Taken
+// deliberately: only layer definitions decide how tall a layer is and only they
+// ever will, so routing this back through the registry would be an abstraction
+// with a single implementation dispatching to itself. See layers.ts.
+import { layerFloorMm } from "./operation-types/layerDefinition/layers";
+import { useLayerHeights } from "./operation-types/layerDefinition/useLayerHeights";
 import { useStructureStore } from "./store";
 
 /**
  * The grey sheet showing which layer is being worked on. It sits at the layer's
- * floor — layer 1 lies on the build plane itself, and each layer above it is
- * one layer height further up in +Z.
+ * floor — layer 1 lies on the build plane itself, and each layer above it is as
+ * far up in +Z as the layers below it are tall.
+ *
+ * Those heights come from the layer definitions, so changing one moves this
+ * sheet: that is what makes a saved definition something you can see rather
+ * than something you have to take on trust. With no definitions at all every
+ * layer takes the standard height and the sheet steps exactly as it always did.
  *
  * Semi-transparent rather than solid, because at layer 1 it covers the build
  * plane exactly, and a solid sheet would hide the light grey-blue surface that
@@ -22,7 +31,17 @@ import { useStructureStore } from "./store";
  */
 export default function LayerPlane() {
   const layer = useStructureStore((s) => s.layer);
-  const z = (layer - MIN_LAYER) * DEFAULT_LAYER_HEIGHT_MM;
+  const modifying = useStructureStore((s) => s.modifyingOperationId !== null);
+  const heights = useLayerHeights();
+
+  // While an operation's properties are open, its own preview stands in for
+  // this sheet. Both drawn at once would sit at the same heights and read as a
+  // single washed-out surface. The rule lives here rather than as a branch in
+  // StructureCanvas, so a second previewing operation type is not a change to
+  // that file.
+  if (modifying) return null;
+
+  const z = layerFloorMm(heights, layer);
 
   return (
     <mesh

@@ -60,12 +60,6 @@ Two enforcement points, and both are needed:
   to the designer for a screen with no entry. Without this the flag would only hide a menu item;
   with it there is no way to show the screen at all.
 
-**Help hides itself for free, and that is worth not breaking.** `help/topics.ts` finds topics by
-globbing the content folder, and `HelpPanel` has no topic index — a topic is reachable only
-through `topicForContext`, an explicit `openHelpTopic`, or a markdown link from another topic. So
-`help/content/structure-designer.md` is unreachable while the flag is off purely because
-**`home.md` does not link to it**. Do not add a link there until the screen ships.
-
 Vite replaces `import.meta.env.VITE_*` with a literal at build time, so all of the above folds
 away: in a flag-off bundle the constant is `false` and the `SCREENS` object literal genuinely has
 no `structureDesigner` key.
@@ -105,14 +99,65 @@ sharing one stack would mean Ctrl+Z on this screen silently changing a domino bu
 cannot see. That breaks the stronger rule the root file also records: *the consequence of an undo
 or a redo must always be visible.*
 
-`StructureOperation` is `never` today, so both stacks stay empty and the toolbar's Undo and Redo
-buttons stay disabled. That is the honest state — nothing on this screen edits anything yet — and
-the stacks are declared anyway because that is what makes the separation structural: `undo` and
-`redo` here can only ever reach these stacks, whatever operation lands first.
+**The undo record is `StructureUndoEdit`, and it is not the same thing as a `StructureOperation`.**
+An *operation* is an item in the document — a step in the recipe. An *edit* is one undoable change
+to that document, and its three members are `create` / `delete` / `properties`. The two words were
+one word in the shell, where `StructureOperation` meant the undo record and nothing else existed;
+`undoStack: StructureOperation[]` beside `operations: StructureOperation[]` would have been
+unreadable, so the undo union took the longer name. Both stacks hold whole-operation snapshots,
+never per-field patches, for the same reason the Designer's history does.
 
-**Do not copy `HISTORY_LIMIT`, `pushOperation` or the barrier machinery over speculatively.** Add
-each with the first thing that needs it. (The root file's `hidden: Uint8Array` column — six
-readers, never a writer — is the standing warning against reserving machinery early.)
+`HISTORY_LIMIT` and `pushUndoEdit` **arrived with the first thing that needed them**, which is what
+this file always said to wait for — three commit points now have to cap the stack and clear redo
+identically. They are declared **locally rather than imported** from `history/appStoreSlice.ts`:
+the independence rule makes that import a hard no, and a nine-line helper is not worth a coupling
+that has to be reasoned about later.
+
+Three pieces of the Designer's history deliberately did **not** come across, and each would be
+reserved machinery with no reader here (the root file's `hidden: Uint8Array` column is the standing
+warning):
+
+- **The undo barrier.** `dominoEditingUndoBarrier` exists to clamp undo inside a modal sub-mode.
+  This screen has no such mode. What it has instead is a guard in `StructureDesignerScreen`'s
+  keydown handler: Ctrl+Z does nothing while an operation's dialog is open, so `undo` and `redo`
+  never have to reason about one.
+- **A neutral `ddObjectOps.ts`-style module.** That exists to break the app store's slice import
+  cycle. This store has no slices and no such cycle, so the raw list helpers are module-private
+  functions in `store.ts` itself. They are still what `undo`/`redo` call, for the reason that
+  matters: applying history must never itself record history, and a helper that cannot reach an
+  action cannot accidentally record one.
+- **A re-entrancy flag.** There is none, and there should not be — the raw/public split above is
+  the structural version of it.
+
+## The structure is a list of operations
+
+The document this screen edits is `operations: StructureOperation[]` — an ordered list of steps for
+building a structure. `StructureOperationBase` gives every one an `id` (`"SOP-#"`, minted from
+`nextOperationNumber`), a `name` and a `type`.
+
+**It is an ordered array, not a record keyed by id, because the order carries meaning.** The first
+layer definition describes the layers from layer 1 upward and the next carries on where it left
+off, so a step's position *is* part of what it says. That is also why the `create` undo record
+stores an index alongside the operation, exactly as `delete` does: undoing and redoing a creation
+has to put it back in the slot it came from, and appending would quietly reorder the recipe.
+
+Nothing under `operation-types/` imports from `src/` outside `dimensions.ts`. Keep it
+that way.
+
+`operations` is copy-on-write like the rest of this store — every action returns a new array rather
+than mutating one — which is what makes it usable as a `useMemo` dependency (see *Layer heights*).
+
+Three words are worth keeping straight, because two of them were the same word in the shell and the
+third is easy to get backwards:
+
+- **operation** — an item in the document. **undo edit** — one undoable change to it.
+- **modifying**, not editing, for the open dialog: `modifyingOperationId`, `modifyingSnapshot`.
+  Again to keep the dialog's session verbally clear of the undo record.
+- **length**, not height, for a standing domino's tall dimension — it is `DOMINO_SIZE.length`, and
+  the Type pull-down reads "Length (48mm)". A *layer* has a height, and those are different
+  quantities. Calling both a height is how a 48 becomes a 24.
+
+The sidebar's list used to be called the instructions; that word is retired.
 
 ## Geometry and constants
 
@@ -120,39 +165,32 @@ readers, never a writer — is the standing warning against reserving machinery 
 the layer control cannot disagree. Units are millimetres, one three.js unit to the millimetre,
 matching the rest of the app.
 
-The build plane is fixed at 1.5m square in a light grey-blue, chosen to be unmistakably not the
-Designer's warm tan. Neither is editable — **this plane is deliberately not a DDObject**. It is
-not selectable, not resizable, not recolourable and not listed anywhere, so it has none of the
-properties a DDObject exists to provide. `ddObjects`/`rootId` stay exclusively the domino
-designer's.
+The build plane is (for now) fixed at 1.5m square in a light grey-blue, chosen to be unmistakably not the
+Designer's warm tan. Note, not a DDObject, nothing inside the structure-designer has anything to do with DDObjects, which are the domain of the main designer screen.
 
-`DEFAULT_LAYER_HEIGHT_MM` is named `DEFAULT_` on purpose: layer heights become user-set, and
-variable between layers, in a later release, at which point this becomes the height a new layer
-starts at.
+Layer heights are the user's, set by the layer definitions in the sidebar, so `DEFAULT_LAYER_HEIGHT_MM`
+is what a layer no definition reaches falls back to. Both the layer plane and a definition's preview
+must work their heights out through `operation-types/layerDefinition/layers.ts` — that file explains
+why it is not a registry hook, and `useLayerHeights.ts` explains why it must never be a store
+selector.
 
 ## The layer plane sits at z = 0 for layer 1, and that needs `polygonOffset`
 
 Layer 1 is the *floor* of the first course, so its grey sheet lies exactly on the build plane.
-Two surfaces at the same depth give the GPU the same number to compare, the depth test ties, and
-which one survives comes down to draw order plus rounding that differs from pixel to pixel — the
-shimmering mottle called z-fighting.
 
 **`StructureBuildPlane`'s material carries `polygonOffset`, biasing it away from the camera.**
-The alternative — nudging one plane a smidge in +Z — is the obvious fix and is wrong here: a fixed
-nudge only separates the two while the camera looks straight down at them, and *this screen exists
-to be tilted*. Tilt far enough and only the part of the nudge lying along the view direction still
-separates them, which shrinks to nothing at a grazing angle. `polygonOffset` biases depth in the
-depth buffer's own units with a slope-scaled term, so it holds at any angle. (Same fix, same
-reason, as a domino's fill against its outline in the root file.)
+`polygonOffset` biases depth in the
+depth buffer's own units with a slope-scaled term, it solves the viewing shimmer with two planes fighting
+to be displayed and it holds at any angle.
 
 **Applied always, not only at layer 1.** Nothing else in this scene lies in that plane, so at
 every other layer the bias changes nothing visible, and a condition would only be one more thing
 to get wrong.
 
-`LayerPlane` is **semi-transparent rather than solid**, and that is not decoration: at layer 1 it
-covers the build plane exactly, and a solid sheet would hide the colour that identifies this
-screen, in the screen's own starting state. Letting the plane read through solves it with no
-special case for layer 1. It is `depthWrite={false}` (a see-through surface must not record its
+`LayerPlane` is **semi-transparent rather than solid** so that dominoes placed underneath are still visible.
+This will become more important in future updates.
+
+It is `depthWrite={false}` (a see-through surface must not record its
 own depth) and `DoubleSide` (so it does not blink out at a near-horizontal tilt).
 
 ## The camera is Z-up, and that is load-bearing
@@ -160,7 +198,9 @@ own depth) and `DoubleSide` (so it does not blink out at a near-horizontal tilt)
 `StructureCameraRig` sets `camera.up.set(0, 0, 1)` before the first `controls.update()`.
 
 OrbitControls swings the camera around whichever axis the camera calls "up", and three.js defaults
-that to **+Y**. This app's world is **Z-up**: the build plane lies in X/Y and structures grow into
+that to **+Y**. This app's world is **Z-up**: the build plane lies in X/Y (to be more in line
+with the conventions used by domino builders and potential future software developers contributing to this
+project) and structures grow into
 +Z. Left at the default, dragging up and down rolls the scene sideways instead of tipping it away
 from straight-down, and `maxPolarAngle` stops meaning what it reads as. If a vertical drag ever
 starts tumbling the view, this is the line that went missing.
@@ -170,22 +210,6 @@ its up-axis rotation from `object.up` on every call.
 
 Starting exactly straight-down puts the camera at the pole of the orbit, which OrbitControls
 handles with its own epsilon clamp; the resulting offset is far below a millimetre and invisible.
-
-Other decisions in that file:
-
-- **`resetView()` fits the plane *and* straightens the view**, and the two go together on purpose:
-  once the view has been tilted there is no other control that straightens it, so the toolbar's
-  fit button is the way back from a disorienting angle. Because both callers that compute a view
-  — this and the first look at the screen — want straight-down, the fit maths never has to
-  preserve an angle.
-- **`savedView` carries the camera pose across a screen switch.** Each screen's `<Canvas>`
-  unmounts with its screen, so without this a trip to another screen would throw away the user's
-  rotation, which is real work to re-establish by hand. Written from the effect's cleanup, where
-  the camera and controls are still live. The Designer deliberately still re-fits on return —
-  changing that is a separate call.
-- `EYE_DISTANCE_MM` does not affect how big anything looks (the camera is orthographic — that is
-  the zoom). It decides how much room there is in front of and behind the scene, and it is the
-  radius the camera swings on. Keep it well clear of the tallest stack of layers.
 
 ## Shift+Right-drag rotates; plain Right-drag pans
 
@@ -206,23 +230,38 @@ pan gesture, so without it the browser's own menu opens on every pan.
 idiom of a 3D-printer slicing program's layer scrubber. It is a column rather than an overlay so
 it never covers the view and the canvas keeps its whole area for the tools this screen will grow.
 
-- The dot's travel is inset by its own radius at each end (`.line`'s top/bottom in the CSS matches
-  `DOT_RADIUS_PX`), so its centre can reach the first and last layer without overhanging the
-  column. **Those two must stay in step** — nothing checks it, and the symptom is a dot that
-  cannot quite reach an end.
-- `setPointerCapture` on the track is what lets a drag that wanders out over the canvas keep
-  working. Nothing else in this folder captures the pointer.
-- It is a real `role="slider"` with the full `aria-value*` set and keyboard support (arrows, Page
-  Up/Down, Home/End), because it is the only control on the screen and dragging a dot is not the
-  only way people work.
-
 ## Adding to this screen
 
 - New state goes in `store.ts`, not in a slice of the app store.
 - New chrome gets its own component and its own CSS module in this folder — resist reaching for
   the Designer's.
-- The first real editing tool is what turns `StructureOperation` from `never` into a union, adds
-  cases to `undo`/`redo`, and enables the toolbar's buttons. It also fills the toolbar's empty
-  left group and the sidebar's empty instruction list.
+- **Adding an operation type is a folder under `operation-types/` plus three lines.** The folder
+  holds an `object-model.ts` (the data shape and the `StructureOperationDefinition`), an
+  `editor.tsx`, and whatever else that type needs — a `preview.tsx` if it has something to show on
+  the canvas. The three lines are the entry in `STRUCTURE_OPERATIONS`, the entry in
+  `STRUCTURE_OPERATION_LIST`, and the member in the `StructureOperation` union, all in
+  `operation-types/registry.ts`. **Nothing else is edited**: the toolbar builds a button per
+  registered type, the sidebar list and its ⋯ menu, the properties dialog, the warning banner and
+  the canvas preview all go through the registry's accessors and none of them names a type.
 - When the JSON description lands, it is the boundary with the rest of the app. Keep it a plain
   data structure that the Designer can read without importing anything from this folder.
+  `operation-types/` is already that shape: every field of every operation is a string, a number,
+  or an array of those.
+
+Four decisions a fresh session would plausibly "correct", and shouldn't:
+
+- **The two Deletes follow different rules**, though both ask nothing first. The sidebar ⋯ menu's
+  Delete removes a whole operation and records its own undo entry. The trashcan inside the Layer
+  Heights list removes a row from the operation being edited, and is covered by that dialog's
+  single Update or Cancel — not by an undo entry of its own.
+- **The sidebar has no selection.** Nothing on this screen would do anything with a selected
+  operation yet, and a selection nothing reads is state waiting to go stale. Reordering the list is
+  the obvious thing that wants one, and it should arrive together with the click-blank-space-to-
+  deselect that has to come with it.
+- **`createOperation` appends.** Inserting next to the layer being viewed is a plausible refinement
+  and deliberately not done: the list reads as a recipe, and a new step landing in the middle of one
+  would be a surprise.
+- **The Layer Heights list's blank trailing row is not stored.** The editor always draws one below
+  the real rows, and choosing a type in it is what appends a real one. That is what keeps
+  `LayerHeightKind` a closed set with no "nothing chosen yet" member for the rest of the code to
+  handle.

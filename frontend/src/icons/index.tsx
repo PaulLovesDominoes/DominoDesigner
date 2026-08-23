@@ -1,6 +1,7 @@
 import AngledRectangleSelectSvg from "../assets/Angled-Rectangle.svg?react";
 import CircleByDiameterSelectSvg from "../assets/Circle-by-Diameter.svg?react";
 import CircleSelectSvg from "../assets/Circle-by-Radius.svg?react";
+import NewLayerDefinitionSvg from "../assets/New-Layer-Def.svg?react";
 import OvalSelectSvg from "../assets/Oval-Select.svg?react";
 import PaintCircleLargeSvg from "../assets/Paint-Circle-Large.svg?react";
 import PaintCircleMediumSvg from "../assets/Paint-Circle-Medium.svg?react";
@@ -9,6 +10,7 @@ import PaintQuillLargeSvg from "../assets/Paint-Quill-Large.svg?react";
 import PaintQuillMediumSvg from "../assets/Paint-Quill-Medium.svg?react";
 import PaintQuillSmallSvg from "../assets/Paint-Quill-Small.svg?react";
 import QuillNibSvg from "../assets/Quill-nib.svg?react";
+import ShowAllLayersSvg from "../assets/Show-All-Layers.svg?react";
 import TriangleSelectSvg from "../assets/Triangle.svg?react";
 import { createSvgIcon, paddedViewBox } from "./createSvgIcon";
 
@@ -57,6 +59,20 @@ export const AngledRectangleSelectIcon = createSvgIcon(
   AngledRectangleSelectSvg,
   paddedViewBox(852, 834),
 );
+
+/**
+ * A stack of layers with a plus above it: adds a layer definition to the
+ * structure being designed. Two of the plates are drawn parted from the rest, so
+ * the drawing says "some layers", against the full stack of Show All Layers
+ * below.
+ */
+export const NewLayerDefinitionIcon = createSvgIcon(
+  NewLayerDefinitionSvg,
+  paddedViewBox(825, 750),
+);
+
+/** A full stack of layers: show every layer of the structure at once. */
+export const ShowAllLayersIcon = createSvgIcon(ShowAllLayersSvg, paddedViewBox(825, 840));
 
 /**
  * The quill brush's nib on its own — a thin bar lying lower-left to upper-right,

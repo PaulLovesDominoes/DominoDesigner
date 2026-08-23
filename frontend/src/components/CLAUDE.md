@@ -8,10 +8,18 @@ The three pieces relate like this: a type's **`editor.tsx`** is a plain set of r
 the reusable controls in **`components/PropertyFields.tsx`** (`TextField`, `NumberField`,
 `OptionalNumberField`, `NumberPairField`, `UnitNumberField`, `ColorField`, `SelectField`,
 `CheckboxField`, `ReadOnlyField`, `Steppers`, plus `Separator` and `SectionHeader` for grouping)
-— it holds no dialog chrome and never imports `PropertiesDialog`. Note the module-private
-**`NumberInput`** holds the half-typed-value handling that `NumberField`, `NumberPairField` and
-`OptionalNumberField` share; a fourth control wanting a number box should use it rather than
-copying the draft logic a fourth time.
+— it holds no dialog chrome and never imports `PropertiesDialog`. Note **`NumberInput`** holds the
+half-typed-value handling that `NumberField`, `NumberPairField` and `OptionalNumberField` share; a
+fourth control wanting a number box should use it rather than copying the draft logic a fourth
+time.
+
+It is **exported** for exactly that reason. Its first outside caller is the Structure Designer's
+Layer Heights list, which puts a number box in a table cell where the fixed label column the
+controls above draw would be wrong — but which still needs a half-typed `7.` to stay on screen
+while `7` is what reaches the store. Note what did *not* move here: that list itself stays in
+`structure-designer/`, because a repeatable four-column list with hover-revealed row actions is
+nothing but opinions about one editor, and this file is for controls with no opinion about either
+half of the app.
 
 Two of those need saying apart, because the difference between them is easy to collapse:
 

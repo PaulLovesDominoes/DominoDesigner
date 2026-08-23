@@ -19,9 +19,16 @@ export const STRUCTURE_PLANE_HEIGHT_MM = 1500;
 export const STRUCTURE_PLANE_COLOR = "#dde3ec";
 
 /**
- * How far apart the layers sit. Named DEFAULT because layer heights become
- * user-set, and variable between layers, in a later release — at which point
- * this stays as the value a new layer starts at.
+ * The height of a layer that no layer definition reaches.
+ *
+ * Layer heights are the user's now, set by the layer definitions in the sidebar
+ * and free to differ from one layer to the next; this is what the rest of the
+ * structure falls back to above them. With no layer definitions at all every
+ * layer takes it, which is why a fresh structure has the even spacing this
+ * screen has always had.
+ *
+ * How the definitions are turned into a height per layer is
+ * operation-types/layerDefinition/layers.ts.
  */
 export const DEFAULT_LAYER_HEIGHT_MM = 24;
 
@@ -38,6 +45,14 @@ export const LAYER_PLANE_COLOR = "#8b9099";
  * starting state. See LayerPlane.tsx.
  */
 export const LAYER_PLANE_OPACITY = 0.55;
+
+/**
+ * How solid the sheets are that an operation draws while its properties are
+ * open. Much fainter than the single layer sheet above, because there may be
+ * dozens of them stacked up the screen and at anything like that opacity the
+ * ones behind would add up into a solid wall.
+ */
+export const LAYER_PREVIEW_OPACITY = 0.22;
 
 /**
  * How far the view may be tilted away from straight-down, in radians. Just

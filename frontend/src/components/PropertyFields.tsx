@@ -94,7 +94,7 @@ export const parseNumber = (text: string, float: boolean) =>
 /** What the box shows for a value that is not there. */
 const blankDraft = (value: number | null) => (value === null ? "" : String(value));
 
-interface NumberInputProps {
+export interface NumberInputProps {
   id?: string;
   value: number | null;
   min: number;
@@ -118,8 +118,15 @@ interface NumberInputProps {
  * Just the box. Split out of NumberField so a row holding two of them —
  * NumberPairField — gets the same half-typed-value handling rather than a second
  * copy of it that drifts. OptionalNumberField shares it for the same reason.
+ *
+ * Exported for a caller that needs the box without the label row around it: the
+ * Structure Designer's Layer Heights list puts one in a table cell, where the
+ * fixed label column the other controls draw would be wrong. It still wants the
+ * draft handling — a half-typed "7." has to stay on screen while 7 is what
+ * reaches the store — which is exactly what this holds and what a fifth copy
+ * would eventually get wrong.
  */
-function NumberInput({
+export function NumberInput({
   id,
   value,
   min,

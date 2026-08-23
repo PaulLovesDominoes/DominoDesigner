@@ -1,0 +1,86 @@
+/*
+ * Its own copy of the Designer's hierarchy-row chrome rather than a shared
+ * component. The two sidebars list entirely different things — a tree of
+ * objects there, a recipe of steps here — and are expected to grow apart.
+ */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  user-select: none;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Shown in place of the rows while there are none, so the panel says what to do. */
+.empty {
+  padding: 6px 4px;
+  color: var(--color-text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--color-text);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.row:hover {
+  background: var(--color-chrome-2);
+}
+
+/*
+ * An operation that has no effect where it sits. The colour matches the dialog's
+ * warning banner (StructureOperationDialog.module.css) — declared in both rather
+ * than promoted to a global token, since those two are its only users and both
+ * are on this screen.
+ */
+.rowWarning,
+.rowWarning .icon {
+  color: #e0645c;
+}
+
+.icon {
+  flex: 0 0 auto;
+  color: var(--color-text-dim);
+}
+
+.name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Revealed on hover, and while its menu is open, and when tabbed to. */
+.more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.row:hover .more,
+.more:focus-visible,
+.moreOpen {
+  opacity: 1;
+}
+
+.more:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}

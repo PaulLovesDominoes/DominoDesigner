@@ -30,8 +30,10 @@
   color: var(--color-text);
 }
 
-/* Where structure design instructions will be listed. Empty for now. */
-.instructions {
+/* Holds StructureOperationList — the steps the structure is built from. */
+.operations {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }

@@ -6,6 +6,12 @@ import {
   RiZoomOutLine,
 } from "@remixicon/react";
 
+import { ShowAllLayersIcon } from "../icons";
+import {
+  getOperationIcon,
+  getOperationToolbarLabel,
+  STRUCTURE_OPERATION_LIST,
+} from "./operation-types/registry";
 import { useStructureStore } from "./store";
 import styles from "./StructureToolbar.module.css";
 
@@ -19,11 +25,12 @@ const ZOOM_OUT = 0.95;
  * stylesheet, so the two toolbars can fill up with different tools without
  * either one having to be checked against the other.
  *
- * The left-hand group, where those tools will go, is empty for now.
+ * The left-hand group holds one command per registered operation type, built
+ * from the registry so adding an operation type puts its button here without
+ * this file being touched.
  *
  * Undo and Redo read this screen's own history, which is deliberately separate
- * from the Designer's (see store.ts). Nothing here edits anything yet, so both
- * stay disabled — which is the honest state rather than a placeholder.
+ * from the Designer's (see store.ts).
  */
 export default function StructureToolbar() {
   const cameraApi = useStructureStore((s) => s.cameraApi);
@@ -31,11 +38,55 @@ export default function StructureToolbar() {
   const canRedo = useStructureStore((s) => s.redoStack.length > 0);
   const undo = useStructureStore((s) => s.undo);
   const redo = useStructureStore((s) => s.redo);
+  const createOperation = useStructureStore((s) => s.createOperation);
+  const showAllLayers = useStructureStore((s) => s.showAllLayers);
+  const toggleShowAllLayers = useStructureStore((s) => s.toggleShowAllLayers);
 
   return (
     <div className={styles.bar}>
-      {/* Left-justified: the structure design tools, once there are any. */}
-      <div className={styles.group} />
+      {/*
+        Left-justified: one button per operation type. Plain buttons rather than
+        the Designer's ToolButton, for two reasons — these are commands rather
+        than modes, and ToolButton always reports a pressed/unpressed state to
+        screen readers, which a command has no business claiming; and it comes
+        with the Designer's stylesheet, which this screen deliberately does not
+        share. The icon comes from the type, so an operation cannot appear under
+        one glyph here and a different one in the sidebar.
+      */}
+      <div className={styles.group}>
+        {STRUCTURE_OPERATION_LIST.map((type) => {
+          const Icon = getOperationIcon(type);
+          const label = getOperationToolbarLabel(type);
+          return (
+            <button
+              key={type}
+              className={styles.iconBtn}
+              title={label}
+              aria-label={label}
+              onClick={() => createOperation(type)}
+            >
+              <Icon size={20} />
+            </button>
+          );
+        })}
+
+        {/*
+          A toggle rather than a command, so unlike the buttons above it reports
+          whether it is on — both to the eye, through .active, and to a screen
+          reader, through aria-pressed.
+        */}
+        <button
+          className={
+            showAllLayers ? `${styles.iconBtn} ${styles.active}` : styles.iconBtn
+          }
+          title="Show all layers"
+          aria-label="Show all layers"
+          aria-pressed={showAllLayers}
+          onClick={toggleShowAllLayers}
+        >
+          <ShowAllLayersIcon size={20} />
+        </button>
+      </div>
 
       {/* Right-justified: undo/redo, then the camera controls. Nested in one
           outer group so .bar's space-between splits left from right rather

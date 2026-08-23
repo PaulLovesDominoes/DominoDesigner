@@ -1,0 +1,140 @@
+/*
+ * Its own copy of the Designer's properties-dialog chrome, not a shared
+ * component. The two screens are meant to be able to change without either
+ * being checked against the other, and this dialog is already growing its own
+ * things — a warning banner, a Create/Update button — that the Designer's has
+ * no use for.
+ */
+
+/*
+ * Dims the screen chrome while an operation is being edited. It covers the
+ * whole viewport; the canvas area lifts itself above it (see
+ * StructureDesignerScreen's canvasAreaRaised) so the layer preview stays bright
+ * and the view can still be rotated while the dialog is open.
+ *
+ * No click handler: it dims, it does not dismiss. Closing is Cancel or the
+ * primary button, deliberately.
+ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 50;
+}
+
+.dialog {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  width: max(360px, 28vw);
+  height: max(400px, 55vh);
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  background: var(--color-chrome-2);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  cursor: move;
+  user-select: none;
+  /* Stops a touch drag on the header being taken over by the browser's own
+     scrolling before the pointer handlers see it. */
+  touch-action: none;
+}
+
+.headerIcon {
+  flex: 0 0 auto;
+  color: var(--color-text-dim);
+}
+
+.title {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Only the properties scroll; header, warning and footer stay put. */
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+/*
+ * Shown when the operation has no effect where it sits. Red rather than the
+ * amber the print options use: amber there means "it will still print", and
+ * this means "this does nothing at all". The colour is declared here rather
+ * than promoted to a global token because it has two users, both on this
+ * screen — see StructureOperationList.module.css's rowWarning.
+ */
+.warning {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(224, 100, 92, 0.12);
+  color: #e0645c;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/*
+ * Widens the Name box to the full control column, so its right edge lines up
+ * with the Layer Heights list below it rather than stopping short at the fixed
+ * width the shared text control otherwise uses.
+ *
+ * Done here rather than by changing TextField, because that control is shared
+ * with the Designer and every one of its property editors expects the narrower
+ * box. An element selector inside a CSS-module class is safe: modules rewrite
+ * class names, not tag names, so this reaches the real <input> while staying
+ * scoped to this wrapper.
+ */
+.nameField input[type="text"] {
+  width: 100%;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.button {
+  padding: 8px 18px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-chrome);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: var(--color-text-dim);
+}
+
+.primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.primary:hover {
+  border-color: var(--color-accent);
+  filter: brightness(1.08);
+}

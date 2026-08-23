@@ -3,10 +3,12 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 
+import AllLayersView from "./AllLayersView";
 import { MAX_POLAR_ANGLE } from "./constants";
 import LayerPlane from "./LayerPlane";
 import StructureBuildPlane from "./StructureBuildPlane";
-import StructureCameraRig from "./StructureCameraRig";
+import StructureCameraRig, { EYE_DISTANCE_MM } from "./StructureCameraRig";
+import StructurePreview from "./StructurePreview";
 
 /** The bit of the OrbitControls instance ShiftRotateGesture rewrites. */
 interface MouseButtonControls {
@@ -80,15 +82,19 @@ export default function StructureCanvas() {
       // scene into a screen's range — has nothing to do here but shift the
       // colours away from what was asked for. `flat` turns it off.
       flat
-      // Far enough back to clear the tallest stack of layers, with near and far
-      // planes well outside anything that can be built.
-      camera={{ position: [0, 0, 4000], near: 0.1, far: 20000, zoom: 0.4 }}
+      // The same distance the camera rig puts the camera at, taken from there
+      // rather than written out again — the two disagreeing would mean the first
+      // frame was drawn from somewhere the rig then moved away from. Near and
+      // far are well outside anything that can be built. See EYE_DISTANCE_MM.
+      camera={{ position: [0, 0, EYE_DISTANCE_MM], near: 0.1, far: 20000, zoom: 0.4 }}
       style={{ position: "absolute", inset: 0 }}
     >
       <color attach="background" args={["#14161a"]} />
 
       <StructureBuildPlane />
+      <AllLayersView />
       <LayerPlane />
+      <StructurePreview />
 
       <OrbitControls
         makeDefault

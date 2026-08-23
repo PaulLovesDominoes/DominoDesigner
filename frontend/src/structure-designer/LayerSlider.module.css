@@ -34,6 +34,18 @@
 }
 
 /*
+ * How far this layer's floor is off the build plane. Dimmer and smaller than the
+ * layer number: the number is what the slider chooses, this is what that means
+ * in millimetres. Tabular figures so it does not jitter sideways while dragging.
+ */
+.height {
+  margin-top: 2px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-dim);
+}
+
+/*
  * The draggable area. Wider than the line drawn down it so the dot is easy to
  * catch, and `touch-action: none` so a touch drag scrolls nothing and the
  * pointer events reach this instead.

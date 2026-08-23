@@ -1,6 +1,8 @@
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
 
 import { MAX_LAYER, MIN_LAYER } from "./constants";
+import { layerFloorMm } from "./operation-types/layerDefinition/layers";
+import { useLayerHeights } from "./operation-types/layerDefinition/useLayerHeights";
 import { useStructureStore } from "./store";
 import styles from "./LayerSlider.module.css";
 
@@ -22,7 +24,13 @@ const PAGE_STEP = 10;
 export default function LayerSlider() {
   const layer = useStructureStore((s) => s.layer);
   const setLayer = useStructureStore((s) => s.setLayer);
+  const heights = useLayerHeights();
   const trackRef = useRef<HTMLDivElement>(null);
+
+  // How far off the build plane this layer's floor sits, which is where the grey
+  // sheet is drawn. A layer number alone stopped being enough to place it once
+  // layer definitions could give layers different heights.
+  const floorMm = layerFloorMm(heights, layer);
 
   // Where along the track a given layer sits, as a fraction from the bottom.
   const fractionFromBottom = (layer - MIN_LAYER) / (MAX_LAYER - MIN_LAYER);
@@ -87,6 +95,9 @@ export default function LayerSlider() {
       <div className={styles.readout}>
         <span className={styles.caption}>Layer</span>
         <span className={styles.value}>{layer}</span>
+        {/* Rounded to a tenth and trimmed, so a stack of 24s reads "96 mm"
+            rather than "96.0 mm" while a 7.5 still reads exactly. */}
+        <span className={styles.height}>{+floorMm.toFixed(1)} mm</span>
       </div>
 
       <div

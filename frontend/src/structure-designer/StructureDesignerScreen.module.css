@@ -17,3 +17,17 @@
   position: relative;
   overflow: hidden;
 }
+
+/*
+ * Lifts the canvas above the operation dialog's scrim (z-index 50) so the layer
+ * preview stays bright and the view stays rotatable while the chrome around it
+ * dims.
+ *
+ * None of the ancestors between .app-content and .canvasArea establish a
+ * stacking context, so this competes at the root and wins. Keep it that way:
+ * a `transform`, `filter`, `will-change` or `contain` on any of them would trap
+ * this z-index inside that ancestor and the lift would silently stop working.
+ */
+.canvasAreaRaised {
+  z-index: 60;
+}
