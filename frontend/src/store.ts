@@ -20,8 +20,8 @@ import {
 } from "./domino-inventory/appStoreSlice";
 import {
   createHistorySlice,
-  operationReferencesId,
-  pushOperation,
+  undoEditReferencesId,
+  pushUndoEdit,
   type HistorySlice,
 } from "./history/appStoreSlice";
 import {
@@ -56,7 +56,7 @@ function createInitialDDObjects() {
 }
 
 /**
- * Whether `id` is referenced by any operation still on the undo or redo
+ * Whether `id` is referenced by any UndoEdit still on the undo or redo
  * stack — i.e., whether some future undo/redo could still bring a deleted
  * DDObject back (a "delete" op whose subtree includes it), independent of
  * whether `id` is currently present in `ddObjects`. Used by
@@ -69,14 +69,14 @@ function createInitialDDObjects() {
  * Lives here rather than alongside the rest of history because it is a query
  * against the *live store*, and keeping the one `useStore`-touching part of
  * history in store.ts is what leaves history/appStoreSlice.ts with no value
- * import from this module. The per-operation predicate it runs is history's,
+ * import from this module. The per-UndoEdit predicate it runs is history's,
  * and is imported.
  */
 export function isDDObjectInUndoHistory(id: DDObjectId): boolean {
   const { undoStack, redoStack } = useStore.getState();
   return (
-    undoStack.some((op) => operationReferencesId(op, id)) ||
-    redoStack.some((op) => operationReferencesId(op, id))
+    undoStack.some((op) => undoEditReferencesId(op, id)) ||
+    redoStack.some((op) => undoEditReferencesId(op, id))
   );
 }
 
@@ -257,7 +257,7 @@ export const useStore = create<AppState>()((set, get, api) => ({
       // deliberately isn't, so a leftover pre-mode redoStack would let Ctrl+Y
       // replay pre-mode work *into* the mode — which cancelDominoEditing would
       // then discard from the stack without reverting. Dropping it here also
-      // costs nothing, since the first in-mode edit's pushOperation clears the
+      // costs nothing, since the first in-mode edit's pushUndoEdit clears the
       // redo stack anyway; this only brings that forward.
       redoStack: [],
     });
@@ -290,25 +290,25 @@ export const useStore = create<AppState>()((set, get, api) => ({
       // pattern copied in one field be pasted into another. Only the handlers
       // unregister (that's DominoEditor's doing), not the buffer.
       return {
-        // Every image operation is dropped from the history, and they are gone
+        // Every image UndoEdit is dropped from the history, and they are gone
         // for good.
         //
         // A picture is only ever on screen inside this mode, so an image
-        // operation surviving past it could only ever be undone invisibly —
+        // UndoEdit surviving past it could only ever be undone invisibly —
         // Ctrl+Z would appear to do nothing at all. That is the rule these
-        // operations are held to (see the "imageMap" cases in
+        // UndoEdits are held to (see the "imageMap" cases in
         // history/appStoreSlice.ts, which enforce the same thing from the other
         // side), and outside the mode it cannot be met.
         //
         // Pulling entries out of the middle of the stacks is safe because an
-        // image operation touches nothing but `imageMaps`, which no other kind
+        // image UndoEdit touches nothing but `imageMaps`, which no other kind
         // reads — so what is left still replays in order. It is also what lets
         // assetStore.ts's pruner free the megabytes held by every picture
         // deleted or replaced during the session: that memory is kept alive
         // *by* these entries, and only by them.
         //
         // dominoEditingUndoBarrier cannot be one of the entries removed here: it
-        // is captured on entry, and this purge means no image operation is ever
+        // is captured on entry, and this purge means no image UndoEdit is ever
         // on the stack at that moment. It is cleared below in any case.
         undoStack: s.undoStack.filter((op) => op.kind !== "imageMap"),
         redoStack: s.redoStack.filter((op) => op.kind !== "imageMap"),
@@ -388,7 +388,7 @@ export const useStore = create<AppState>()((set, get, api) => ({
     set({
       undoStack: s.undoStack.slice(0, keep),
       // Nothing in here survived the cancel either — it can only hold in-mode
-      // operations, again per enterDominoEditing's reset.
+      // UndoEdits, again per enterDominoEditing's reset.
       redoStack: [],
     });
     get().exitDominoEditing();
@@ -442,7 +442,7 @@ export const useStore = create<AppState>()((set, get, api) => ({
       if (!result) return {};
       return {
         ...result.patch,
-        ...pushOperation(s.undoStack, {
+        ...pushUndoEdit(s.undoStack, {
           kind: "delete",
           subtree: result.subtree,
           parentId: result.parentId,
@@ -478,7 +478,7 @@ export const useStore = create<AppState>()((set, get, api) => ({
         if (!ddObject) return base;
         return {
           ...base,
-          ...pushOperation(s.undoStack, { kind: "create", ddObject, parentId: s.rootId }),
+          ...pushUndoEdit(s.undoStack, { kind: "create", ddObject, parentId: s.rootId }),
         };
       }
 
@@ -489,7 +489,7 @@ export const useStore = create<AppState>()((set, get, api) => ({
         if (live && !ddObjectsEqual(s.editingSnapshot, live)) {
           return {
             ...base,
-            ...pushOperation(s.undoStack, {
+            ...pushUndoEdit(s.undoStack, {
               kind: "properties",
               before: s.editingSnapshot,
               after: live,

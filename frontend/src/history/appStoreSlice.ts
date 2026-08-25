@@ -26,7 +26,7 @@ import { imageMadeOnScreen, isImageOnScreen } from "../image-map/visibility";
  * timeline anyway, so this stays one stack.
  *
  * Deliberately *not* folded into clipboard/: a clipboard is a transfer buffer,
- * this is a history of operations over the hierarchy. They share nothing but
+ * this is a history of UndoEdits over the hierarchy. They share nothing but
  * both being Ctrl-chords.
  *
  * ---- Import-cycle note ----
@@ -46,7 +46,7 @@ import { imageMadeOnScreen, isImageOnScreen } from "../image-map/visibility";
  * patches) — a fieldElement's counts, width/height, position, anchor and row/col
  * origins are all derived from one another, and by different write paths, so a
  * field is far too interdependent to diff/reapply piecemeal. "dominoColors" is the first
- * domino-level operation kind anticipated by that design: before/after are
+ * domino-level UndoEdit kind anticipated by that design: before/after are
  * the affected dominoes' previous/new inventory colorIds (0 = unassigned),
  * parallel to indices — typed arrays given how large a selection can get.
  * Applying it reaches into useDominoDataStore rather than ddObjects, and
@@ -71,7 +71,7 @@ import { imageMadeOnScreen, isImageOnScreen } from "../image-map/visibility";
  * exitDominoEditing filters them off both stacks, since a picture is only ever
  * drawn inside that mode. See the comment there.
  */
-export type Operation =
+export type UndoEdit =
   | { kind: "create"; ddObject: DDObject; parentId: DDObjectId }
   | { kind: "delete"; subtree: DDObject[]; parentId: DDObjectId; index: number }
   | { kind: "transform"; before: DDObject; after: DDObject }
@@ -95,15 +95,15 @@ export type Operation =
 // Undo entries are capped so a long session can't grow the stack unbounded.
 const HISTORY_LIMIT = 100;
 
-/** Push a new operation and clear the redo stack, per standard undo/redo semantics. */
-export function pushOperation(undoStack: Operation[], op: Operation) {
-  return { undoStack: [...undoStack, op].slice(-HISTORY_LIMIT), redoStack: [] as Operation[] };
+/** Push a new UndoEdit and clear the redo stack, per standard undo/redo semantics. */
+export function pushUndoEdit(undoStack: UndoEdit[], op: UndoEdit) {
+  return { undoStack: [...undoStack, op].slice(-HISTORY_LIMIT), redoStack: [] as UndoEdit[] };
 }
 
 /**
  * The imageMaps table with one element's picture set to `image`, or with that
  * element's entry taken out when `image` is null. Shared by undo and redo, which
- * differ only in which side of the operation they put back.
+ * differ only in which side of the UndoEdit they put back.
  *
  * A picture being put back is forced on screen. Without that, undoing the delete
  * of a picture the user had hidden would restore it still hidden — a Ctrl+Z with
@@ -128,7 +128,7 @@ function imageMapsWith(
  *
  * If the element's picture is on the element but not on the screen — hidden, or
  * wound to fully transparent — this brings it back into view and reports true,
- * meaning *the press has been spent*. The caller must then leave the operation
+ * meaning *the press has been spent*. The caller must then leave the UndoEdit
  * where it is: the next press applies it for real, now that its effect can be
  * seen. One press, one visible change, which is the same rule the Escape ladder
  * in domino editing mode follows.
@@ -149,18 +149,18 @@ function revealBeforeApplying(
 }
 
 /**
- * Whether `undoStack` holds any operation recorded since `barrier` was taken —
+ * Whether `undoStack` holds any UndoEdit recorded since `barrier` was taken —
  * i.e. any work done inside domino editing mode. Identity comparison, for the
- * same reason the barrier is an Operation rather than an index (see its
+ * same reason the barrier is an UndoEdit rather than an index (see its
  * declaration below). A null barrier means the stack was empty at entry, so
  * anything on it now is in-mode work.
  *
  * Two readers: undo()'s clamp, and ModeHintBar, which uses it to decide whether
  * Cancel has anything to warn about discarding.
  */
-export function hasOperationsSinceBarrier(
-  undoStack: Operation[],
-  barrier: Operation | null,
+export function hasUndoEditsSinceBarrier(
+  undoStack: UndoEdit[],
+  barrier: UndoEdit | null,
 ): boolean {
   return undoStack.length > 0 && undoStack[undoStack.length - 1] !== barrier;
 }
@@ -168,12 +168,12 @@ export function hasOperationsSinceBarrier(
 /**
  * Whether `op` still names `id`. Pure, so it can be applied to either stack;
  * store.ts's isDDObjectInUndoHistory is the live-store query built on it.
- * Deliberately conservative: checks every operation kind that could reference
+ * Deliberately conservative: checks every UndoEdit kind that could reference
  * `id`, even ones (transform/properties/dominoColors) that don't themselves add
  * or remove it from `ddObjects`, since a delete elsewhere on the stack could
  * still make it currently absent.
  */
-export function operationReferencesId(op: Operation, id: DDObjectId): boolean {
+export function undoEditReferencesId(op: UndoEdit, id: DDObjectId): boolean {
   switch (op.kind) {
     case "create":
       return op.ddObject.id === id;
@@ -189,21 +189,21 @@ export function operationReferencesId(op: Operation, id: DDObjectId): boolean {
 }
 
 export interface HistorySlice {
-  // Unified undo/redo history over DDObject-level operations (create, delete,
+  // Unified undo/redo history over DDObject-level UndoEdits (create, delete,
   // transform, properties) and domino color changes. Not persisted, like the
   // rest of the store.
-  undoStack: Operation[];
-  redoStack: Operation[];
+  undoStack: UndoEdit[];
+  redoStack: UndoEdit[];
 
-  // The operation that was on top of undoStack when domino editing mode was
+  // The UndoEdit that was on top of undoStack when domino editing mode was
   // entered (null when not in the mode, or when the stack was empty). undo()
-  // refuses once that operation is back on top, so undo inside the mode can
+  // refuses once that UndoEdit is back on top, so undo inside the mode can
   // only reach back to the state the field was in at entry — never past it into
   // whatever created the field or edited it beforehand. Written by store.ts's
   // enterDominoEditing/exitDominoEditing; it lives here because undo() is what
   // gives it meaning.
   //
-  // Deliberately the operation *itself* rather than an index or a stack depth:
+  // Deliberately the UndoEdit *itself* rather than an index or a stack depth:
   // HISTORY_LIMIT drops entries off the front of undoStack, which shifts every
   // index but leaves object identity alone. An index-based barrier has to be
   // slid down on every push to compensate, and forgetting to breaks undo
@@ -214,7 +214,7 @@ export interface HistorySlice {
   // If in-mode work is heavy enough to push the barrier off the front, the
   // clamp lapses — correctly, since by then every surviving entry is in-mode
   // work anyway.
-  dominoEditingUndoBarrier: Operation | null;
+  dominoEditingUndoBarrier: UndoEdit | null;
 
   // Clamped by dominoEditingUndoBarrier while in domino editing mode — see its
   // own doc comment.
@@ -237,13 +237,13 @@ export const createHistorySlice: StateCreator<AppState, [], [], HistorySlice> = 
     const s = get();
     // Clamped while in domino editing mode — never undo past whatever was
     // already on the stack when the mode was entered. Comparing the top of the
-    // stack against the barrier operation directly is what makes this immune to
+    // stack against the barrier UndoEdit directly is what makes this immune to
     // HISTORY_LIMIT shifting every index out from under it; see the barrier's
     // own declaration. Shares one definition with ModeHintBar's "is there
     // anything for Cancel to discard" so the two can't drift apart.
     if (
       s.dominoEditingUndoBarrier !== null &&
-      !hasOperationsSinceBarrier(s.undoStack, s.dominoEditingUndoBarrier)
+      !hasUndoEditsSinceBarrier(s.undoStack, s.dominoEditingUndoBarrier)
     ) {
       return;
     }
@@ -312,7 +312,7 @@ export const createHistorySlice: StateCreator<AppState, [], [], HistorySlice> = 
       }
       case "imageMap":
         // A picture the user cannot see is brought into view first, and that
-        // press does nothing else — see revealBeforeApplying. The operation stays
+        // press does nothing else — see revealBeforeApplying. The UndoEdit stays
         // on the stack for the next one.
         if (revealBeforeApplying(s.imageMaps, op.parentId, set)) break;
         // A picture lives outside ddObjects, as colors do, so this leaves the
@@ -320,7 +320,7 @@ export const createHistorySlice: StateCreator<AppState, [], [], HistorySlice> = 
         // whether or not its element is being edited right now.
         //
         // Its decoded pixels are still in assetStore.ts, even for a picture that
-        // was deleted or replaced — nothing frees an asset while an operation on
+        // was deleted or replaced — nothing frees an asset while an UndoEdit on
         // either stack still names it, which is exactly what makes this undo
         // instant rather than having to decode the file again.
         set({
@@ -402,6 +402,6 @@ export const createHistorySlice: StateCreator<AppState, [], [], HistorySlice> = 
     set((s) =>
       ddObjectsEqual(before, after)
         ? {}
-        : pushOperation(s.undoStack, { kind: "transform", before, after }),
+        : pushUndoEdit(s.undoStack, { kind: "transform", before, after }),
     ),
 });

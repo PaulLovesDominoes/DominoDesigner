@@ -67,4 +67,8 @@ export const layerDefinitionDefinition: StructureOperationDefinition<LayerDefini
     editor: LayerDefinitionEditor,
     warning: layerDefinitionWarning,
     preview: LayerDefinitionPreview,
+    // Its preview draws sheets at the layer heights, so the ordinary layer sheet
+    // and the Show All Layers view step aside while it is on screen — two sets at
+    // the same heights would add up into one denser-looking surface.
+    previewDrawsLayerSheets: true,
   };

@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-npm --prefix frontend run dev
+npm --prefix frontend run build
 

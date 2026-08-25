@@ -99,7 +99,7 @@ map plus the last `ddObject` snapshot seen (needed to decode the *previous* rege
 indices before they're overwritten). Cells that merely fall outside the currently-live range
 (a shrink) are never deleted from `colorByCell` — which is also why a shrink followed by a later
 grow, even in a wholly separate gesture or session, restores the old colors rather than
-defaulting new cells to unpainted: nothing here scopes memory to a single "operation," by design.
+defaulting new cells to unpainted: nothing here scopes memory to a single "UndoEdit," by design.
 
 `colorByCell` has a second writer besides `restoreDominoColors`'s regenerate-time absorb/restore:
 `syncDominoColorMemory`, called from the three places that mutate a live `colorIds` array
@@ -125,7 +125,7 @@ snapshot from the last regenerate.
 Load-bearing conventions:
 
 - **Nothing ever compacts or swap-removes a buffer**, so **a domino's index is stable for the
-  life of its parent**. The operation/undo stack depends on that: an op names "domino 4812" and
+  life of its parent**. The UndoEdit/undo stack depends on that: an op names "domino 4812" and
   stays valid across any undo/redo. There was once a `hidden: Uint8Array` tombstone column
   reserving this for a per-domino delete; it was removed, having accumulated six read sites and
   never a single writer. When a delete does land it must pick its own representation and uphold
@@ -145,7 +145,7 @@ Load-bearing conventions:
   (`colorMemory.ts`) is the same pattern for a parent's cross-regenerate color memory, called
   alongside it. **Neither prunes the instant a DDObject leaves `ddObjects`** — a delete is
   undoable, so both defer via `store.ts`'s `isDDObjectInUndoHistory(id)`, which scans
-  `undoStack`/`redoStack` for any operation still referencing `id` (a `delete` whose subtree
+  `undoStack`/`redoStack` for any UndoEdit still referencing `id` (a `delete` whose subtree
   includes it, chiefly). Pruning immediately would mean undoing a delete brings the DDObject
   back with its dominoes already garbage collected — no positions, no colors, nothing to
   restore. Both subscriptions re-check on `undoStack`/`redoStack` changes too, not just
@@ -202,5 +202,5 @@ drawn at a different height than its neighbours. Note the two fixes are not inte
 domino (it would just re-tie at the new height).
 
 Per-domino selection and color editing now exist (domino editing mode — see *Domino editing
-mode* and *Domino color editing* below), both riding the same `Operation` union DDObject-level
+mode* and *Domino color editing* below), both riding the same `UndoEdot` union DDObject-level
 undo/redo already used (see *Undo/redo*), exactly as anticipated when that union was designed.

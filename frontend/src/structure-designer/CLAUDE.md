@@ -159,6 +159,24 @@ third is easy to get backwards:
 
 The sidebar's list used to be called the instructions; that word is retired.
 
+## Junction points
+
+A **junction point** is somewhere a domino can be stood, and the segments between neighbouring
+junctions are where dominoes lie. They are drawn as dots on the layer sheet. **Snapping to them is
+not implemented yet** — this release draws the grid; placing dominoes on it comes later.
+
+Three decisions here that the code alone will not tell you:
+
+- **A structure always has a grid, defined or not.** With no Grid Definition operation in the list
+  the dots come from `DEFAULT_GRID` — plain rows and columns a domino-length apart, `effectiveGrid` and `effectiveGridDefinition` which provides the current grid whether the user has defined one or not.
+  
+- **The same grid applies to every layer, but the dots are drawn on one layer only.** Show All
+  Layers does not multiply them — a hundred layers of a dense grid is a hundred times the dots for a
+  picture that reads as fog.
+- **Every pattern is a lattice plus a basis** (`operation-types/gridDefinition/geometries.ts`), which
+  is what lets one generator serve all six without knowing what an octagon is. Adding a tiling is a
+  table entry there.
+  
 ## Geometry and constants
 
 `constants.ts` holds everything the screen measures or paints with, so the canvas, the camera and
@@ -238,11 +256,12 @@ it never covers the view and the canvas keeps its whole area for the tools this 
 - **Adding an operation type is a folder under `operation-types/` plus three lines.** The folder
   holds an `object-model.ts` (the data shape and the `StructureOperationDefinition`), an
   `editor.tsx`, and whatever else that type needs — a `preview.tsx` if it has something to show on
-  the canvas. The three lines are the entry in `STRUCTURE_OPERATIONS`, the entry in
-  `STRUCTURE_OPERATION_LIST`, and the member in the `StructureOperation` union, all in
-  `operation-types/registry.ts`. **Nothing else is edited**: the toolbar builds a button per
-  registered type, the sidebar list and its ⋯ menu, the properties dialog, the warning banner and
-  the canvas preview all go through the registry's accessors and none of them names a type.
+  the canvas. Two of the lines are in `operation-types/registry.ts`: the entry in
+  `STRUCTURE_OPERATIONS` and the member in the `StructureOperation` union. The third is an
+  `<OperationCommand type="…" />` in `StructureToolbar`. **Nothing else is edited**: the sidebar
+  list and its ⋯ menu, the properties dialog, the warning banner, the canvas preview and the whole
+  of undo/redo go through the registry's accessors and none of them names a type.
+ 
 - When the JSON description lands, it is the boundary with the rest of the app. Keep it a plain
   data structure that the Designer can read without importing anything from this folder.
   `operation-types/` is already that shape: every field of every operation is a string, a number,

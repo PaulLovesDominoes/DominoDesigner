@@ -13,6 +13,7 @@ import {
 import { layerFloorMm } from "./operation-types/layerDefinition/layers";
 import { useLayerHeights } from "./operation-types/layerDefinition/useLayerHeights";
 import { useStructureStore } from "./store";
+import { usePreviewDrawsLayerSheets } from "./usePreviewDrawsLayerSheets";
 
 /**
  * The grey sheet showing which layer is being worked on. It sits at the layer's
@@ -31,15 +32,19 @@ import { useStructureStore } from "./store";
  */
 export default function LayerPlane() {
   const layer = useStructureStore((s) => s.layer);
-  const modifying = useStructureStore((s) => s.modifyingOperationId !== null);
+  const previewDrawsSheets = usePreviewDrawsLayerSheets();
   const heights = useLayerHeights();
 
-  // While an operation's properties are open, its own preview stands in for
-  // this sheet. Both drawn at once would sit at the same heights and read as a
-  // single washed-out surface. The rule lives here rather than as a branch in
-  // StructureCanvas, so a second previewing operation type is not a change to
+  // While an operation whose preview draws sheets of its own is being edited,
+  // that preview stands in for this one. Both drawn at once would sit at the
+  // same heights and read as a single washed-out surface.
+  //
+  // Asked of the type rather than of whether *any* dialog is open, because not
+  // every preview replaces this sheet — a grid definition's dots need it left
+  // where it is or they float over nothing. The rule lives here rather than as a
+  // branch in StructureCanvas, so the next previewing type is not a change to
   // that file.
-  if (modifying) return null;
+  if (previewDrawsSheets) return null;
 
   const z = layerFloorMm(heights, layer);
 

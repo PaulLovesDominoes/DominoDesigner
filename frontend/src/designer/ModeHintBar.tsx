@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 
 import { useStore } from "../store";
-import { hasOperationsSinceBarrier } from "../history/appStoreSlice";
+import { hasUndoEditsSinceBarrier } from "../history/appStoreSlice";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { getDominoBrush } from "../paint-brush/registry";
 import { placementToolFor } from "./toolConfig";
@@ -40,7 +40,7 @@ export default function ModeHintBar() {
   // Whether Cancel has anything to discard — the same barrier comparison undo()
   // clamps on. A primitive, so no useShallow needed.
   const hasEdits = useStore((s) =>
-    hasOperationsSinceBarrier(s.undoStack, s.dominoEditingUndoBarrier),
+    hasUndoEditsSinceBarrier(s.undoStack, s.dominoEditingUndoBarrier),
   );
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const openHelpTopic = useStore((s) => s.openHelpTopic);

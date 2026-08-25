@@ -60,6 +60,8 @@ export interface StructureOperationPreviewProps<
   operation: T;
   /** Every operation in the structure, in order — including this one. */
   operations: readonly StructureOperationBase[];
+  /** The layer being worked on, for a preview that draws at a layer's height. */
+  layer: number;
 }
 
 export interface StructureOperationDefinition<
@@ -79,6 +81,19 @@ export interface StructureOperationDefinition<
   toolbarLabel: string;
   /** Build an initial instance of this type with default values. */
   create(id: StructureOperationId): T;
+  /**
+   * Optional: why one of these cannot be created right now, or undefined when
+   * one can. The toolbar greys its command and shows the sentence as the
+   * button's tooltip, so a greyed button always explains itself — which is why
+   * this is one hook rather than a true/false plus a separate message.
+   *
+   * A type that can always be created omits it. Grid definitions use it because
+   * every layer shares one grid, so a second would have nothing to do, and
+   * refusing the creation says that where allowing a useless one would not.
+   */
+  createDisabledReason?(
+    operations: readonly StructureOperationBase[],
+  ): string | undefined;
   /** Editor for this operation's properties, rendered in the operation dialog. */
   editor: ComponentType<StructureOperationEditorProps<T>>;
   /**
@@ -100,6 +115,20 @@ export interface StructureOperationDefinition<
    * show omit it, and StructurePreview skips them.
    */
   preview?: ComponentType<StructureOperationPreviewProps<T>>;
+  /**
+   * Optional: whether this type's preview draws sheets at the layer heights.
+   *
+   * The ordinary layer sheet and the Show All Layers view both step aside for a
+   * preview that does, since two sets at the same heights with the same material
+   * would add up and the layers being edited would come out denser than the rest
+   * for no reason the user could name. A preview that draws something else — a
+   * grid definition's dots, say — needs the layer sheet left where it is, or its
+   * dots float over nothing.
+   *
+   * Named for what the preview *does* rather than for what hiding it achieves,
+   * so a new type's author can answer it without reading either consumer.
+   */
+  previewDrawsLayerSheets?: boolean;
 }
 
 /**

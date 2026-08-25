@@ -27,7 +27,13 @@
   z-index: 70;
   display: flex;
   flex-direction: column;
-  width: max(360px, 28vw);
+  /*
+   * Wide enough for the widest control column any editor draws: a grid
+   * definition's spacing row puts a pull-down, a number box and a unit beside
+   * each other, and at the narrower width the pull-down squeezed its longest
+   * option down to an ellipsis.
+   */
+  width: max(440px, 30vw);
   height: max(400px, 55vh);
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 24px);

@@ -5,6 +5,7 @@ import * as THREE from "three";
 
 import AllLayersView from "./AllLayersView";
 import { MAX_POLAR_ANGLE } from "./constants";
+import JunctionGrid from "./JunctionGrid";
 import LayerPlane from "./LayerPlane";
 import StructureBuildPlane from "./StructureBuildPlane";
 import StructureCameraRig, { EYE_DISTANCE_MM } from "./StructureCameraRig";
@@ -94,6 +95,8 @@ export default function StructureCanvas() {
       <StructureBuildPlane />
       <AllLayersView />
       <LayerPlane />
+      {/* After the layer sheet, so the dots are drawn over it rather than under. */}
+      <JunctionGrid />
       <StructurePreview />
 
       <OrbitControls

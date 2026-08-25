@@ -1,0 +1,71 @@
+/*
+ * The controls half of a spacing row. Its own copy of the shared property
+ * controls' chrome, for the same reason the Layer Heights list keeps one: a
+ * wide pull-down beside a narrow number box is not the shape any shared control
+ * has, and the shared stylesheet fixes every number box at one width.
+ *
+ * The row's *label column* is not copied — that comes from PropertyFields'
+ * own .field, so these labels stay in line with the rest of the dialog's.
+ */
+.control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* The label column takes its 130px and this takes what is left, so a long
+     option in the pull-down cannot push the row wider than the dialog. */
+  min-width: 0;
+}
+
+.kindSelect {
+  /* Shrinks below its longest option rather than setting the row's width. */
+  min-width: 0;
+  flex: 1;
+  padding: 8px 6px 8px 10px;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.kindSelect:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.valueInput {
+  flex: 0 0 auto;
+  width: 62px;
+  padding: 8px 10px;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: right;
+}
+
+.valueInput:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/*
+ * A spacing that comes from the chosen dimension rather than from the user.
+ * Shown so the figure stays visible, but reads as inert rather than broken.
+ */
+.valueInput:disabled {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-dim);
+  cursor: default;
+}
+
+.unit {
+  flex: 0 0 auto;
+  color: var(--color-text-dim);
+  font-size: 13px;
+}

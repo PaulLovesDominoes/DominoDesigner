@@ -55,6 +55,48 @@ export const LAYER_PLANE_OPACITY = 0.55;
 export const LAYER_PREVIEW_OPACITY = 0.22;
 
 /**
+ * How far in from each edge of the build plane the junction dots stop, so the
+ * grid never runs right up to the edge of the surface it is drawn on. The grid
+ * is anchored on the lower-left corner of what is left, which is why there is
+ * always a dot exactly this far in from the bottom and the left.
+ */
+export const GRID_MARGIN_MM = 25;
+
+/** The dots marking where a domino can be stood. Dark, to read against both the
+ *  light build plane and the grey layer sheet over it. */
+export const JUNCTION_DOT_COLOR = "#2c3038";
+
+/**
+ * How big a junction dot is drawn, **in screen pixels rather than millimetres**
+ * — see JunctionDots.tsx, which also scales it for high-resolution displays.
+ * Small enough to read as a point rather than a blob, which is what a grid this
+ * dense needs.
+ */
+export const JUNCTION_DOT_SIZE_PX = 1.5;
+
+/**
+ * How far the dots float above the layer sheet they belong to. The sheet itself
+ * records no depth so it cannot hide them, but the build plane does — and at
+ * layer 1 the dots sit exactly on it.
+ */
+export const JUNCTION_DOT_LIFT_MM = 0.5;
+
+/**
+ * The most junctions a grid may ask for. A spacing typed one digit at a time
+ * passes through some very small numbers, and at a millimetre apart the plane
+ * wants over two million dots; without a ceiling that allocation lands on every
+ * keystroke. A grid refused for crossing it says so in its warning banner rather
+ * than silently drawing nothing.
+ *
+ * Set well clear of anything worth building rather than snugly: the tightest
+ * grid the two overlap presets can make needs around eight thousand, and a
+ * spacing has to come down near a domino's own thickness — where a junction
+ * stops meaning anything — before this is reached at all. It is a guard against
+ * a number still being typed, not a budget.
+ */
+export const MAX_JUNCTION_POINTS = 40000;
+
+/**
  * How far the view may be tilted away from straight-down, in radians. Just
  * short of a quarter turn, which is the horizon — so the camera can look almost
  * edge-on at the build plane but never gets underneath it.

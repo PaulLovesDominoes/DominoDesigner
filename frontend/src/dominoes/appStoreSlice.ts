@@ -3,7 +3,7 @@ import type { StateCreator } from "zustand";
 import type { AppState } from "../store";
 import type { DDObjectId } from "../object-types/base";
 import type { InventoryEntry, InventoryEntryId } from "../domino-inventory/object-model";
-import { pushOperation } from "../history/appStoreSlice";
+import { pushUndoEdit } from "../history/appStoreSlice";
 import { useDominoSelectionStore } from "./selectionStore";
 import { useDominoDataStore } from "./store";
 import { commitDominoColors } from "./colorWrites";
@@ -146,7 +146,7 @@ function applySwatchToSelection(set: SliceSet, get: SliceGet, swatchId: DominoSw
   if (!targets) return;
 
   const op = commitDominoColors(parentId, s.ddObjects[parentId], data, targets);
-  if (op) set((st) => pushOperation(st.undoStack, op));
+  if (op) set((st) => pushUndoEdit(st.undoStack, op));
 }
 
 export interface DominoColorSlice {
@@ -352,7 +352,7 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
       data,
       [...selected].map((i) => [i, withoutHiddenColorId(data.colorIds[i])] as [number, number]),
     );
-    if (op) set((st) => pushOperation(st.undoStack, op));
+    if (op) set((st) => pushUndoEdit(st.undoStack, op));
   },
 
   selectDominoesBySwatch: (swatchId, mode) => {
@@ -489,7 +489,7 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
     // are already written — every frame of the stroke wrote them, and syncing
     // colour memory along the way. All that is left is the history entry.
     set((st) =>
-      pushOperation(st.undoStack, {
+      pushUndoEdit(st.undoStack, {
         kind: "dominoColors",
         parentId: stroke.parentId,
         indices: Uint32Array.from(indices),
@@ -593,7 +593,7 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
       // 0 is the unpainted sentinel — a cut clears rather than deletes.
       Array.from(item.indices, (i) => [i, 0] as [number, number]),
     );
-    if (op) set((st) => pushOperation(st.undoStack, op));
+    if (op) set((st) => pushUndoEdit(st.undoStack, op));
     return item;
   },
 
@@ -614,7 +614,7 @@ export const createDominoColorSlice: StateCreator<AppState, [], [], DominoColorS
     if (!targets) return;
 
     const op = commitDominoColors(parentId, ddObject, data, targets);
-    if (op) set((st) => pushOperation(st.undoStack, op));
+    if (op) set((st) => pushUndoEdit(st.undoStack, op));
   },
 
   dominoExpanded: false,

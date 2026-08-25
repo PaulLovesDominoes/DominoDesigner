@@ -8,6 +8,10 @@ Local information which is only appropriate to a single file should be put in co
 
 Over time, this CLAUDE.md file should be scrubbed of all localized information.
 
+**To prevent bloat, do not include historical decisions.**
+
+Specificaly, do not include any old, abandonded decisions from planning phases. Only document the "as is" system.
+
 ## Commands
 
 All frontend work happens in `frontend/` (there is no root-level `package.json`):

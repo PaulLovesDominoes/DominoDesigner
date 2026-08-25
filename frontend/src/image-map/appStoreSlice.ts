@@ -2,7 +2,7 @@ import type { StateCreator } from "zustand";
 
 import type { AppState } from "../store";
 import type { DDObjectId } from "../object-types/base";
-import { pushOperation } from "../history/appStoreSlice";
+import { pushUndoEdit } from "../history/appStoreSlice";
 import { useDominoDataStore } from "../dominoes/store";
 import { useDominoSelectionStore } from "../dominoes/selectionStore";
 import { commitDominoColors } from "../dominoes/colorWrites";
@@ -230,17 +230,17 @@ export interface ImageMapSlice {
    *
    * It only *records*. The change itself goes in separately through setImageMap
    * or clearImageMap — the same split SelectionTool makes, and what lets
-   * undo/redo and discardImageMapSession reuse those without pushing operations
+   * undo/redo and discardImageMapSession reuse those without pushing UndoEdits
    * of their own.
    *
    * **Call this BEFORE applying a change that drops or replaces a picture, not
    * after.** That is backwards from every other commit point in the app, and it
    * is not a style choice. initImageMapPruning frees any decoded picture nothing
-   * points at, it runs synchronously on every store write, and an operation on
+   * points at, it runs synchronously on every store write, and an UndoEdit on
    * the undo stack is one of the two things that counts as pointing at one. So
    * clearing the record first leaves a gap — one store write long — in which the
    * old picture is referenced by nothing at all, and the pruner takes that
-   * moment to throw its pixels away. The operation then lands naming a picture
+   * moment to throw its pixels away. The UndoEdit then lands naming a picture
    * that no longer exists, and undoing it restores a record with nothing to
    * draw. Recording first means the two never both let go at once.
    *
@@ -333,7 +333,7 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
       // Back through commitDominoColors rather than writing the column
       // directly, so the restore re-syncs colour memory — without that a later
       // regenerate would repaint the very colours this just discarded. The
-      // operation it returns is dropped: an abandoned run records no history.
+      // UndoEdit it returns is dropped: an abandoned run records no history.
       commitDominoColors(
         mapping.parentId,
         get().ddObjects[mapping.parentId],
@@ -362,7 +362,7 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
     // history entry, which covers the clear and the mapping together so Ctrl+Z
     // takes back the whole press of the button.
     set((st) => ({
-      ...pushOperation(st.undoStack, {
+      ...pushUndoEdit(st.undoStack, {
         kind: "dominoColors",
         parentId: mapping.parentId,
         indices: Uint32Array.from(indices),
@@ -562,7 +562,7 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
     recordImageMapChange: (ddObjectId, before, after) => {
       if (imageMapRecordsEqual(before, after)) return;
       set((s) => ({
-        ...pushOperation(s.undoStack, {
+        ...pushUndoEdit(s.undoStack, {
           kind: "imageMap",
           parentId: ddObjectId,
           before,
@@ -697,15 +697,15 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
       // seen per domino wins, which is what makes that work: the clear records
       // the colour the domino really started with, and the chunk that repaints
       // it later does not overwrite that memory.
-      const clearOperation = commitDominoColors(
+      const clearUndoEdit = commitDominoColors(
         parentId,
         ddObject,
         data,
         Array.from(targets, (index) => [index, 0] as [number, number]),
       );
-      if (clearOperation) {
-        for (let k = 0; k < clearOperation.indices.length; k++) {
-          before.set(clearOperation.indices[k], clearOperation.before[k]);
+      if (clearUndoEdit) {
+        for (let k = 0; k < clearUndoEdit.indices.length; k++) {
+          before.set(clearUndoEdit.indices[k], clearUndoEdit.before[k]);
         }
       }
 
@@ -730,14 +730,14 @@ export const createImageMapSlice: StateCreator<AppState, [], [], ImageMapSlice> 
       const targets = s.imageMapTargets[parentId];
       if (!data || !targets || targets.length === 0) return;
 
-      const operation = commitDominoColors(
+      const undoEdit = commitDominoColors(
         parentId,
         s.ddObjects[parentId],
         data,
         Array.from(targets, (index) => [index, 0] as [number, number]),
       );
-      if (!operation) return;
-      set((st) => ({ ...pushOperation(st.undoStack, operation), imageMapMessage: null }));
+      if (!undoEdit) return;
+      set((st) => ({ ...pushUndoEdit(st.undoStack, undoEdit), imageMapMessage: null }));
     },
   };
 };
