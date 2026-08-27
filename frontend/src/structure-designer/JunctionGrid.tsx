@@ -10,17 +10,28 @@ import { useLayerHeights } from "./operation-types/layerDefinition/useLayerHeigh
 import { useStructureStore } from "./store";
 
 /**
- * The junction dots of the structure's grid, drawn on the layer being worked on.
+ * The junction dots of the layer being worked on.
  *
  * A junction is somewhere a domino can be stood, and the dots are what a
- * placement tool will eventually snap to. Snapping itself does not exist yet;
- * this draws them.
+ * placement drag snaps to.
  *
- * **Every layer shares the same grid, but the dots are drawn on one layer only.**
- * That is not a contradiction — the grid is a fact about the whole structure, and
- * this is a picture of it where the work is happening. Drawing it on all hundred
- * layers at once would be a hundred times the dots for a picture that would read
- * as fog, so Show All Layers deliberately does not multiply them.
+ * **The dots are drawn on one layer only, and they are that layer's own grid.**
+ * Grid definitions stack across the layers the way layer definitions do, so a
+ * layer higher up may well stand its dominoes on a different pattern; scrubbing
+ * the slider is how that is seen. Drawing all hundred layers' dots at once would
+ * be a hundred times the dots for a picture that would read as fog, so Show All
+ * Layers deliberately does not multiply them.
+ *
+ * **Every junction is drawn, including one with a domino standing on it.** Such a
+ * dot is not visible anyway — it sits half a millimetre off the layer's floor and
+ * the domino on top of it is nearer the camera, so ordinary depth testing hides
+ * it. Leaving those dots out by hand was tried and removed: it duplicated what
+ * the graphics card was already doing, and it meant this component had to know
+ * about the dominoes.
+ *
+ * That a junction is occupied is instead said where it matters — the placement
+ * tool does not mark one under the pointer, and pressing on one starts nothing.
+ * See DominoPlacementTool and useLayerJunctions.
  *
  * **Nothing is drawn while an operation's properties are open.** That operation
  * has its own preview on screen then, and a grid definition's preview draws dots

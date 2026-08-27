@@ -77,23 +77,28 @@ export interface StructureOperationDefinition<
    * "Layer Definition 2").
    */
   defaultName: string;
-  /** Wording for the toolbar command that creates one, e.g. "New Layer Definition". */
-  toolbarLabel: string;
+  /**
+   * Wording for the toolbar command that creates one, e.g. "New Layer
+   * Definition".
+   *
+   * Optional, because not every type is made from the toolbar: a domino group
+   * comes into being when the first domino is placed on the canvas, and a type
+   * created by a gesture rather than by a command has no button, and so no
+   * wording for one.
+   */
+  toolbarLabel?: string;
   /** Build an initial instance of this type with default values. */
   create(id: StructureOperationId): T;
   /**
-   * Optional: why one of these cannot be created right now, or undefined when
-   * one can. The toolbar greys its command and shows the sentence as the
-   * button's tooltip, so a greyed button always explains itself — which is why
-   * this is one hook rather than a true/false plus a separate message.
+   * Optional: a short something to print ahead of the operation's name in the
+   * sidebar, or undefined for a type with nothing to say there.
    *
-   * A type that can always be created omits it. Grid definitions use it because
-   * every layer shares one grid, so a second would have nothing to do, and
-   * refusing the creation says that where allowing a useless one would not.
+   * A domino group uses it for its count, "(12)". That cannot simply be written
+   * into `name`, because the name is the user's — the properties dialog offers
+   * it for editing — and rewriting it on every placement would throw away
+   * whatever they had called the group.
    */
-  createDisabledReason?(
-    operations: readonly StructureOperationBase[],
-  ): string | undefined;
+  rowBadge?(operation: T): string | undefined;
   /** Editor for this operation's properties, rendered in the operation dialog. */
   editor: ComponentType<StructureOperationEditorProps<T>>;
   /**

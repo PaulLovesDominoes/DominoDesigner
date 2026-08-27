@@ -9,8 +9,15 @@ import styles from "./LayerSlider.module.css";
 /** Half the dot's height, matching .line's top/bottom inset in the CSS. */
 const DOT_RADIUS_PX = 11;
 
-/** How many layers PageUp and PageDown move. */
-const PAGE_STEP = 10;
+/**
+ * How the screen's keyboard handler recognises that this control has focus.
+ *
+ * Page Up and Page Down move the layer, and they do it whether the pointer is
+ * over the canvas or this control has been clicked — one rule, in one place, so
+ * the two routes cannot come to mean different amounts. See
+ * StructureDesignerScreen.
+ */
+export const LAYER_SLIDER_TRACK_ID = "structure-layer-slider";
 
 /**
  * Chooses the layer being worked on: a line down the middle of its own column
@@ -70,18 +77,21 @@ export default function LayerSlider() {
     setLayer(layerAtClientY(e.clientY));
   };
 
+  /*
+   * Only the two jumps are handled here.
+   *
+   * **Page Up and Page Down are the screen's**, not this control's, because they
+   * have to work with the pointer over the canvas as well and one handler in one
+   * place is what keeps the two from drifting apart.
+   *
+   * **The arrow keys are nobody's here at all.** They lay a domino from the
+   * junction under the pointer, which is a canvas gesture; this control used to
+   * move a layer with them, and while it had focus that would have swallowed
+   * them. Losing them costs little — the dot is dragged, clicked and paged — and
+   * it means the arrows mean one thing on this screen wherever the focus is.
+   */
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const step =
-      e.key === "ArrowUp" ? 1
-      : e.key === "ArrowDown" ? -1
-      : e.key === "PageUp" ? PAGE_STEP
-      : e.key === "PageDown" ? -PAGE_STEP
-      : 0;
-
-    if (step !== 0) {
-      e.preventDefault();
-      setLayer(layer + step);
-    } else if (e.key === "Home") {
+    if (e.key === "Home") {
       e.preventDefault();
       setLayer(MIN_LAYER);
     } else if (e.key === "End") {
@@ -102,6 +112,7 @@ export default function LayerSlider() {
 
       <div
         ref={trackRef}
+        id={LAYER_SLIDER_TRACK_ID}
         className={styles.track}
         role="slider"
         tabIndex={0}

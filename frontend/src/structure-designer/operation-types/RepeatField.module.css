@@ -1,0 +1,59 @@
+/*
+ * The controls half of a repeat row. Its own copy of the shared property
+ * controls' chrome, for the same reason SpacingField next door keeps one: a
+ * pull-down beside a narrow number box is not the shape any shared control has,
+ * and the shared stylesheet fixes every number box at one width.
+ *
+ * The row's *label column* is not copied — that comes from PropertyFields' own
+ * .field, so these labels stay in line with the rest of the dialog's.
+ */
+.control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* The label column takes its 130px and this takes what is left, so a long
+     option in the pull-down cannot push the row wider than the dialog. */
+  min-width: 0;
+}
+
+.kindSelect {
+  /* Shrinks below its longest option rather than setting the row's width. */
+  min-width: 0;
+  flex: 1;
+  padding: 8px 6px 8px 10px;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.kindSelect:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/*
+ * How many times. Half the width of an ordinary number box, because a count of
+ * layers has no business being four digits wide and a box sized for one reads as
+ * expecting a much bigger number than anyone will type.
+ */
+.countInput {
+  flex: 0 0 auto;
+  width: 56px;
+  padding: 8px 10px;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: right;
+}
+
+.countInput:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}

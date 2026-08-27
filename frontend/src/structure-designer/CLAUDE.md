@@ -108,8 +108,8 @@ unreadable, so the undo union took the longer name. Both stacks hold whole-opera
 never per-field patches, for the same reason the Designer's history does.
 
 `HISTORY_LIMIT` and `pushUndoEdit` **arrived with the first thing that needed them**, which is what
-this file always said to wait for — three commit points now have to cap the stack and clear redo
-identically. They are declared **locally rather than imported** from `history/appStoreSlice.ts`:
+this file always said to wait for — four commit points now have to cap the stack and clear redo
+identically (`saveOperationProperties`, `removeOperation`, and both branches of `placeDomino`). They are declared **locally rather than imported** from `history/appStoreSlice.ts`:
 the independence rule makes that import a hard no, and a nine-line helper is not worth a coupling
 that has to be reasoned about later.
 
@@ -162,17 +162,26 @@ The sidebar's list used to be called the instructions; that word is retired.
 ## Junction points
 
 A **junction point** is somewhere a domino can be stood, and the segments between neighbouring
-junctions are where dominoes lie. They are drawn as dots on the layer sheet. **Snapping to them is
-not implemented yet** — this release draws the grid; placing dominoes on it comes later.
+junctions are where dominoes lie. They are drawn as dots on the layer sheet, and a placement drag
+snaps to them — see *Placing dominoes*.
 
 Three decisions here that the code alone will not tell you:
 
-- **A structure always has a grid, defined or not.** With no Grid Definition operation in the list
-  the dots come from `DEFAULT_GRID` — plain rows and columns a domino-length apart, `effectiveGrid` and `effectiveGridDefinition` which provides the current grid whether the user has defined one or not.
-  
-- **The same grid applies to every layer, but the dots are drawn on one layer only.** Show All
-  Layers does not multiply them — a hundred layers of a dense grid is a hundred times the dots for a
-  picture that reads as fog.
+- **Every layer always has a grid, defined or not.** `gridForLayer` provides it; a layer no
+  definition reaches gets `DEFAULT_GRID` — plain rows and columns a domino-length apart.
+- **Grid definitions stack per layer exactly as layer definitions do**, each covering as many layers
+  as its Layers setting says. That control is labelled *Layers* and not *Repeat*, because a grid
+  already repeats in X and Y; the field is still `repeat`/`repeatCount`, shared with the layer
+  definition through `operation-types/repeat.ts`.
+- **The dots are drawn on one layer only.** Show All Layers does not multiply them — a hundred
+  layers of a dense grid is a hundred times the dots for a picture that reads as fog.
+- **Every junction is drawn, including one with a domino on it.** A buried dot is hidden by the
+  domino standing on it, through ordinary depth testing, so filtering them out by hand was tried and
+  removed as work the graphics card already does. What *is* suppressed is the placement tool's
+  **mark**, which draws with `depthTest` off and would otherwise paint over the very domino making
+  the junction unusable. `useLayerJunctions` returns the whole grid plus a blocked mask rather than
+  only the free dots, so the tool can tell that a press landed on a buried junction instead of
+  snapping it somewhere else.
 - **Every pattern is a lattice plus a basis** (`operation-types/gridDefinition/geometries.ts`), which
   is what lets one generator serve all six without knowing what an octagon is. Adding a tiling is a
   table entry there.
@@ -242,6 +251,92 @@ canvas every time Shift was pressed or released.
 `StructureDesignerScreen`'s canvas area must keep its `onContextMenu` guard: right-dragging is the
 pan gesture, so without it the browser's own menu opens on every pan.
 
+## Placing dominoes
+
+A left-drag from one junction toward another places a domino. `DominoPlacementTool` is the gesture,
+`PlacedDominoes` + `DominoBatch` draw the result, and
+`operation-types/dominoGroup/dominoes.ts` holds every piece of arithmetic either of them needs —
+pure, React-free and three.js-free, so the eventual JSON exporter reads it too.
+
+Decisions here that a fresh session would plausibly undo:
+
+- **There are two canvas tools now, and there deliberately were none.** `tool` is
+  `createDominoes` or `rectangleSelect`, and the first release had neither: placing was the only
+  thing the left button could do. A rubber band needs that button, which is what changed it.
+  **The orientation buttons are not a third tool** — they say how a placement goes down, so one of
+  them and one tool are chosen at the same time.
+- **Every orientation is one line of the same table.** `DOMINO_ORIENTATIONS` holds only the box's
+  size along (u, v, w), where u runs from one attachment point to the other, v is u turned a
+  quarter-turn, and w is up. The span between the attachment points, the offset to the box's centre,
+  and how tall it stands are all derived from those three numbers.
+- **Escape belongs to the tools, not to the screen's keydown handler.** Only the tool running a drag
+  knows whether there is one to abandon first, so `structureToolForKey` answers to single letters
+  only and `DominoSelectTool` owns the ladder: abandon a band, else go back to placing.
+
+### Dominoes may not occupy the same space
+
+`operation-types/dominoGroup/overlap.ts` is the whole of that rule, and it is exact — real boxes,
+any penetration refused. **Two dominoes therefore cannot be laid end to end at neighbouring
+junctions of either overlap grid**, because a domino is 48mm long while its attachment points are
+40.5mm apart. That is not a fault to be tolerated with an epsilon: a course of real dominoes always
+has gaps, and what closes a gap is a bridging domino on the layer above. The overlap spacings exist
+for that relationship between layers, not for a run along one.
+
+Nothing in the test knows about layers. A box carries its own floor and top, so an upright reaching
+two courses up is compared by the same two numbers as anything else — which is why the "sticks up
+into higher layers" case needed no special handling.
+
+`useDominoBoxes` builds every domino as a box once and caches it outside React, because four
+components want the list and a structure runs to tens of thousands. `spaceIndex.ts` sorts them by
+position for **one** caller, hiding buried junctions, which is the only question asked of every
+junction against every domino; everything else walks the list.
+
+### How a domino is stored
+
+`PlacedDomino` records **both attachment points and no angle**, plus a `DominoAnchorKind` per point
+saying whether it landed on a junction. This was chosen as the simplest and most accurate of several alternatives, and also the easiest for dominoes on layer N to provide junction points for dominoes on layer N+1.
+
+### Dominoes are in dominoGroup operation properties
+
+Dominoes live in the domino group operation's own fields, so deleting a group deletes the dominoes
+with it and no separate bookkeeping is needed.
+
+**Undo records the dominoes that moved, not the group.** `dominoesAdded` and `dominoesRemoved` are
+the two `StructureUndoEdit` kinds that break this store's whole-operation-snapshot rule, and they
+have to: a before-and-after pair of a thirty-thousand-domino group costs a pointer per domino per
+entry, for edits that touched one piece each. Creating and deleting a group are still whole
+snapshots, because those already cost nothing — the snapshot holds the same `dominoes` array by
+reference.
+
+### Selection is positions, and it is view state
+
+`selectedDominoes` is a set of positions in the group's own list. **Cleared by undo, redo and
+delete** — the three things that renumber the list — and by nothing else, since placing appends. An
+id on `PlacedDomino` would be a field on the shape written out as JSON, in service of something that
+never leaves the screen.
+
+**The dominoes carry no pointer handlers**, and must not be given any: `dominoPicking.ts` casts the
+event's own ray against the boxes instead. Handlers would cost a hit record per instanced copy, and
+would put a wall in front of the invisible plane both tools measure the pointer against.
+
+### `dominoGroup` is a folder plus *two* registry lines
+
+The first dominoGroup is created automatically when a domino is added. There is no toolbar command. The count of dominoes in a domino group is specified in the sidebar with the goup. There are no editable properties in a dominoGroup at this time. Future versions envision properties for replicating and conditionalizing groups.
+
+`PlacedDominoes` goes the other way and *is* a direct reach into the dominoGroup folder for now. If additional things are constructed, a `sceneContent` hook may be recommended, parallel to the current `preview`.
+
+### Drawing
+
+`DominoBatch` is one `InstancedMesh` for every cream face plus one merged `LineSegments` for every
+edge — two draw calls whatever the count, affordable because the merge only happens on a placement,
+a delete or an undo (never during dragging or rotating). Nothing needs `frustumCulled={false}`.
+
+**The outline's colour is a vertex attribute, not a material.** A merged outline per colour would
+have to be rebuilt whole every time the selection changed, and the selection changes on every frame
+of a rubber-band drag. So there is one outline geometry and a colour per corner point, refreshed for
+the dominoes that changed and sent across as update ranges. That is also why `DominoMeshes` converts
+both edge colours from sRGB by hand: a colour written into a buffer is not converted for you.
+
 ## The layer control
 
 `LayerSlider` is a line with a dot on it in a column of its own to the right of the canvas — the
@@ -261,6 +356,10 @@ it never covers the view and the canvas keeps its whole area for the tools this 
   `<OperationCommand type="…" />` in `StructureToolbar`. **Nothing else is edited**: the sidebar
   list and its ⋯ menu, the properties dialog, the warning banner, the canvas preview and the whole
   of undo/redo go through the registry's accessors and none of them names a type.
+
+  **A type created by a gesture rather than a command is two lines, not three** — it has no toolbar
+  button, so `toolbarLabel` is optional. `dominoGroup` is the one such type today; see *Placing
+  dominoes*.
  
 - When the JSON description lands, it is the boundary with the rest of the app. Keep it a plain
   data structure that the Designer can read without importing anything from this folder.

@@ -3,6 +3,7 @@ import { RiMore2Fill } from "@remixicon/react";
 
 import {
   getOperationIcon,
+  getOperationRowBadge,
   getOperationWarning,
   type StructureOperation,
 } from "./operation-types/registry";
@@ -66,6 +67,9 @@ function OperationRow({
 
   const Icon = getOperationIcon(operation.type);
   const warning = getOperationWarning(operation, operations);
+  // A domino group prints its count here. Kept out of `name`, which belongs to
+  // the user — see `rowBadge` in operation-types/base.ts.
+  const badge = getOperationRowBadge(operation);
 
   const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
     // Double-clicking the ⋯ button is not a double-click on the row.
@@ -81,6 +85,7 @@ function OperationRow({
         title={warning ?? undefined}
       >
         <Icon size={16} className={styles.icon} />
+        {badge && <span className={styles.badge}>{badge}</span>}
         <span className={styles.name}>{operation.name}</span>
         <button
           className={menuAnchor ? `${styles.more} ${styles.moreOpen}` : styles.more}

@@ -1,12 +1,8 @@
-import {
-  NumberField,
-  SectionHeader,
-  SelectField,
-} from "../../../components/PropertyFields";
+import { SectionHeader } from "../../../components/PropertyFields";
 import type { StructureOperationEditorProps } from "../base";
-import { LAYER_REPEAT_KINDS } from "./layers";
+import RepeatField from "../RepeatField";
 import LayerHeightList from "./LayerHeightList";
-import type { LayerDefinitionOperation, LayerRepeatKind } from "./object-model";
+import type { LayerDefinitionOperation } from "./object-model";
 
 /**
  * A layer definition's properties: the heights of the layers it describes, and
@@ -20,9 +16,6 @@ export default function LayerDefinitionEditor({
   operation,
   update,
 }: StructureOperationEditorProps<LayerDefinitionOperation>) {
-  const repeatLabel =
-    LAYER_REPEAT_KINDS.find((r) => r.kind === operation.repeat)?.label ?? "";
-
   return (
     <>
       <SectionHeader>Layer Heights</SectionHeader>
@@ -31,32 +24,14 @@ export default function LayerDefinitionEditor({
         onChange={(heights) => update({ heights })}
       />
 
-      <SelectField
+      {/* The mode and the count are one row, the count sitting to the right of
+          the pull-down with no label between them — see RepeatField. */}
+      <RepeatField
         label="Repeat"
-        value={repeatLabel}
-        options={LAYER_REPEAT_KINDS.map((r) => r.label)}
-        onChange={(label) => {
-          const repeat = LAYER_REPEAT_KINDS.find((r) => r.label === label);
-          if (repeat) update({ repeat: repeat.kind as LayerRepeatKind });
-        }}
+        repeat={operation.repeat}
+        count={operation.repeatCount}
+        onChange={update}
       />
-
-      {/*
-        The count only means anything in Count mode, so it is hidden rather than
-        disabled in the other two — there is nothing to read off a greyed box
-        whose value is not being used. Once is Count = 1, and Forever runs to the
-        top of the structure.
-      */}
-      {operation.repeat === "count" && (
-        <NumberField
-          label="Times"
-          value={operation.repeatCount}
-          min={1}
-          step={1}
-          unit="times"
-          onChange={(repeatCount) => update({ repeatCount })}
-        />
-      )}
     </>
   );
 }

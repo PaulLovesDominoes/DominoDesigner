@@ -1,5 +1,22 @@
+/*
+ * min-width: 0 is load-bearing, not boilerplate.
+ *
+ * A flex item is by default never allowed to be narrower than the narrowest its
+ * contents can be drawn, and that minimum is worked out from the contents right
+ * down the tree — .main's min-width: 0 lowers *its* own floor but does not stop
+ * its contents being counted towards this one. The hint bar is a single line
+ * that is never allowed to wrap, so its narrowest is its whole sentence, and
+ * without this the screen was made as wide as whichever tool's hint bar was
+ * longer and hung off the right of the window (#root clips it, so there was not
+ * even a scrollbar to show it happening). The canvas is inside that width, so
+ * the build plane sat off-centre and jumped sideways whenever the tool changed.
+ *
+ * Both the hint bar and the canvas area clip their own overflow, so nothing is
+ * lost by saying the screen may be as narrow as the window.
+ */
 .screen {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
 }

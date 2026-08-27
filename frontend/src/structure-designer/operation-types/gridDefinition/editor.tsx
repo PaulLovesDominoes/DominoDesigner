@@ -1,12 +1,14 @@
 import { CheckboxField, SelectField } from "../../../components/PropertyFields";
 import type { StructureOperationEditorProps } from "../base";
+import RepeatField from "../RepeatField";
 import { GRID_GEOMETRIES, GRID_GEOMETRY_LIST } from "./geometries";
 import type { GridDefinitionOperation, GridGeometryKind } from "./object-model";
 import SpacingField from "./SpacingField";
 
 /**
  * A grid definition's properties: which pattern the junctions fall into, how far
- * apart they are, and whether the whole thing is turned.
+ * apart they are, whether the whole thing is turned, and how many layers it
+ * covers.
  *
  * **There is no per-geometry markup here.** Which spacing rows to draw and
  * whether the Expanded tick box means anything are both read off the geometry's
@@ -92,6 +94,22 @@ export default function GridDefinitionEditor({
         label="Rotate 45 degrees"
         value={operation.rotate45}
         onChange={(rotate45) => update({ rotate45 })}
+      />
+
+      {/*
+        Labelled "Layers" rather than "Repeat", which is what the same control
+        says in the layer editor. A grid already repeats across the plane in X and
+        Y, so a row called Repeat here would be two kinds of repetition told apart
+        by context — see object-model.ts.
+
+        Last, because it says where this definition applies rather than what it
+        describes, and the rows above are what the user came here to set.
+      */}
+      <RepeatField
+        label="Layers"
+        repeat={operation.repeat}
+        count={operation.repeatCount}
+        onChange={update}
       />
     </>
   );

@@ -1,5 +1,6 @@
 import { NewLayerDefinitionIcon } from "../../../icons";
 import type { StructureOperationBase, StructureOperationDefinition } from "../base";
+import type { RepeatKind } from "../repeat";
 import LayerDefinitionEditor from "./editor";
 import { layerDefinitionWarning } from "./layers";
 import LayerDefinitionPreview from "./preview";
@@ -30,7 +31,15 @@ export interface LayerHeightRow {
   mm: number;
 }
 
-export type LayerRepeatKind = "once" | "forever" | "count";
+/**
+ * How many times the list of heights runs.
+ *
+ * An alias rather than its own union: grid definitions stack across the layers
+ * the same way, so the three answers and the arithmetic behind them live in
+ * ../repeat.ts. Kept as a name of its own because it is part of this type's
+ * published shape and reads better at the field below.
+ */
+export type LayerRepeatKind = RepeatKind;
 
 export interface LayerDefinitionOperation extends StructureOperationBase {
   type: "layerDefinition";
@@ -58,7 +67,10 @@ export const layerDefinitionDefinition: StructureOperationDefinition<LayerDefini
       // Starts with nothing. The editor always draws one blank row below the
       // real ones, so an empty list still shows somewhere to begin.
       heights: [],
-      repeat: "once",
+      // Forever, because a course of layers is nearly always meant to carry on
+      // to the top of the structure — a definition that describes one pass and
+      // stops is the special case, not the usual one.
+      repeat: "forever",
       // Two rather than one, because Count = 1 is exactly what Once already
       // means — landing there on switching to Count would look like nothing
       // happened.

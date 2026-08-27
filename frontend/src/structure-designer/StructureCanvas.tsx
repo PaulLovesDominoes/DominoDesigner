@@ -5,8 +5,11 @@ import * as THREE from "three";
 
 import AllLayersView from "./AllLayersView";
 import { MAX_POLAR_ANGLE } from "./constants";
+import DominoPlacementTool from "./DominoPlacementTool";
+import DominoSelectTool from "./DominoSelectTool";
 import JunctionGrid from "./JunctionGrid";
 import LayerPlane from "./LayerPlane";
+import PlacedDominoes from "./PlacedDominoes";
 import StructureBuildPlane from "./StructureBuildPlane";
 import StructureCameraRig, { EYE_DISTANCE_MM } from "./StructureCameraRig";
 import StructurePreview from "./StructurePreview";
@@ -97,7 +100,16 @@ export default function StructureCanvas() {
       <LayerPlane />
       {/* After the layer sheet, so the dots are drawn over it rather than under. */}
       <JunctionGrid />
+      {/* The structure itself. Drawn whatever else is going on, unlike the two
+          above and the preview below — see PlacedDominoes.tsx. */}
+      <PlacedDominoes />
       <StructurePreview />
+      {/* Last, so the invisible surface either of these puts up for measuring
+          the pointer against is not in the way of anything drawn. Exactly one of
+          them arms itself at a time, off the chosen tool, so their two surfaces
+          are never in the scene together. */}
+      <DominoPlacementTool />
+      <DominoSelectTool />
 
       <OrbitControls
         makeDefault

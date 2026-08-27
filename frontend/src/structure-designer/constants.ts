@@ -36,6 +36,16 @@ export const DEFAULT_LAYER_HEIGHT_MM = 24;
 export const MIN_LAYER = 1;
 export const MAX_LAYER = 100;
 
+/**
+ * How many layers that is, inclusive of both ends.
+ *
+ * Here rather than in one operation type's folder because two of them now stack
+ * across the layers and both need the ceiling: layer definitions say how tall
+ * each layer is, grid definitions say what its dominoes stand on. It is a fact
+ * about the size of the world, which is what this file is for.
+ */
+export const LAYER_COUNT = MAX_LAYER - MIN_LAYER + 1;
+
 /** The grey sheet marking the layer being worked on. */
 export const LAYER_PLANE_COLOR = "#8b9099";
 
@@ -78,8 +88,95 @@ export const JUNCTION_DOT_SIZE_PX = 1.5;
  * How far the dots float above the layer sheet they belong to. The sheet itself
  * records no depth so it cannot hide them, but the build plane does — and at
  * layer 1 the dots sit exactly on it.
+ *
+ * **The placement tool's pick plane sits at this same height**, so that the dot
+ * the user is aiming at and the point the pointer reports are the same place on
+ * screen however far the view is tilted. See DominoPlacementTool.tsx.
  */
 export const JUNCTION_DOT_LIFT_MM = 0.5;
+
+/**
+ * The junction the pointer is nearest, and the one a domino is being dragged
+ * toward. Bright blue against the dark dots and the grey sheet, and against a
+ * cream domino too.
+ */
+export const JUNCTION_HIGHLIGHT_COLOR = "#1d6fc7";
+
+/**
+ * How big that mark is drawn, **in screen pixels rather than millimetres**, for
+ * exactly the reason the dot itself is (see JUNCTION_DOT_SIZE_PX). Measured in
+ * millimetres it would be a speck at one zoom and a slab at another; measured
+ * this way it stays a box around the dot at every zoom. Several times the dot's
+ * own size, so the black dot reads as sitting inside it.
+ */
+export const JUNCTION_HIGHLIGHT_SIZE_PX = 6;
+
+/**
+ * The order the highlight and the dot sitting inside it are drawn in.
+ *
+ * Both are needed because the two are at the same height, so which one shows
+ * cannot be settled by which is nearer the camera. `renderOrder` decides it
+ * instead — but it orders an object against **everything else in the scene**,
+ * not just against its neighbour, which is the trap here. Anything below the
+ * build plane's own order is drawn before the build plane and the layer sheet
+ * and is then painted over by them, however opaque it is.
+ *
+ * So both sit above the ordinary scene, and the dot sits above the highlight:
+ * the plane and the sheet go down first, the green mark lands on top of them,
+ * and the black dot lands in the middle of that.
+ */
+export const JUNCTION_HIGHLIGHT_RENDER_ORDER = 1;
+export const JUNCTION_DOT_RENDER_ORDER = 2;
+
+/**
+ * A domino's own colours. Cream, like the real thing, with a thin dark edge so
+ * that a wall of them reads as separate pieces rather than one slab.
+ *
+ * Their own constants rather than the Designer's: that screen colours each
+ * domino from the inventory, and this one is drawing a structure's shape rather
+ * than its paint. Nothing here has anything to do with the domino colour store.
+ */
+export const DOMINO_FILL_COLOR = "#efe6d2";
+export const DOMINO_EDGE_COLOR = "#2c3038";
+
+/**
+ * The edge colour of a domino that is selected.
+ *
+ * White, and deliberately the same white the Designer outlines a selected domino
+ * in — the two screens have nothing else in common, but "this is a piece you are
+ * about to act on" should not have to be learnt twice.
+ *
+ * It must stay neutral rather than becoming an actual colour. Nothing on this
+ * screen is painted yet, but structures will eventually be, and a selection
+ * marked in some hue would sit against the user's own choices.
+ */
+export const DOMINO_SELECTED_EDGE_COLOR = "#ffffff";
+
+/**
+ * The rectangle drawn while dominoes are being selected with a band.
+ *
+ * The same white the outline of a selected domino is, and for the same reason:
+ * both say "these are the pieces you are about to act on", and the band turning
+ * them white as it passes over them should read as one gesture rather than two
+ * unrelated marks. Faint, because it is drawn over the very dominoes it is meant
+ * to let the user look at.
+ *
+ * It is drawn with depth testing off and above the rest of the scene, so a band
+ * thrown across a tall structure is not swallowed by whatever it passes behind —
+ * hence its own render order rather than a height. That is the same trick the
+ * junction marks use, and it has to sit above them too.
+ */
+export const SELECT_BAND_COLOR = "#ffffff";
+export const SELECT_BAND_FILL_OPACITY = 0.16;
+export const SELECT_BAND_EDGE_OPACITY = 0.85;
+export const SELECT_BAND_RENDER_ORDER = 3;
+
+/**
+ * How solid the domino under the pointer is while it is still being placed.
+ * Faint enough to be plainly not yet part of the structure, solid enough to show
+ * exactly what will land.
+ */
+export const DOMINO_PREVIEW_OPACITY = 0.55;
 
 /**
  * The most junctions a grid may ask for. A spacing typed one digit at a time

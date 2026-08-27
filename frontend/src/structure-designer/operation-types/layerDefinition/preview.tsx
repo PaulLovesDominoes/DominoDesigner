@@ -1,6 +1,7 @@
+import { LAYER_COUNT } from "../../constants";
 import LayerSheets from "../../LayerSheets";
 import type { StructureOperationPreviewProps } from "../base";
-import { definitionLayerHeights, LAYER_COUNT, layerHeights } from "./layers";
+import { definitionLayerHeights, layerHeights } from "./layers";
 import type { LayerDefinitionOperation } from "./object-model";
 
 /**

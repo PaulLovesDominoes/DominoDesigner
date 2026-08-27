@@ -1,20 +1,19 @@
 import { RiGridLine } from "@remixicon/react";
 
 import type { StructureOperationBase, StructureOperationDefinition } from "../base";
+import type { RepeatKind } from "../repeat";
 import GridDefinitionEditor from "./editor";
-import {
-  DEFAULT_GRID,
-  gridDefinitionCreateDisabledReason,
-  gridDefinitionWarning,
-} from "./junctions";
+import { DEFAULT_GRID, gridDefinitionWarning } from "./junctions";
 import GridDefinitionPreview from "./preview";
 
 /**
- * A grid of junction points laid across the build plane.
+ * A grid of junction points laid across a run of the structure's layers.
  *
  * A junction point is somewhere a domino can be stood; the segments between
- * neighbouring junctions are where dominoes lie. The dots are drawn on the layer
- * being worked on, and every layer gets the same grid.
+ * neighbouring junctions are where dominoes lie. **Grid definitions stack the
+ * way layer definitions do** — the first covers the layers from layer 1 upward,
+ * the next carries on above it, and any layer none of them reaches keeps
+ * DEFAULT_GRID. The dots are drawn on the layer being worked on.
  *
  * The patterns themselves are in geometries.ts and where they land on the plane
  * is in junctions.ts; this file is the shape of the data and the registry entry.
@@ -33,10 +32,16 @@ export type GridGeometryKind =
 
 /**
  * Where a spacing comes from. The first two are a domino's own dimensions less
- * one thickness for the overlap where two meet at a junction; "custom" is a
- * number the user typed. See GRID_SPACING_KINDS in junctions.ts.
+ * one thickness for the overlap where two meet at a junction; the next two are
+ * those halved, which is where a bridging domino on the layer above lands;
+ * "custom" is a number the user typed. See GRID_SPACING_KINDS in junctions.ts.
  */
-export type GridSpacingKind = "lengthOverlap" | "widthOverlap" | "custom";
+export type GridSpacingKind =
+  | "lengthOverlap"
+  | "widthOverlap"
+  | "halfLengthOverlap"
+  | "halfWidthOverlap"
+  | "custom";
 
 /** One spacing control. `mm` is read only when kind is "custom". */
 export interface GridSpacing {
@@ -85,6 +90,23 @@ export interface GridDefinitionOperation
   extends StructureOperationBase,
     GridSettings {
   type: "gridDefinition";
+  /**
+   * How many layers this grid covers, starting where the definitions before it
+   * left off.
+   *
+   * **The dialog labels this row `Layers`, not `Repeat`.** A grid already repeats
+   * across the plane in X and Y, so a control called Repeat sitting beside the
+   * spacings would be two kinds of repetition told apart by context. The field
+   * keeps the name the shared control and `repeatSpan` use — see ../repeat.ts —
+   * because only the wording above the row needed to differ.
+   */
+  repeat: RepeatKind;
+  /**
+   * How many layers when `repeat` is "count". Kept when the mode is switched
+   * away and back, so flipping to Forever to see what it looks like doesn't lose
+   * the number that was typed.
+   */
+  repeatCount: number;
 }
 
 export const gridDefinitionDefinition: StructureOperationDefinition<GridDefinitionOperation> =
@@ -94,17 +116,21 @@ export const gridDefinitionDefinition: StructureOperationDefinition<GridDefiniti
     defaultName: "Grid Definition",
     toolbarLabel: "New Grid Definition",
     // A new grid definition starts as a copy of the grid the structure already
-    // had, so creating one changes nothing on the canvas until something is
-    // edited. Making one is then a decision to take the default grid over, not a
-    // jump to some other grid.
+    // had, covering every layer, so creating one changes nothing on the canvas
+    // until something is edited. Making one is then a decision to take the
+    // default grid over, not a jump to some other grid.
     create: (id) => ({
       id,
       name: "Grid Definition",
       type: "gridDefinition",
       ...DEFAULT_GRID,
+      repeat: "forever",
+      // Two rather than one, because Count = 1 is exactly what Once already
+      // means — landing there on switching to Count would look like nothing
+      // happened.
+      repeatCount: 2,
     }),
     editor: GridDefinitionEditor,
     warning: gridDefinitionWarning,
-    createDisabledReason: gridDefinitionCreateDisabledReason,
     preview: GridDefinitionPreview,
   };

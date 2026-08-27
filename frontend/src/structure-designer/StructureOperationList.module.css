@@ -51,6 +51,17 @@
   color: var(--color-text-dim);
 }
 
+/*
+ * A count or similar printed ahead of the name — see `rowBadge` in
+ * operation-types/base.ts. Dimmed, because it is the row saying something about
+ * the operation rather than part of what the operation is called.
+ */
+.badge {
+  flex: 0 0 auto;
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .name {
   flex: 1 1 auto;
   overflow: hidden;

@@ -1,10 +1,11 @@
 import { DOMINO_SIZE } from "../../../dimensions";
 import {
   DEFAULT_LAYER_HEIGHT_MM,
-  MAX_LAYER,
+  LAYER_COUNT,
   MIN_LAYER,
 } from "../../constants";
 import type { StructureOperationBase, StructureOperationId } from "../base";
+import { repeatSpan } from "../repeat";
 import type {
   LayerDefinitionOperation,
   LayerHeightKind,
@@ -27,9 +28,6 @@ import type {
  * folder, which is why it isn't the "switch on a type outside the registry"
  * the repo-root CLAUDE.md warns about.
  */
-
-/** How many layers a structure has, MIN_LAYER..MAX_LAYER inclusive. */
-export const LAYER_COUNT = MAX_LAYER - MIN_LAYER + 1;
 
 /**
  * What each kind of layer height is worth, and how it is written in the Type
@@ -57,13 +55,6 @@ export const LAYER_HEIGHT_KINDS = [
   label: string;
   mm: number | null;
 }[];
-
-/** How the repeat modes are written in their pull-down. */
-export const LAYER_REPEAT_KINDS = [
-  { kind: "once", label: "Once" },
-  { kind: "forever", label: "Forever" },
-  { kind: "count", label: "Count" },
-] as const;
 
 /** What a new Custom row starts at, before the user types anything. */
 export const DEFAULT_CUSTOM_HEIGHT_MM = DEFAULT_LAYER_HEIGHT_MM;
@@ -99,26 +90,22 @@ export function isLayerDefinition(
  * The heights this one definition contributes, given how many layers are still
  * unclaimed by the definitions before it.
  *
- * This is the only place the Repeat rules live. "Once" is Count = 1 literally,
- * "Forever" fills whatever is left, and the ceiling on the whole structure is
- * the single Math.min rather than a separate case in each branch.
+ * How far the Repeat setting reaches is `repeatSpan` in ../repeat.ts, which grid
+ * definitions now stack by as well. What is left here is this type's own part:
+ * one pass covers as many layers as the list has rows, and the heights are read
+ * off it round and round.
  */
 export function definitionLayerHeights(
   operation: LayerDefinitionOperation,
   remaining: number,
 ): number[] {
   const rowMm = operation.heights.map(layerRowHeightMm);
-  if (rowMm.length === 0 || remaining <= 0) return [];
-
-  const repeats =
-    operation.repeat === "forever"
-      ? Infinity
-      : operation.repeat === "once"
-        ? 1
-        : Math.max(1, Math.floor(operation.repeatCount));
-
-  const wanted = repeats === Infinity ? remaining : rowMm.length * repeats;
-  const total = Math.min(wanted, remaining);
+  const total = repeatSpan(
+    operation.repeat,
+    operation.repeatCount,
+    rowMm.length,
+    remaining,
+  );
 
   const heights: number[] = [];
   for (let i = 0; i < total; i++) heights.push(rowMm[i % rowMm.length]);

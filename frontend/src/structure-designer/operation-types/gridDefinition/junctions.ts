@@ -1,11 +1,14 @@
 import { DOMINO_SIZE } from "../../../dimensions";
 import {
   GRID_MARGIN_MM,
+  LAYER_COUNT,
   MAX_JUNCTION_POINTS,
+  MIN_LAYER,
   STRUCTURE_PLANE_HEIGHT_MM,
   STRUCTURE_PLANE_WIDTH_MM,
 } from "../../constants";
-import type { StructureOperationBase } from "../base";
+import type { StructureOperationBase, StructureOperationId } from "../base";
+import { repeatSpan } from "../repeat";
 import { GRID_GEOMETRIES, type GridLattice, type GridPoint } from "./geometries";
 import type {
   GridDefinitionOperation,
@@ -31,11 +34,17 @@ import type {
 /**
  * Where a spacing comes from, and how it is written in the Type pull-down.
  *
- * The two presets are a domino's own dimensions less one thickness. That is the
- * **overlap**: two dominoes meeting at a junction each want to stand there, so
- * the distance between neighbouring junctions is one domino short of a
+ * The two whole presets are a domino's own dimensions less one thickness. That
+ * is the **overlap**: two dominoes meeting at a junction each want to stand
+ * there, so the distance between neighbouring junctions is one domino short of a
  * thickness. The millimetres come from DOMINO_SIZE so what a preset is worth can
  * never drift from the dimension it names.
+ *
+ * **The two halves are for the layer that bridges.** A domino standing on the
+ * layer above spans the gap between two below it, and to land squarely between
+ * them it needs a junction halfway along. Halving an overlap spacing is what puts
+ * one there, so a half grid is a whole grid with the bridging positions added
+ * rather than a different grid.
  *
  * The labels are the bare names, unlike the Layer Heights list's, which spell
  * their millimetres out. A spacing row has a box beside the pull-down already
@@ -56,6 +65,16 @@ export const GRID_SPACING_KINDS = [
     label: "Width-overlap",
     mm: DOMINO_SIZE.width - DOMINO_SIZE.thickness,
   },
+  {
+    kind: "halfLengthOverlap",
+    label: "Half length-overlap",
+    mm: (DOMINO_SIZE.length - DOMINO_SIZE.thickness) / 2,
+  },
+  {
+    kind: "halfWidthOverlap",
+    label: "Half width-overlap",
+    mm: (DOMINO_SIZE.width - DOMINO_SIZE.thickness) / 2,
+  },
   { kind: "custom", label: "Custom", mm: null },
 ] as const satisfies readonly {
   kind: GridSpacingKind;
@@ -67,13 +86,13 @@ export const GRID_SPACING_KINDS = [
 export const DEFAULT_CUSTOM_SPACING_MM = DOMINO_SIZE.length - DOMINO_SIZE.thickness;
 
 /**
- * The grid a structure has when nobody has defined one.
+ * The grid a layer has when no definition reaches it.
  *
- * **A structure always has a grid**, the same way it always has a height for
- * every layer: DEFAULT_LAYER_HEIGHT_MM covers the layers no definition reaches,
- * and this covers the case of no grid definition at all. Opening the screen and
- * seeing bare plane with nowhere to stand a domino would say the grid was a
- * thing to be switched on, and it is not.
+ * **Every layer always has a grid**, the same way it always has a height:
+ * DEFAULT_LAYER_HEIGHT_MM covers the layers no layer definition reaches, and this
+ * covers the layers no grid definition reaches — including the case of no grid
+ * definition at all. Opening the screen and seeing bare plane with nowhere to
+ * stand a domino would say the grid was a thing to be switched on, and it is not.
  *
  * Plain rows and columns a domino-length apart in both directions — by far the
  * most common way to lay out a structure, and the arrangement someone who never
@@ -110,34 +129,59 @@ export function isGridDefinition(
 }
 
 /**
- * The structure's grid definition, or undefined when there is none.
+ * The grid on every layer, lowest first — one entry per layer.
  *
- * **There can only ever be one.** The toolbar refuses to create a second while
- * one exists (see `gridDefinitionCreateDisabledReason`), and undo cannot
- * manufacture one either, so this is a lookup rather than a rule about which of
- * several wins. Every reader goes through it anyway, so the day a release wants
- * a grid per layer there is one place that has to change its mind.
+ * **Grid definitions stack exactly as layer definitions do**, and this mirrors
+ * `layerHeights` in ../layerDefinition/layers.ts deliberately, down to the
+ * `stopBefore` argument. The first definition covers the layers from layer 1
+ * upward, the next carries on where it left off, and any layer none of them
+ * reaches gets DEFAULT_GRID. How far one reaches is its Layers setting, worked
+ * out by `repeatSpan` — one pass covers a single layer, since a grid definition
+ * describes one grid rather than a sequence of them.
  *
- * Use `effectiveGrid` to *draw* the grid; this one answers the narrower question
- * of whether the user has defined a grid of their own, which is what the toolbar
- * needs and what nothing else should ask.
+ * Called with no `stopBefore` it returns LAYER_COUNT entries, padded. Called with
+ * an operation's id it stops before that operation, so the result is just the
+ * layers claimed *beneath* it, unpadded — its length is how many layers come
+ * first, which is what the warning needs. An id that is not in the list falls
+ * through to the padded whole-structure answer, which is the right reading of
+ * "everything below something that isn't there".
  */
-export function effectiveGridDefinition(
+export function gridsByLayer(
   operations: readonly StructureOperationBase[],
-): GridDefinitionOperation | undefined {
-  return operations.find(isGridDefinition);
+  stopBefore?: StructureOperationId,
+): GridSettings[] {
+  const grids: GridSettings[] = [];
+
+  for (const operation of operations) {
+    if (operation.id === stopBefore) return grids;
+    if (!isGridDefinition(operation)) continue;
+    // Full up. Keep walking rather than breaking, because a later operation may
+    // still be the one `stopBefore` names.
+    if (grids.length >= LAYER_COUNT) continue;
+    const span = repeatSpan(
+      operation.repeat,
+      operation.repeatCount,
+      1,
+      LAYER_COUNT - grids.length,
+    );
+    for (let i = 0; i < span; i++) grids.push(operation);
+  }
+
+  while (grids.length < LAYER_COUNT) grids.push(DEFAULT_GRID);
+  return grids;
 }
 
 /**
- * The grid the structure actually has: the one defined, or DEFAULT_GRID when
- * none is. Everything that draws junctions goes through here, so a structure
- * with no grid definition and one with a default-valued definition come out
- * identical — which is what makes creating a definition a quiet act.
+ * The grid one layer's dominoes stand on. Everything that draws junctions goes
+ * through here, so a layer with no definition reaching it and one with a
+ * default-valued definition come out identical — which is what makes creating a
+ * definition a quiet act.
  */
-export function effectiveGrid(
+export function gridForLayer(
   operations: readonly StructureOperationBase[],
+  layer: number,
 ): GridSettings {
-  return effectiveGridDefinition(operations) ?? DEFAULT_GRID;
+  return gridsByLayer(operations)[layer - MIN_LAYER] ?? DEFAULT_GRID;
 }
 
 /**
@@ -337,36 +381,247 @@ export function generateJunctionPoints(grid: GridSettings): Float32Array {
 }
 
 /**
+ * Which junction is nearest a point on the build plane, as an index into the
+ * flat run of coordinates — so junction `n` is at `points[2 * n]`,
+ * `points[2 * n + 1]`. Returns -1 when there are no junctions at all.
+ *
+ * **An index rather than the point itself**, because this is called on every
+ * pointer movement while a domino is being placed. React skips re-rendering a
+ * component whose state has not changed, and a number the pointer has not moved
+ * far enough to change compares equal where a freshly built pair of coordinates
+ * never would — so moving about inside one junction's patch of the plane costs
+ * nothing at all.
+ *
+ * A plain walk through every junction. The grid is capped at
+ * MAX_JUNCTION_POINTS, and even a grid at that cap is a few milliseconds of work
+ * per second of continuous pointer movement, so there is nothing here worth the
+ * bookkeeping of an index that would have to be kept in step with the grid.
+ *
+ * Distances are compared squared, which orders them exactly as the real
+ * distances do and saves a square root per junction.
+ */
+export function nearestJunctionIndex(
+  points: Float32Array,
+  x: number,
+  y: number,
+): number {
+  let nearest = -1;
+  let nearestDistanceSquared = Infinity;
+  for (let i = 0; i < points.length / 2; i++) {
+    const dx = points[2 * i] - x;
+    const dy = points[2 * i + 1] - y;
+    const distanceSquared = dx * dx + dy * dy;
+    if (distanceSquared < nearestDistanceSquared) {
+      nearestDistanceSquared = distanceSquared;
+      nearest = i;
+    }
+  }
+  return nearest;
+}
+
+const PRIOR_FOREVER_WARNING =
+  "WARNING: A prior grid definition covers every layer, and so this grid definition will have no effect.";
+
+const ABOVE_LIMIT_WARNING =
+  "WARNING: The grid definitions before this one already reach the top layer, so this grid definition will have no effect.";
+
+/** What junction to look for, and where. See `junctionInWedge`. */
+export interface WedgeSearch {
+  /** The point the wedge opens out from, in mm. */
+  fromX: number;
+  fromY: number;
+  /** The direction the wedge is measured **clockwise** from. Need not be unit. */
+  dirX: number;
+  dirY: number;
+  /**
+   * The wedge itself, in radians clockwise of that direction, each in 0..2π.
+   * A pair with `min` above `max` describes a wedge straddling the direction
+   * itself — a quarter-turn either side is `min` of 7π/4 and `max` of π/4.
+   */
+  minAngleRad: number;
+  maxAngleRad: number;
+  /**
+   * A distance worth having over merely being the nearest, and how close counts.
+   *
+   * This is what lets a keyboard placement land on the grid at both ends when the
+   * grid allows it: the junction exactly one attachment span away is the one whose
+   * far end lands on a junction, and it is preferred over a closer one even though
+   * the closer one would do. With no preference given, nearest wins outright.
+   */
+  preferredDistanceMm?: number;
+  toleranceMm?: number;
+  /**
+   * Which of two junctions in the wedge wins, when both are allowed.
+   *
+   * - **`"nearest"`** (the default) — the closer one. What a diagonal placement
+   *   wants: it is hunting for a *neighbour*, so being close is the point of it.
+   * - **`"straightest"`** — whichever sits closer to the direction's own line,
+   *   however much further along that line it is, with distance breaking a tie
+   *   between two equally straight ones. What the step after a placement wants:
+   *   "the next junction to the right" has to mean along the line to the right,
+   *   not merely somewhere within a quarter-turn of it.
+   *
+   * The difference only shows once the near junctions are excluded, which is
+   * exactly the case the step runs into. With a domino covering the junction
+   * immediately to the right, `"nearest"` takes the one diagonally down-right —
+   * it is a quarter-turn off the direction, so it is in the wedge, and at a
+   * grid spacing times root two it is nearer than the second one along the row.
+   */
+  ranking?: "nearest" | "straightest";
+  /** Junctions this search may not choose — buried ones, in practice. */
+  isExcluded?: (index: number) => boolean;
+}
+
+const TWO_PI = Math.PI * 2;
+
+/**
+ * How far off the line two junctions may be before `"straightest"` calls one of
+ * them straighter than the other.
+ *
+ * Every grid geometry lays its junctions out in exact rows and columns, so the
+ * ones on the line are on it and the rest are a whole grid spacing away — this
+ * is only absorbing the rounding, not making a judgement. Junction coordinates
+ * are held as 32-bit floats, which keep about seven digits, so a point most of
+ * a metre out along the plane can be a ten-thousandth of a millimetre off where
+ * the arithmetic put it.
+ */
+const STRAIGHT_MATCH_EPS_MM = 0.05;
+
+/**
+ * The junction to aim at within a wedge of directions, or -1 when the wedge is
+ * empty.
+ *
+ * **This is how a diagonal keyboard placement finds its neighbour.** Aiming at a
+ * fixed forty-five degrees would be right for a rectangular grid and wrong for
+ * every other one — an isometric or hexagonal grid puts its neighbours at thirty
+ * and sixty degrees, and a ray between them would miss both and record a
+ * placement as off the grid that could have been on it. So the direction is not
+ * decided in advance: a wedge is swept and whichever junction is in it wins.
+ *
+ * Preference first, then whatever `ranking` asks for, with distance breaking
+ * the tie. See `preferredDistanceMm` and `ranking`.
+ *
+ * A plain walk through every junction, bounded by MAX_JUNCTION_POINTS, for the
+ * same reason `nearestJunctionIndex` is — except that this runs once per press of
+ * a key rather than on every movement of the pointer, so it has even less to
+ * prove.
+ */
+export function junctionInWedge(
+  points: Float32Array,
+  search: WedgeSearch,
+): number {
+  const dirLength = Math.hypot(search.dirX, search.dirY);
+  if (dirLength === 0) return -1;
+  const dirX = search.dirX / dirLength;
+  const dirY = search.dirY / dirLength;
+
+  const tolerance = search.toleranceMm ?? 0;
+  const straightest = search.ranking === "straightest";
+  let best = -1;
+  let bestDistance = Infinity;
+  let bestOffLine = Infinity;
+  let bestPreferred = false;
+
+  for (let i = 0; i < points.length / 2; i++) {
+    if (search.isExcluded?.(i)) continue;
+
+    const dx = points[2 * i] - search.fromX;
+    const dy = points[2 * i + 1] - search.fromY;
+    const distance = Math.hypot(dx, dy);
+    if (distance === 0) continue;
+
+    /*
+     * The angle from the direction round to this junction, measured clockwise.
+     *
+     * atan2 of the cross product over the dot product gives the turn from the
+     * direction to the junction, counted anticlockwise; negating it counts it
+     * clockwise instead, and adding a full turn to a negative answer brings it
+     * into 0..2π so it can be compared against the wedge.
+     */
+    const anticlockwise = Math.atan2(dirX * dy - dirY * dx, dirX * dx + dirY * dy);
+    let clockwise = -anticlockwise;
+    if (clockwise < 0) clockwise += TWO_PI;
+
+    const inWedge =
+      search.minAngleRad <= search.maxAngleRad
+        ? clockwise >= search.minAngleRad && clockwise <= search.maxAngleRad
+        : clockwise >= search.minAngleRad || clockwise <= search.maxAngleRad;
+    if (!inWedge) continue;
+
+    const preferred =
+      search.preferredDistanceMm !== undefined &&
+      Math.abs(distance - search.preferredDistanceMm) <= tolerance;
+
+    /*
+     * How far the junction sits off the line the direction runs along.
+     *
+     * The cross product of two vectors in the plane is the area of the
+     * parallelogram they make, counted negative when the second is clockwise of
+     * the first. That area is the base times the height, and the base here is
+     * the direction, which was made a unit long above — so the area *is* the
+     * height, which is the distance from the line. Only how far, not which
+     * side, hence the absolute value.
+     */
+    const offLine = Math.abs(dirX * dy - dirY * dx);
+
+    /*
+     * A preferred junction beats an unpreferred one however much nearer that
+     * one is. Failing that it is whatever `ranking` asked for, and distance
+     * settles anything still level.
+     *
+     * The two off-the-line distances are compared with room for rounding rather
+     * than exactly, so that a row of junctions the direction runs straight along
+     * counts as one row rather than as a ladder of infinitesimally straighter
+     * ones — see STRAIGHT_MATCH_EPS_MM.
+     */
+    let better: boolean;
+    if (preferred !== bestPreferred) {
+      better = preferred;
+    } else if (straightest && Math.abs(offLine - bestOffLine) > STRAIGHT_MATCH_EPS_MM) {
+      better = offLine < bestOffLine;
+    } else {
+      better = distance < bestDistance;
+    }
+
+    if (better) {
+      best = i;
+      bestDistance = distance;
+      bestOffLine = offLine;
+      bestPreferred = preferred;
+    }
+  }
+
+  return best;
+}
+
+/**
  * Why this grid definition has no effect, or undefined when it does have one.
  *
- * One cause only: a spacing so small that the plane would need more junctions
- * than anything can usefully draw or a builder could ever place. The other way a
- * definition could have been pointless — sitting behind one that already defines
- * the grid — cannot happen, because the toolbar will not create a second.
+ * Three ways to be pointless, and they want different sentences. Two are about
+ * where the definition sits — squeezed out by an earlier one covering every
+ * layer, or by earlier ones counting their way to the last layer — and are read
+ * off the same `gridsByLayer` call the canvas uses, so a row can never be
+ * reddened for a reason the canvas contradicts. The third is about the
+ * definition itself: a spacing so small that the plane would need more junctions
+ * than anything can usefully draw or a builder could ever place, read off the
+ * same estimate the generator refuses on.
  *
- * Read off the same estimate the generator refuses on, so a reddened row can
- * never disagree with what is on the canvas.
+ * Position first, because a definition that reaches no layer at all has nothing
+ * to say about its spacing.
  */
 export function gridDefinitionWarning(
   operation: GridDefinitionOperation,
+  operations: readonly StructureOperationBase[],
 ): string | undefined {
+  const below = gridsByLayer(operations, operation.id);
+  if (below.length >= LAYER_COUNT) {
+    const coversEveryLayer = operations
+      .slice(0, operations.findIndex((o) => o.id === operation.id))
+      .some((o) => isGridDefinition(o) && o.repeat === "forever");
+    return coversEveryLayer ? PRIOR_FOREVER_WARNING : ABOVE_LIMIT_WARNING;
+  }
+
   const plan = planGrid(operation);
   if (!plan || plan.estimate <= MAX_JUNCTION_POINTS) return undefined;
   return `WARNING: The spacing is too small — this grid would need more than ${MAX_JUNCTION_POINTS} junction points.`;
-}
-
-const ONE_GRID_ONLY =
-  "A grid definition already exists. All layers share one grid.";
-
-/**
- * Why a grid definition cannot be created right now, or undefined when one can.
- *
- * All layers share one grid in this release, so a second definition would have
- * nothing to do. Refusing the creation says that plainly, where allowing one and
- * then explaining that it does nothing would not.
- */
-export function gridDefinitionCreateDisabledReason(
-  operations: readonly StructureOperationBase[],
-): string | undefined {
-  return effectiveGridDefinition(operations) ? ONE_GRID_ONLY : undefined;
 }

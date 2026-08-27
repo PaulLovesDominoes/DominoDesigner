@@ -5,6 +5,7 @@ import * as THREE from "three";
 import {
   JUNCTION_DOT_COLOR,
   JUNCTION_DOT_LIFT_MM,
+  JUNCTION_DOT_RENDER_ORDER,
   JUNCTION_DOT_SIZE_PX,
 } from "./constants";
 
@@ -68,7 +69,14 @@ export default function JunctionDots({
   if (points.length === 0) return null;
 
   return (
-    <points geometry={geometry} position={[0, 0, z + JUNCTION_DOT_LIFT_MM]}>
+    // Drawn after the mark the placement tool puts around the junction under
+    // the pointer, so the dot lands in the middle of it rather than under it.
+    // See JUNCTION_DOT_RENDER_ORDER.
+    <points
+      geometry={geometry}
+      position={[0, 0, z + JUNCTION_DOT_LIFT_MM]}
+      renderOrder={JUNCTION_DOT_RENDER_ORDER}
+    >
       {/*
         sizeAttenuation is whether a point shrinks as it gets further away. Off,
         `size` is a count of screen pixels instead of millimetres, so a dot stays

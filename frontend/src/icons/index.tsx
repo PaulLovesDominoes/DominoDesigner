@@ -1,6 +1,10 @@
 import AngledRectangleSelectSvg from "../assets/Angled-Rectangle.svg?react";
 import CircleByDiameterSelectSvg from "../assets/Circle-by-Diameter.svg?react";
 import CircleSelectSvg from "../assets/Circle-by-Radius.svg?react";
+import DominoFlatSvg from "../assets/Domino-Flat.svg?react";
+import DominoSidewaysSvg from "../assets/Domino-Sideways.svg?react";
+import DominoUprightSvg from "../assets/Domino-Upright.svg?react";
+import HideUpperLayersSvg from "../assets/Hide-Upper-Layers.svg?react";
 import NewLayerDefinitionSvg from "../assets/New-Layer-Def.svg?react";
 import OvalSelectSvg from "../assets/Oval-Select.svg?react";
 import PaintCircleLargeSvg from "../assets/Paint-Circle-Large.svg?react";
@@ -73,6 +77,35 @@ export const NewLayerDefinitionIcon = createSvgIcon(
 
 /** A full stack of layers: show every layer of the structure at once. */
 export const ShowAllLayersIcon = createSvgIcon(ShowAllLayersSvg, paddedViewBox(825, 840));
+
+/**
+ * The same stack of layers with its upper plates drawn hollow rather than solid:
+ * leave out the dominoes standing on layers above the one being worked on. Drawn
+ * to read against ShowAllLayersIcon above, since those two toggles sit on the
+ * same toolbar and answer different questions — that one is about how many
+ * sheets to draw, this one about which dominoes.
+ */
+export const HideUpperLayersIcon = createSvgIcon(
+  HideUpperLayersSvg,
+  paddedViewBox(825, 808),
+);
+
+/**
+ * One domino drawn three ways up, for choosing how the next one is placed in the
+ * Structure Designer: standing on an end, lying on a long narrow edge, and lying
+ * flat on a broad face.
+ *
+ * **Each takes its own box, unlike the paint-brush family below.** That rule
+ * exists for drawings whose sizes must be compared, and these three are already
+ * comparable without it: the box is sized on the larger side of the drawing, and
+ * in all three that side is the same 48mm length of the same domino, so they
+ * come out 963.6, 963.6 and 996 — within four percent of one scale. A shared box
+ * would buy that last four percent and cost the centring each of these needs,
+ * since the three have quite different shapes.
+ */
+export const DominoUprightIcon = createSvgIcon(DominoUprightSvg, paddedViewBox(467, 803));
+export const DominoSidewaysIcon = createSvgIcon(DominoSidewaysSvg, paddedViewBox(803, 466));
+export const DominoFlatIcon = createSvgIcon(DominoFlatSvg, paddedViewBox(830, 230));
 
 /**
  * The quill brush's nib on its own — a thin bar lying lower-left to upper-right,

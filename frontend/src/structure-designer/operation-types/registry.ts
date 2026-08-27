@@ -8,6 +8,10 @@ import type {
   StructureOperationPreviewProps,
 } from "./base";
 import {
+  dominoGroupDefinition,
+  type DominoGroupOperation,
+} from "./dominoGroup/object-model";
+import {
   gridDefinitionDefinition,
   type GridDefinitionOperation,
 } from "./gridDefinition/object-model";
@@ -26,13 +30,19 @@ import {
 export const STRUCTURE_OPERATIONS = {
   layerDefinition: layerDefinitionDefinition,
   gridDefinition: gridDefinitionDefinition,
+  // The one type with no toolbar button: a domino group is created by placing a
+  // domino rather than by a command. See its object-model.ts.
+  dominoGroup: dominoGroupDefinition,
 } satisfies Record<string, AnyStructureOperationDefinition>;
 
 /** Union of all registered operation-type names. */
 export type StructureOperationType = keyof typeof STRUCTURE_OPERATIONS;
 
 /** Union of all concrete operation shapes — one member per registered type. */
-export type StructureOperation = LayerDefinitionOperation | GridDefinitionOperation;
+export type StructureOperation =
+  | LayerDefinitionOperation
+  | GridDefinitionOperation
+  | DominoGroupOperation;
 
 // There was a STRUCTURE_OPERATION_LIST here giving the toolbar's order. It went
 // when the toolbar started writing its buttons out one at a time: the toolbar
@@ -48,8 +58,26 @@ export const getOperationIcon = (type: StructureOperationType) =>
 export const getOperationDefaultName = (type: StructureOperationType) =>
   STRUCTURE_OPERATIONS[type].defaultName;
 
+/**
+ * Wording for the toolbar command that creates one of these, or undefined for a
+ * type with no button — see `toolbarLabel` in base.ts.
+ */
 export const getOperationToolbarLabel = (type: StructureOperationType) =>
   STRUCTURE_OPERATIONS[type].toolbarLabel;
+
+/**
+ * What to print ahead of this operation's name in the sidebar, or undefined for
+ * a type with nothing to say there. Cast as per getOperationWarning: indexing by
+ * a union `type` otherwise narrows the per-type parameter down to never.
+ */
+export const getOperationRowBadge = (
+  operation: StructureOperation,
+): string | undefined => {
+  const rowBadge = STRUCTURE_OPERATIONS[operation.type].rowBadge as
+    | ((operation: StructureOperation) => string | undefined)
+    | undefined;
+  return rowBadge?.(operation);
+};
 
 export const createStructureOperation = (
   type: StructureOperationType,
@@ -94,16 +122,11 @@ export const getOperationWarning = (
   return warning?.(operation, operations);
 };
 
-/**
- * Why an operation of this type cannot be created right now, or undefined when
- * one can. The toolbar greys the command and uses the sentence as its tooltip.
- * A type declaring nothing can always be created.
- */
-export const getOperationCreateDisabledReason = (
-  type: StructureOperationType,
-  operations: readonly StructureOperationBase[],
-): string | undefined =>
-  STRUCTURE_OPERATIONS[type].createDisabledReason?.(operations);
+// There was a getOperationCreateDisabledReason here, and a createDisabledReason
+// hook behind it in base.ts. Its one declarer was the grid definition, which
+// refused a second while every layer shared one grid; grid definitions now stack
+// across the layers the way layer definitions do, so there is nothing left to
+// refuse. Any number of operations of every registered type may be created.
 
 /**
  * Whether this type's preview stands in for the layer sheet — see

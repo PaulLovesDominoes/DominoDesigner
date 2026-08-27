@@ -12,9 +12,31 @@
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text-dim);
   font-size: 13px;
+  /* One line, and a narrow window loses the end of it rather than pushing the
+     bar taller or spilling over the canvas. What matters most is at the left:
+     the tool and the orientation, then the gesture, then the view controls the
+     user has probably already found. */
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/*
+ * The tool and the domino at the left, drawn the way the next one placed will
+ * be. Full brightness against the bar's dimmed text, because these are the
+ * things here reporting a setting rather than explaining a gesture.
+ */
+.setting {
+  flex: 0 0 auto;
+  color: var(--color-text);
+}
+
+/* Between what the bar reports and what it explains. */
+.separator {
+  color: var(--color-border);
 }
 
 .key {
+  flex: 0 0 auto;
   padding: 1px 6px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
