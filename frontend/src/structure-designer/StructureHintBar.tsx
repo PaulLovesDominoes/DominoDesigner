@@ -1,3 +1,4 @@
+import { keyLabel, type KeyName } from "../platform";
 import {
   dominoOrientationCommand,
   DOMINO_ORIENTATION_COMMANDS,
@@ -6,9 +7,17 @@ import { useStructureStore } from "./store";
 import { structureToolCommand } from "./structureToolCommands";
 import styles from "./StructureHintBar.module.css";
 
-/** A key drawn as a key, e.g. `Ctrl`. */
-function Key({ children }: { children: string }) {
-  return <span className={styles.key}>{children}</span>;
+/**
+ * A key drawn as a key cap.
+ *
+ * `name` says what the key *does* rather than which key it is, so the cap reads
+ * correctly on a Mac without this file knowing that Ctrl is Command there — see
+ * platform.ts. A few caps are a literal character instead (the tool and
+ * orientation letters, which come from their own command tables); those pass
+ * `label`.
+ */
+function Key({ name, label }: { name?: KeyName; label?: string }) {
+  return <span className={styles.key}>{name ? keyLabel(name) : label}</span>;
 }
 
 /**
@@ -55,7 +64,7 @@ export default function StructureHintBar() {
           {/* The three keys, in the table's own order, so the bar and the
               toolbar cannot disagree about which key does what. */}
           {DOMINO_ORIENTATION_COMMANDS.map((c) => (
-            <Key key={c.orientation}>{c.shortcutKey}</Key>
+            <Key key={c.orientation} label={c.shortcutKey} />
           ))}
         </>
       )}
@@ -65,28 +74,29 @@ export default function StructureHintBar() {
       {tool === "createDominoes" ? (
         <>
           <span>Drag between junctions, or press an arrow, to place.</span>
-          <Key>R</Key>
+          <Key label={structureToolCommand("rectangleSelect").shortcutKey} />
           <span>to select.</span>
         </>
       ) : (
         <>
           <span>Click or drag to select.</span>
-          <Key>Ctrl</Key>
+          <Key name="add" />
           <span>adds,</span>
-          <Key>Del</Key>
-          <span>removes.</span>
-          <Key>Esc</Key>
+          <Key name="deleteElement" />
+          <span>deletes.</span>
+          <Key name="esc" />
           <span>to place.</span>
         </>
       )}
 
       <span className={styles.separator}>|</span>
 
-      <Key>PgUp</Key>
-      <Key>PgDn</Key>
-      <span>change layer. Right-drag to pan.</span>
-      <Key>Shift</Key>
-      <span>+ right-drag to rotate. Scroll to zoom.</span>
+      {/* Both keys for the layer, since the pair a machine has differs: a
+          MacBook has no Page Up or Page Down at all. */}
+      <Key name="layerDown" />
+      <Key name="layerUp" />
+      <span>change layer. {keyLabel("pan")} to pan.</span>
+      <span>{keyLabel("rotate")} to rotate. Scroll to zoom.</span>
     </div>
   );
 }

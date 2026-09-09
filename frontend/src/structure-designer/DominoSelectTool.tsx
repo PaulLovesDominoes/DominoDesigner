@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 
+import { isAddModifier } from "../platform";
 import {
   JUNCTION_DOT_LIFT_MM,
   SELECT_BAND_COLOR,
@@ -230,7 +231,7 @@ export default function DominoSelectTool() {
       startX: e.point.x,
       startY: e.point.y,
       before: useStructureStore.getState().selectedDominoes,
-      additive: e.ctrlKey || e.metaKey,
+      additive: isAddModifier(e),
       pressClientX: e.nativeEvent.clientX,
       pressClientY: e.nativeEvent.clientY,
       moved: false,

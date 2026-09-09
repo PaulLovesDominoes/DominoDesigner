@@ -69,16 +69,36 @@ export default function StructureDesignerScreen() {
         const structure = useStructureStore.getState();
 
         /*
-         * Page Up and Page Down move the layer being worked on.
+         * Page Up and Page Down move the layer being worked on, and so do the
+         * two bracket keys.
          *
          * Only while the pointer is over the canvas or the layer control has
          * focus, so they cannot fire at whatever the user is doing elsewhere on
          * the page. Both routes come through here rather than the control keeping
          * a copy of the arithmetic, which is what stops the two coming to mean
-         * different amounts.
+         * different amounts. That gate matters more for the brackets than for
+         * Page Up: they are characters someone could mean to type.
+         *
+         * **The brackets are matched on `e.code`, not `e.key`, and that is not
+         * interchangeable here.** `e.key` is the character produced — which is
+         * "{" once Shift is held, so a `e.key === "["` test would miss exactly
+         * the Shift variant that moves five layers — and on a German or French
+         * layout "[" needs AltGr, which the `!e.altKey` gate above rejects.
+         * `e.code` names the physical key instead, so both work everywhere. The
+         * cost is that on a layout where those keys are engraved with something
+         * else, the hint bar's label and the key cap disagree; that is the
+         * ordinary trade for a physical binding and it beats being unreachable.
+         *
+         * They exist because a MacBook keyboard has no Page Up or Page Down —
+         * they need fn plus an arrow — and the arrow keys deliberately do not
+         * move the layer, since they place dominoes.
          */
         const layerDirection =
-          e.key === "PageUp" ? 1 : e.key === "PageDown" ? -1 : 0;
+          e.key === "PageUp" || e.code === "BracketRight"
+            ? 1
+            : e.key === "PageDown" || e.code === "BracketLeft"
+              ? -1
+              : 0;
         if (layerDirection !== 0) {
           const overLayerControl =
             document.activeElement?.id === LAYER_SLIDER_TRACK_ID;

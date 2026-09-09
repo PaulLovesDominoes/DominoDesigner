@@ -30,6 +30,28 @@ For a faster check without bundling, `npx tsc --noEmit`.
 **There is no test framework and no linter configured** — no vitest/jest, no eslint. Do not invent
 commands for them. Verification is `npm run build` plus exercising the app in the dev server.
 
+### Never edit a source file through the shell
+
+Use the editing tools. **PowerShell in particular will corrupt a file it round-trips**, and it does
+it silently, on lines nobody touched.
+
+The trap is `Get-Content`/`Set-Content` (and `Out-File`) disagreeing about text encoding. Windows
+PowerShell 5.1 reads a file with no byte-order mark as **ANSI**, one byte per character, so the
+three bytes of a UTF-8 `—` arrive as three separate Latin-1 characters. Writing back with
+`-Encoding utf8` then encodes each of those three as UTF-8 in its own right, and one em-dash on
+disk becomes `â€"`. Nothing errors, the file still compiles, and every prose character in the file
+is quietly mangled — which in this repo, where the comments carry the reasoning, is most of the
+value of the file.
+
+This applies to every shell rewrite of a source file, `sed`-style substitutions included, not only
+the encoding case. A regex replacement across a whole file is exactly the operation whose blast
+radius nobody checks.
+
+And when a shell rewrite has already damaged a file, **`git checkout --` is not the repair**. It
+restores the file to HEAD, taking every uncommitted change in it with it, and in a tree where a
+release is still unstaged that is the larger loss by far. Repair the damage in place instead, or
+ask.
+
 Serving the production build through the FastAPI server (it only serves `frontend/dist` and has no
 API endpoints, so a frontend rebuild is required after frontend changes):
 
@@ -418,6 +440,43 @@ The domino-color clipboard **deliberately survives `exitDominoEditing`** (unlike
 `dominoSelectedSwatchId`/`dominoColorShortcut`, cleared there), since the item snapshots its source
 DDObject and stays valid across a resize or even a delete. That is what makes field-to-field paste
 work.
+
+### Keys, clicks and the platform
+
+`src/platform.ts` is the single answer to *which machine is this* and *what are the keys called on
+it*. It imports nothing, so anything may read it at module scope. Four exports and one rule:
+
+- **`IS_APPLE`** — a Mac, iPad or iPhone, whatever the browser. About the **keyboard and the
+  trackpad**, so it is true for Chrome and Firefox on a Mac too.
+- **`IS_WEBKIT`** — Safari, or any browser on iOS/iPadOS. A different question: *which engine is
+  drawing the page*. Used only for the startup notice `App.tsx` raises, because some of what the app
+  emits — a build plan's exact page size — is unsupported there and works in Chrome on the same Mac.
+  **Do not conflate the two.** Gating an input fix on `IS_WEBKIT`, or a rendering warning on
+  `IS_APPLE`, is wrong in both directions.
+- **`isAddModifier(event)`** — the one seam deciding what adds to a selection. Ctrl or Command on
+  Windows; **Command only on a Mac**, because there Ctrl+click *is* the operating system's secondary
+  click (it arrives as `button === 2`, so the `e.button !== 0` guards reject it) and Ctrl+drag is a
+  MacBook trackpad's only right-drag, which makes it the only way to pan. Three call sites read it,
+  and Alt is still tested **before** it, so holding both removes.
+- **`keyLabel(name)` / `resolvePlatformText(text)`** over one `KEY_LABELS` table keyed by what a key
+  *means* rather than which key it is (`add`, `hide`, `layerUp`, `pan`, …).
+
+**No user-visible string may hard-code a key name.** A tooltip, a hint bar, a swatch chip and a help
+topic all resolve theirs from that table, which is what stops the four drifting apart — they had no
+shared source at all before. In `.tsx`/`.ts` call `keyLabel`; in `help/content/*.md` write a
+`{{token}}`, or wrap whole passages in `{{#apple}}`/`{{#windows}}` where the prose itself differs,
+and `help/topics.ts` resolves both at load (see `help/CLAUDE.md`).
+
+Two bindings exist purely because a MacBook keyboard lacks the key the original used, and both are
+*additions* — the original still works: **Shift+Backspace** hides, alongside Delete
+(`designer/CLAUDE.md`), and **`[` / `]`** change layer, alongside Page Down/Up
+(`structure-designer/CLAUDE.md`). The brackets match on `e.code`, not `e.key`; the reasoning is at
+that call site and is not optional.
+
+`RightDragGesture.tsx` is the other half of the input story — the capture-phase rewrite of
+OrbitControls' right-button meaning, shared by both canvases. Read its header before touching either
+`<Canvas>`: a canvas with `enableRotate={false}` **drops a modified right-press entirely** without
+it, which is not obvious and was how panning came to be impossible on a MacBook.
 
 ### Pasting patterns between element types
 

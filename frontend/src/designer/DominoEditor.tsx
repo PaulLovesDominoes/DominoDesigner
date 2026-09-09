@@ -4,6 +4,7 @@ import { useShallow } from "zustand/shallow";
 import { EdgesGeometry, PlaneGeometry, type Object3D, type Scene, type Raycaster } from "three";
 
 import { useStore } from "../store";
+import { isAddModifier } from "../platform";
 import { getDDObjectBounds, getSnapShapePoint } from "../object-types/registry";
 import type { DDObjectId, DominoExpansion } from "../object-types/base";
 import type { Bounds } from "../types";
@@ -784,16 +785,29 @@ export default function DominoEditor() {
         return;
       }
 
-      // The two special swatches' keys — the "DEL"/"Bksp" labels the color
-      // panel shows on them name exactly these. Routed through pickDominoSwatch
-      // so they behave as clicking those two swatches does in every respect:
-      // the same undo step, the same colour memory sync, the same
-      // empty-selection no-op, they become the selected swatch, and they apply
-      // nothing while a paint brush is armed.
+      // The two special swatches' keys — the labels the color panel shows on
+      // them name exactly these. Routed through pickDominoSwatch so they behave
+      // as clicking those two swatches does in every respect: the same undo
+      // step, the same colour memory sync, the same empty-selection no-op, they
+      // become the selected swatch, and they apply nothing while a paint brush
+      // is armed.
+      //
+      // **Shift+Backspace hides too.** A MacBook keyboard has no forward Delete
+      // at all — the key labelled "delete" sends Backspace — so without a second
+      // binding, Hide would be unreachable there while Unassign sat under the
+      // key a Mac user would reach for to hide something. Shift is free: this
+      // handler has already let every Ctrl/Cmd chord fall through, and nothing
+      // else here answers to Backspace.
+      //
+      // SelectionTool has a Delete/Backspace handler of its own with no Shift
+      // guard, and the two never both fire: it arms only for activeTool
+      // "select", which this mode is never in. Keep that exclusion in mind
+      // before loosening either side's arming test.
       if (e.key === "Delete" || e.key === "Backspace") {
         // Backspace would otherwise navigate the page back.
         e.preventDefault();
-        pickSwatchFromKeyboard(e.key === "Delete" ? HIDE_SWATCH_ID : UNASSIGNED_SWATCH_ID);
+        const hide = e.key === "Delete" || e.shiftKey;
+        pickSwatchFromKeyboard(hide ? HIDE_SWATCH_ID : UNASSIGNED_SWATCH_ID);
         return;
       }
 
@@ -1106,11 +1120,14 @@ export default function DominoEditor() {
       // become a shape ends up in onPointerUp's plain click branches, which
       // select this domino.
       startIndex: hitDominoIndex(scene, raycaster, dominoEditingId),
-      // Alt is tested before Ctrl, so holding both deselects. The two ask for
-      // opposite things, and the preview colours have to agree with whichever
-      // one wins — showing the white "adding" colours while dominoes were being
-      // removed would read as a bug.
-      selectionGestureMode: e.altKey ? "remove" : e.ctrlKey || e.metaKey ? "add" : "replace",
+      // Alt is tested before the add modifier, so holding both deselects. The
+      // two ask for opposite things, and the preview colours have to agree with
+      // whichever one wins — showing the white "adding" colours while dominoes
+      // were being removed would read as a bug. Which key *is* the add modifier
+      // differs by platform, which is isAddModifier's whole job: Ctrl on
+      // Windows, Command on a Mac, where Ctrl+click is the system's own
+      // secondary click and cannot mean anything here.
+      selectionGestureMode: e.altKey ? "remove" : isAddModifier(e) ? "add" : "replace",
       dragging: false,
       before: useDominoSelectionStore.getState().get(dominoEditingId),
       lastIndices: undefined,

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 
 import { useStore } from "../store";
+import { keyLabel } from "../platform";
 import { hasUndoEditsSinceBarrier } from "../history/appStoreSlice";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { getDominoBrush } from "../paint-brush/registry";
@@ -134,8 +135,8 @@ export default function ModeHintBar() {
           <span>{imageMapMessage}</span>
         ) : imageTransformActive ? (
           <span>
-            Drag the image to move it, or its handles to resize it. Type ESC or click away
-            from the image when done.
+            Drag the image to move it, or its handles to resize it. Type {keyLabel("esc")} or
+            click away from the image when done.
           </span>
         ) : imageMapActive ? ( 
           <span>
@@ -178,17 +179,24 @@ export default function ModeHintBar() {
         <>
           <span>{hint}</span>
           <span>·</span>
-          <kbd className={styles.key}>Esc</kbd>
+          <kbd className={styles.key}>{keyLabel("esc")}</kbd>
           <span>to cancel</span>
         </>
       );
     } else if (!editing && activeTool === "select") {
+      // Three sentences from one store read: what can be done to the selected
+      // element, how to select one, or — on an empty plane — where to start.
+      // This is the only place the app says the selection handles can be
+      // dragged at all.
       content = (
         <span>
           {hasElements
-            ? (selectedDDObjectId ? 'Use handles to resize selected element, click-drag to move, double-click to edit colors, DEL to delete.' :
-              'Click on an element to select it, double-click to edit colors, right-click to pan.')
-            : 'Click "New" to add an element to your build plane, right-click to pan.'}
+            ? selectedDDObjectId
+              ? `Use handles to resize selected element, click-drag to move, ` +
+                `double-click to edit colors, ${keyLabel("deleteElement")} to delete.`
+              : `Click on an element to select it, double-click to edit colors, ` +
+                `${keyLabel("pan")} to pan.`
+            : `Click "New" to add an element to your build plane, ${keyLabel("pan")} to pan.`}
         </span>
       );
     } else {

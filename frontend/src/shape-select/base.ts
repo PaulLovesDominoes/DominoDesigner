@@ -37,13 +37,16 @@ export interface ShapePoint {
  * was already there when the gesture started.
  *
  *  - replace — a plain drag. Only what the region covers ends up selected.
- *  - add     — Ctrl. The region's dominoes join the existing selection.
- *  - remove  — Alt. The region's dominoes are taken back out of it.
+ *  - add     — the add modifier. The region's dominoes join the existing
+ *              selection. Which key that is depends on the machine — Ctrl on
+ *              Windows, Command on a Mac — so the test is platform.ts's
+ *              isAddModifier rather than a key named here.
+ *  - remove  — Alt/Option. The region's dominoes are taken back out of it.
  *
  * Pinned at the sequence's FIRST press and held for the whole sequence, so a
- * shape spanning several clicks means one thing throughout. Holding both Ctrl
- * and Alt gives "remove": the two contradict each other, and the preview colour
- * has to match what the gesture actually does.
+ * shape spanning several clicks means one thing throughout. Holding both gives
+ * "remove": the two contradict each other, and the preview colour has to match
+ * what the gesture actually does.
  *
  * Deliberately not dominoes/swatches.ts's DominoSelectMode, which is the swatch
  * menus' four-way and carries an "intersect" case no gesture produces.

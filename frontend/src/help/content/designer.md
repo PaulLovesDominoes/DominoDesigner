@@ -8,14 +8,16 @@ This is the page where you can edit your overall domino build:
     -  Currently, the only element available is a domino field
 - You can modify elements:  Move, resize, delete
 - Double-click an element to edit its domino colors
-    -  Do this by by double clicking the element either on the sidebar or in the build
+    -  Do this by double clicking the element either on the sidebar or in the build
     -  For more information go to [Editing Dominoes](domino-editing)
 
 Display controls available in the Build Designer:
 
-- Pan around the build plane:  With right-click-drag mouse button
-- Zoom the build plane using:
-    - The middle-mouse wheel
+- Pan around the build plane:  {{pan}}
+{{#apple}}    - On a trackpad this is Control and a one-finger drag, there being no right
+      button of its own. With a mouse, right-drag works as well.
+{{/apple}}- Zoom the build plane using:
+    - The mouse wheel, or a two-finger scroll on a trackpad
     - The zoom in / zoom out toolbar buttons in the upper right hand side of the screen
     - The "Reset Zoom" toolbar button - to fit the entire build plane into the available window
 
@@ -54,7 +56,7 @@ First, click on an element to select it. This can be done by clicking on the ele
 Once the element is selected, you can:
 
 -  Click-drag the element to move it
--  Press DEL to delete the element
+-  Press {{deleteElement}} to delete the element
 -  Click-drag on an element's handle (the blue squares) to resize it
 
 ## Editing domino colors

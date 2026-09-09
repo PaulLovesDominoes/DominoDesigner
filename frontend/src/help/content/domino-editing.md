@@ -56,13 +56,13 @@ A few things worth knowing:
    becomes the selected color. There is nothing extra to do to pick up a color for a brush.
 -  Clicking the same swatch again does not un-pick it. To change color, click a different
    swatch.
--  The selected color stays put. ESC does not clear it, and neither does picking up a
+-  The selected color stays put. {{esc}} does not clear it, and neither does picking up a
    brush, so you can choose a color once and keep painting with it. It is cleared only when
    you leave domino editing mode.
 -  **Hide** and **Unassigned** can be the selected color too, which is what turns a brush
-   into an eraser - see *Hidden and Unassigned Dominoes* below. The **Delete** and
-   **Backspace** keys are simply those two swatches on the keyboard, and behave exactly as
-   clicking them does, selected color included.
+   into an eraser - see *Hidden and Unassigned Dominoes* below. The **{{hide}}** and
+   **{{unassign}}** keys are simply those two swatches on the keyboard, and behave exactly as
+   clicking them does, selected color included. Each swatch shows its own key on its face.
 -  Swatches press in like a physical button when you use them - held down under the mouse,
    or a quick flash when you use a shortcut key. That is there so a click still looks like it
    landed even when nothing on the build plane changes, for example re-applying red to
@@ -73,7 +73,7 @@ A few things worth knowing:
 Selecting dominoes never changes their color on its own. Only clicking a swatch, typing a
 shortcut, pasting, or dragging a brush does that.
 
-### Details on shorcut keys
+### Details on shortcut keys
 
 Shortcut keys allow you to quickly set a domino color by typing the key combination associated with the color.
 
@@ -105,13 +105,16 @@ There are a lot of different ways to select dominoes:
 -  By region or shape
 
 For many of these methods, two key combinations are common:
--  Use **CTRL** to _add_ more dominoes to an existing selection
--  Use **ALT** to _remove_ dominoes from an existing selection
+-  Use **{{add}}** to _add_ more dominoes to an existing selection
+-  Use **{{remove}}** to _remove_ dominoes from an existing selection
+
+Holding both at once removes, since the two ask for opposite things.
 
 ### Selecting single dominoes
 
 -  **Click** - To select a single domino (deselect any already selected)
--  **CTRL - Click** - To add a single domino to the selection set
+-  **{{add}} - Click** - To add a single domino to the selection set
+-  **{{remove}} - Click** - To take that one domino back out of the selection
 
 ### Selecting dominoes with arrow keys
 
@@ -120,7 +123,7 @@ Once a domino is selected, you can use the arrow keys:
 -  **Simple arrow keys** (left, right, up, down) selects the domino in the specified direction
     -  All other dominoes are de-selected
 
--  **SHIFT-<arrow>** extends or shrinks the selection in the specified direction
+-  **{{shift}}-arrow** extends or shrinks the selection in the specified direction
     -  Note:  This only works reliably for single dominoes or a simple rectangular selection
 
 ### Selecting dominoes by region or shape
@@ -130,8 +133,8 @@ There are multiple ways to select regions of dominoes by shape.
 For all of these methods, there are three modes:
 
 -  **Click & drag** - To select a new region of dominoes (deselect any already selected)
--  **CTRL - Click & Drag** - To add a region of dominoes to the existing selection
--  **ALT - Click & Drag** - To remove a region of dominoes from the existing selection
+-  **{{add}} - Click & Drag** - To add a region of dominoes to the existing selection
+-  **{{remove}} - Click & Drag** - To remove a region of dominoes from the existing selection
 
 #### Different shapes to select
 
@@ -142,15 +145,15 @@ Remember:  All of these methods *start* with *Click & Drag*.
 -  **Simple, flat rectangles**
     -  Click and drag to select a rectangular range of dominoes
 -  **Circle by radius**
-    -  Click and drag from the center of the circle to the perimiter
+    -  Click and drag from the center of the circle to the perimeter
 -  **Circle by diameter**
     -  Click and drag from one side of the circle to the other
 -  **Oval**
-    -  Click & Drag to from one side of the oval to the other to define the main axis
+    -  Click & Drag from one side of the oval to the other to define the main axis
     -  THEN:  Click to determine the width of the oval's perpendicular axis
 -  **Triangle**
     -  Click & Drag to define one side of the triangle
-    -  THEN:  Click to determine the final point point of the triangle
+    -  THEN:  Click to determine the final point of the triangle
 -  **Angled rectangle**
     -  Click & Drag to define one side of the rectangle (can be at any angle)
     -  THEN:  Click to determine the final width and length of the rectangle
@@ -163,12 +166,12 @@ Each of the color swatches has a menu which allows for dominoes to be selected b
 -  **Add Select** - Adds all dominoes of the specified color to the selection set.
 -  **Deselect** - All dominoes of the specified color are removed from the selection set.
 -  **Deselect Others** - All selected dominoes which are NOT of the specified color are removed from the selection set.
-    -  This is the intersection of the existing selected dominoes and the dominoes of the specificed color.
+    -  This keeps only the dominoes that are both already selected and of the specified color.
 
 Some ideas on how to use these features:
 
 -  Change colors
-    .  For exampe:  Select all Yellow dominoes and change them to orange
+    .  For example:  Select all Yellow dominoes and change them to orange
 -  Set the background color
     .  For example: Select all "unassigned" dominoes and change their color
 -  Select patches of color
@@ -184,8 +187,8 @@ Some ideas on how to use these features:
 
 ### Select All / Select None / Invert Selection
 
--  **Select all dominoes** - Use CTRL-A or the "Select All" toolbar button
--  **Clear all selections** - Press ESC or click someplace empty on the build plane
+-  **Select all dominoes** - Use {{mod}}+A or the "Select All" toolbar button
+-  **Clear all selections** - Press {{esc}} or click someplace empty on the build plane
 -  **Invert selection** - Press the "Invert Selection" toolbar button
     -  Selected dominoes become de-selected and vice-versa
 
@@ -230,7 +233,7 @@ the same range:
 Clicking a brush you are already holding just reopens the menu, so you can change size
 without putting the brush down. As with every other tool in this toolbar, the way to put
 it down is to pick up a different tool - a shape, or plain Rectangle select - or to press
-ESC.
+{{esc}}.
 
 ### How painting works
 
@@ -249,12 +252,12 @@ the brush stays in your hand either way.
 
 ### Selecting dominoes while painting
 
-Selecting still works normally with a brush in hand - Ctrl+A, Invert, and the Select
+Selecting still works normally with a brush in hand - {{mod}}+A, Invert, and the Select
 commands in each swatch's menu all do what they always do, and what you select **stays**
 selected while you move the pointer around. Clicking a swatch or typing a shortcut colors
 it, just as anywhere else.
 
-So the quickest way to start over is **Ctrl+A** then **Backspace**.
+So the quickest way to start over is **{{mod}}+A** then **{{unassign}}**.
 
 Two things to know:
 
@@ -262,19 +265,19 @@ Two things to know:
    over: from then on only what the nib passes over gets painted.
 -  **Selected dominoes and the dominoes under the nib are both outlined in white**, so with
    a selection standing you cannot tell them apart. If you want to see exactly what the
-   brush would hit, clear the selection first (press ESC).
+   brush would hit, clear the selection first (press {{esc}}).
 
 One thing that can surprise you: if dominoes are selected and you click a swatch just to
 load the brush with a color, that click *also* colors the selection - because that is what
-clicking a swatch means everywhere. Press ESC first if you did not want that.
+clicking a swatch means everywhere. Press {{esc}} first if you did not want that.
 
 ### Undoing a stroke
 
 **A whole stroke undoes as one step.** However many dominoes you painted between pressing
-and releasing, a single Ctrl+Z takes them all back - individual dominoes within a stroke
+and releasing, a single {{mod}}+Z takes them all back - individual dominoes within a stroke
 cannot be undone separately.
 
-If you change your mind part-way through, **press ESC before releasing the mouse**. Every
+If you change your mind part-way through, **press {{esc}} before releasing the mouse**. Every
 domino painted since you pressed goes back to the color it had, the tool leaves painting
 mode, and nothing is recorded in the undo history at all.
 
@@ -283,9 +286,9 @@ mode, and nothing is recorded in the undo history at all.
 Colors can be copied from one group of dominoes to another, including between two
 different fields from your build plane.
 
-- **Ctrl+C**: copy the selected dominoes' colors.
-- **Ctrl+X**: copy them and then clear them to "unassigned"
-- **Ctrl+V**: paste onto the current selection.
+- **{{mod}}+C**: copy the selected dominoes' colors.
+- **{{mod}}+X**: copy them and then clear them to "unassigned"
+- **{{mod}}+V**: paste onto the current selection.
 
 There are two ways to paste selected dominoes:
 
@@ -302,15 +305,15 @@ There are two ways to paste selected dominoes:
 
 ## Miscellaneous Topics
 
-### ESC handling
+### {{esc}} handling
 
-Press the "ESC" key, repeatedly, to return the system to its default state. 
+Press the {{esc}} key, repeatedly, to return the system to its default state.
 
-Pressing ESC multiple times will (in order):
+Pressing {{esc}} multiple times will (in order):
 
 1. Cancel any range (click-drag) or shape selection which is in-progress, or any paint
    stroke in progress
-    -  If your shape is not looking like you want, use ESC to cancel it so you can try again
+    -  If your shape is not looking like you want, use {{esc}} to cancel it so you can try again
     -  A cancelled paint stroke puts back every domino it had painted
 2. De-select all dominoes
     -  This works with a paint brush in hand too, and is how you clear a selection so you
@@ -318,7 +321,7 @@ Pressing ESC multiple times will (in order):
 3. Return to the default simple Rectangle selection mode, putting away any paint brush
 4. Clear any partly-typed color shortcut
 
-ESC deliberately never changes your **selected color**. It is a choice rather than a mode,
+{{esc}} deliberately never changes your **selected color**. It is a choice rather than a mode,
 and it paints nothing on its own - taking it away would only leave a brush inert for no
 visible reason. Click a different swatch to change it, or leave domino editing mode
 (Done or Cancel) to clear it.
@@ -329,7 +332,7 @@ Two special swatches exist at the top of the sidebar for hidden and unassigned d
 
 -  **Unassigned** - These are dominoes not assigned to a color
     -  All dominoes start as "unassigned"
-    -  Pressing "Backspace" will remove color from any selected dominoes and return them to "unassigned"
+    -  Pressing **{{unassign}}** will remove color from any selected dominoes and return them to "unassigned"
 -  **Hidden** - These are hidden dominoes (as if they were not part of the build)
     -  Hidden dominoes do not show up at all
     -  They will be removed from exported build plans
@@ -339,11 +342,12 @@ Two special swatches exist at the top of the sidebar for hidden and unassigned d
 
 How to hide dominoes:
 1.  Select some dominoes then:
-2.  Press DEL to hide them, OR
+2.  Press **{{hide}}** to hide them, OR
         -  Click on the "Hide" color swatch in the left hand sidebar
-        -  These are the same thing: DEL and Backspace are the "Hide" and "Unassigned"
-           swatches on the keyboard, so each also becomes your selected color, which is how
-           a paint brush is turned into an eraser
+        -  These are the same thing: **{{hide}}** and **{{unassign}}** are the "Hide" and
+           "Unassigned" swatches on the keyboard, so each also becomes your selected color,
+           which is how a paint brush is turned into an eraser
+        -  Each swatch shows its own key on its face, so you never have to remember which
 
 How to un-hide dominoes:
 1.  Select some hidden dominoes by either:
@@ -361,13 +365,25 @@ There is a toolbar button (it looks like two arrows facing away from each other)
 
 ### Undo / Redo
 
-Domino color changes can be undone / redone using the Undo and Redo commands (CTRL-Z / CTRL-Y) or the toolbar buttons at the upper right.
+Domino color changes can be undone / redone using the Undo and Redo commands ({{mod}}+Z / {{redo}}) or the toolbar buttons at the upper right.
 
 Two notes:
 - Domino selections can NOT be undone or redone.
 - The current undo stack is 100 changes (this may be increased and/or made configurable in the future)
     -  Changes beyond 100 can not be undone
     -  So, setting the color of 100 single dominoes individually, say, would exceed the stack
+
+{{#apple}}
+### A few notes on the keys
+
+-  **{{add}}**, rather than Control, is what adds to a selection. Control is left alone
+   because Control and a click is how macOS itself right-clicks — and on a trackpad, Control
+   and a one-finger drag is the only way to pan the build plane.
+-  **{{hide}}** hides because there is no forward-delete key on a laptop: the key marked
+   "delete" is {{unassign}}. On a full-size keyboard, fn+Delete hides as well.
+-  **{{redo}}** redoes. Command+Y is the browser's own History window and never reaches the
+   app at all.
+{{/apple}}
 
 ---
 

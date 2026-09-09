@@ -1,4 +1,5 @@
 import { readableTextColor, rgbBytesToHex } from "../color";
+import { keyLabel } from "../platform";
 import { DEFAULT_DOMINO_COLOR } from "../dominoes/object-model";
 import {
   HIDE_SWATCH_ID,
@@ -45,6 +46,9 @@ const UNASSIGNED_COLOR = rgbBytesToHex(DEFAULT_DOMINO_COLOR);
  * The specials' shortcutLabels name the *keys* that apply them, which the
  * shortcut-typing buffer can never match — it only ever compares against
  * inventory entries' own `shortcut` field, so typing D-E-L does nothing here.
+ * Those two names come from `platform.ts` rather than being written out, since
+ * which key applies them differs by machine: a MacBook has no forward Delete,
+ * so Hide is Shift+Backspace there and the chip has to say so.
  *
  * `includeSpecials` is false while image mapping is on: neither special means
  * anything to a palette of colours a picture can be mapped onto. Leaving them
@@ -72,7 +76,7 @@ export function dominoSwatches(
     {
       id: HIDE_SWATCH_ID,
       name: "Hide",
-      shortcutLabel: "DEL",
+      shortcutLabel: keyLabel("hide"),
       background: HIDE_HATCH,
       textColor: "var(--color-text)",
       tip: null,
@@ -81,7 +85,7 @@ export function dominoSwatches(
     {
       id: UNASSIGNED_SWATCH_ID,
       name: "Unassigned",
-      shortcutLabel: "Bksp",
+      shortcutLabel: keyLabel("unassign"),
       // Derived from the color an unpainted domino actually renders as, so the
       // swatch and the dominoes it produces can't drift apart.
       background: UNASSIGNED_COLOR,

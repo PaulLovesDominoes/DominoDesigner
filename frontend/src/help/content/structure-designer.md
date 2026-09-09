@@ -31,10 +31,19 @@ right-hand side of the screen chooses which layer you are working on.
 - Layer 1 is at the bottom, resting on the build plane; layer 100 is at the top
 - You can also click anywhere on the line to jump to that layer
 
-The keyboard works too. **Page Up** and **Page Down** move one layer, and holding **Shift** with
-them moves five. Those work whenever the pointer is over the canvas, so you can change layer
-without reaching for the control at all — and they work when the control itself has been clicked.
-With it clicked, **Home** and **End** also jump to the lowest and highest layers.
+The keyboard works too. **{{layerUp}}** and **{{layerDown}}** move one layer, and holding
+**{{shift}}** with them moves five. Those work whenever the pointer is over the canvas, so you can
+change layer without reaching for the control at all — and they work when the control itself has
+been clicked. With it clicked, **Home** and **End** also jump to the lowest and highest layers.
+
+{{#windows}}
+The two bracket keys, **]** and **[**, do the same thing, for a keyboard with no Page Up or Page
+Down of its own.
+{{/windows}}{{#apple}}
+**Page Up** and **Page Down** do the same thing if your keyboard has them — on a laptop they need
+**fn** held with an arrow key, which is why the bracket keys are there. **Home** and **End**
+likewise need **fn** with left or right.
+{{/apple}}
 
 The arrow keys deliberately do *not* move the layer. They place dominoes — see below.
 
@@ -153,12 +162,12 @@ the bridging positions added, rather than a different grid.
 ## Selecting and deleting dominoes
 
 - **Click** a domino to select it — in either tool. Its outline turns white.
-- **Ctrl+click** another to add it to the selection.
+- **{{add}}+click** another to add it to the selection.
 - **Click empty space** to clear the selection.
 - In **Rectangular Select**, drag a box over the canvas. Every domino it touches is selected as you
-  drag, so the box shows what it is about to take before you let go. **Ctrl+drag** adds to what was
-  already selected, and **Esc** part-way through gives up and puts the old selection back.
-- Press **Delete** to remove the selected dominoes. **Ctrl+Z** brings them back.
+  drag, so the box shows what it is about to take before you let go. **{{add}}+drag** adds to what
+  was already selected, and **{{esc}}** part-way through gives up and puts the old selection back.
+- Press **{{deleteElement}}** to remove the selected dominoes. **{{mod}}+Z** brings them back.
 
 A box takes the dominoes on the layer you are working on **and every layer above it** — the rule is
 that it takes what you can see. Turn on **hide dominoes above this layer** and it takes only the
@@ -178,20 +187,23 @@ Deleting a group from its **⋯** menu deletes every domino in it. Undo brings t
 
 ## Undoing
 
-Every domino you place can be undone with **Ctrl+Z**, one domino at a time, and redone with
-**Ctrl+Y**. Undoing your very first domino takes its group away with it, and a Delete comes back all
-at once however many dominoes it took.
+Every domino you place can be undone with **{{mod}}+Z**, one domino at a time, and redone with
+**{{redo}}**. Undoing your very first domino takes its group away with it, and a Delete comes back
+all at once however many dominoes it took.
 
 Undoing or redoing clears the selection, because the dominoes it was pointing at may have moved.
 
 ## Moving the view
 
-- **Pan** around the build plane with right-click-drag
-- **Rotate** the view with Shift + right-click-drag
+- **Pan** around the build plane with {{pan}}
+- **Rotate** the view with {{rotate}}
     - This tips the view away from looking straight down, which is how you see the layer sheet —
       and eventually the structure itself — standing up off the build plane
     - The view will not go below the build plane
-- **Zoom** with the middle-mouse wheel, or the zoom in and zoom out buttons in the toolbar
+{{#apple}}    - On a trackpad both are a one-finger drag with those keys held, there being no
+      right button of its own. With a mouse, right-drag works as well.
+{{/apple}}- **Zoom** with the mouse wheel, a two-finger scroll on a trackpad, or the zoom in and
+  zoom out buttons in the toolbar
 - The **fit** button in the toolbar fits the whole build plane in the window *and* straightens the
   view back to looking straight down, which is how you get back from a rotation
 

@@ -168,8 +168,9 @@ export interface DominoColorSlice {
   // new pointer gesture, ~1.2s of inactivity, or exiting the mode.
   //
   // Only inventory entries have a typeable shortcut. The Hide and Unassigned
-  // swatches show "DEL"/"Bksp", which name the keys that apply them — they are
-  // labels, not sequences this buffer can ever match.
+  // swatches instead show whichever keys apply them on this machine (resolved
+  // through platform.ts, since a Mac's differ) — those are labels, not sequences
+  // this buffer can ever match.
   dominoColorShortcut: string;
   setDominoColorShortcut: (buffer: string) => void;
   // The swatch to draw as pressed for a moment, so picking one from the keyboard

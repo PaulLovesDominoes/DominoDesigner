@@ -21,7 +21,7 @@ Completed:
     -  Setting colors
     -  Many selection options (rectangles, circle, oval, triangle, all, none)
     -  Selecting or deselecting by color
-    -  Moving around the domino field with arrow keys with shift-arrow to grow/shrink the selection
+    -  Moving around the domino field with arrow keys, with {{shift}}+arrow to grow/shrink the selection
     -  Cut, copy & paste colors
         -  Including from one field to another in the build
     -  Many other options

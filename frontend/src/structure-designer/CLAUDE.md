@@ -44,9 +44,9 @@ does not re-render this screen when a dialog opens somewhere else.
 ## The build flag
 
 `enabled.ts` exports `STRUCTURE_DESIGNER_ENABLED`, from `VITE_ENABLE_STRUCTURE_DESIGNER`. The
-screen is unfinished, so a published build can hide it completely while the code still ships in
-the bundle. `.env.development` turns it on for `npm run dev`; `.env.production` turns it off for
-`npm run build`. Both are loaded automatically by Vite for the mode it is running in.
+screen is unfinished, so a published build can hide it completely. `.env.development` turns it on
+for `npm run dev`; `.env.production` turns it off for `npm run build`. Both are loaded
+automatically by Vite for the mode it is running in.
 
 **Off unless the variable is exactly `"true"`.** The failure mode of a wrong guess should be "the
 unfinished screen is hidden", never the reverse — so an absent or misspelt variable hides it.
@@ -63,6 +63,37 @@ Two enforcement points, and both are needed:
 Vite replaces `import.meta.env.VITE_*` with a literal at build time, so all of the above folds
 away: in a flag-off bundle the constant is `false` and the `SCREENS` object literal genuinely has
 no `structureDesigner` key.
+
+### A flag-off build compiles most of this folder to nothing
+
+Once `SCREENS` has no entry, nothing refers to `StructureDesignerScreen`, and the bundler drops
+every module reachable only through it — the canvas, the tools, the drawing, most of the
+`operation-types/` maths. **`StructureToolbar` is the one part that survives**, because
+`components/TitleBar.tsx` chooses between the two toolbars at run time and therefore imports this
+one whatever the flag says; it drags the store and the operation registry in behind it. That
+asymmetry is worth knowing before it is discovered by accident: a bundle can hold this screen's
+*strings* while holding none of its *behaviour*.
+
+**So `npm run build` does not verify this screen, and must not be reported as having done so.**
+Type-checking still covers it — `tsc --noEmit` reads the whole program and does not care what is
+reachable — so a type error here is caught as it always was. The bundling half is what is vacuous:
+`vite build` can emit a byte-for-byte identical bundle across a real change made in this folder,
+**including the same content hash in the output filename**. Verification here means exercising the
+screen under `npm run dev`, where the flag is on.
+
+That is not hypothetical. A session changed a search function in
+`operation-types/gridDefinition/junctions.ts`, saw the built bundle's hash not move, and went
+looking for its own code in the minified output. It could not find it — nor, as it happened, could
+it find several long-standing properties from the same file, which should have been the clue that
+the *whole subtree* was absent rather than that the change had gone missing. The sourcemap pointed
+the other way and made it worse: `sourcesContent` carries every module that was **loaded and
+transformed**, so this file's full text was in the map whether or not any of it survived
+shaking. Two false trails, one real cause, and a long detour that ended in a lost file.
+
+**The rules that follow from it.** An unchanged content hash after a change in here is the expected
+result, not a symptom. Do not go looking for this folder's identifiers in `dist/` — the answer is
+uninformative whichever way it comes out. And a build-artifact curiosity is never worth editing a
+source file to settle, which is what turned that detour into damage.
 
 ## State: a store of its own
 
@@ -240,13 +271,23 @@ handles with its own epsilon clamp; the resulting offset is far below a millimet
 
 ## Shift+Right-drag rotates; plain Right-drag pans
 
-`StructureCanvas`'s `ShiftRotateGesture` does that with a **capture-phase** `pointerdown` listener
-on the canvas element. Capture is what makes the ordering certain — a browser delivers an event
-outermost-first on the way in (capture) before working back out (bubble), and OrbitControls
-listens the ordinary way, so this always runs first.
+`src/RightDragGesture.tsx` does that with a **capture-phase** `pointerdown` listener on the canvas
+element. Capture is what makes the ordering certain — a browser delivers an event outermost-first
+on the way in (capture) before working back out (bubble), and OrbitControls listens the ordinary
+way, so this always runs first.
 
 **Deliberately not React state flipped by watching the Shift key**, which would re-render the
 canvas every time Shift was pressed or released.
+
+**It is shared with the Designer's canvas**, which is a considered exception to the independence
+rule rather than a slip — it is a low-level piece with no opinion about either half, in the same
+class as `ConfirmDialog`. This screen passes `shiftRotates`; the Designer, whose view stays flat,
+passes false and needs it for a different reason entirely (see the component's header). Its own
+long explanation of why the logic reads backwards moved there with it.
+
+On a Mac these gestures are reached as Control-drag and Shift+Control-drag, Ctrl+click being that
+system's secondary click — which is also a MacBook trackpad's only right-drag. `StructureHintBar`
+says so through `platform.ts` rather than naming a gesture itself.
 
 `StructureDesignerScreen`'s canvas area must keep its `onContextMenu` guard: right-dragging is the
 pan gesture, so without it the browser's own menu opens on every pan.

@@ -18,7 +18,7 @@ The picture button sits in the toolbar just to the right of the Expand button, w
 -  With no picture loaded, it asks you for one.
 -  With a picture loaded, it hides and shows it.
 
-**Ctrl+I** does exactly the same as the button, without reaching for the mouse. It is worth learning: while tracing you will want the picture out of the way every few minutes to see how the dominoes look on their own, and back again straight after.
+**{{mod}}+I** does exactly the same as the button, without reaching for the mouse. It is worth learning: while tracing you will want the picture out of the way every few minutes to see how the dominoes look on their own, and back again straight after.
 
 ## The image menu
 
@@ -49,7 +49,7 @@ Transparency is only about what you can see. It makes no difference to the color
 
 **Map Image Colors** opens the color mapping panel. That is a mode, and it is covered in [its own topic](image-mapping).
 
-**Delete** removes the picture, and it is the only thing that does — there is no key for it, so a picture cannot be lost to a stray keypress. Unlike most things, this one *can* be undone: Ctrl+Z brings the picture straight back where it was. If the picture was hidden at the time, it comes back showing, so you can see what you got.
+**Delete** removes the picture, and it is the only thing that does — there is no key for it, so a picture cannot be lost to a stray keypress. Unlike most things, this one *can* be undone: {{mod}}+Z brings the picture straight back where it was. If the picture was hidden at the time, it comes back showing, so you can see what you got.
 
 ## Moving and resizing
 
@@ -61,13 +61,13 @@ While the handles are on, dominoes cannot be edited — the picture has the canv
 -  Drag a **side** handle to stretch the picture in that direction only. The proportions are *not* kept — use this to fit a picture to a differently shaped element.
 -  Drag the **middle** of the picture to move it.
 
-To finish and get your domino tools back: press **Esc**, click anywhere away from the picture, or pick Resize and Move again.
+To finish and get your domino tools back: press **{{esc}}**, click anywhere away from the picture, or pick Resize and Move again.
 
 The picture is free to hang off the element and off the build plane. Nothing is clipped, so you can push most of a picture out of the way and use just the part you want. You can zoom out well past the build plane to reach a picture you have dragged a long way off it.
 
-Moving and resizing go into the undo history, so **Ctrl+Z** puts a picture back where it was if you nudge it by accident. Pressing Esc part-way through a drag does the same thing straight away.
+Moving and resizing go into the undo history, so **{{mod}}+Z** puts a picture back where it was if you nudge it by accident. Pressing {{esc}} part-way through a drag does the same thing straight away.
 
-That history is kept only while you are editing this element's dominoes. Pressing **Done** clears every image step out of it — the picture stays exactly where you left it, but Ctrl+Z will no longer walk back through how it got there. Nothing an undo does would be visible from outside the mode anyway, since that is the only place a picture is drawn.
+That history is kept only while you are editing this element's dominoes. Pressing **Done** clears every image step out of it — the picture stays exactly where you left it, but {{mod}}+Z will no longer walk back through how it got there. Nothing an undo does would be visible from outside the mode anyway, since that is the only place a picture is drawn.
 
 ## Tracing by hand
 
@@ -77,7 +77,7 @@ This is what the picture is for when you are not mapping colors, and it needs no
 -  The paint brushes follow the picture for lettering and for anything irregular.
 -  Turn **Expand** on to see the dominoes tile edge to edge, which makes it much easier to judge where an edge really falls.
 
-As you color dominoes they cover the picture, so what is left showing is exactly what you have not done yet. Hide the picture with Ctrl+I now and then to see the build on its own.
+As you color dominoes they cover the picture, so what is left showing is exactly what you have not done yet. Hide the picture with {{mod}}+I now and then to see the build on its own.
 
 ## What is remembered
 

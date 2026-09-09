@@ -14,6 +14,7 @@ import {
 } from "@remixicon/react";
 
 import { useStore } from "../store";
+import { keyLabel } from "../platform";
 import ConfirmDialog from "../components/ConfirmDialog";
 import toolbarStyles from "../designer/Toolbar.module.css";
 import { getDDObjectBounds } from "../object-types/registry";
@@ -197,10 +198,10 @@ export default function ImageOverlayButton({ disabled }: { disabled?: boolean })
           disabled={disabled}
           title={
             !image
-              ? "Add an image to trace over or map colors from (Ctrl+I)"
+              ? `Add an image to trace over or map colors from (${keyLabel("mod")}+I)`
               : image.visible
-                ? "Hide the image (Ctrl+I)"
-                : "Show the image (Ctrl+I)"
+                ? `Hide the image (${keyLabel("mod")}+I)`
+                : `Show the image (${keyLabel("mod")}+I)`
           }
           aria-label={!image ? "Add image" : image.visible ? "Hide image" : "Show image"}
           aria-pressed={image ? image.visible : undefined}

@@ -1,4 +1,5 @@
 import { OvalSelectIcon } from "../../icons";
+import { keyLabel } from "../../platform";
 import { SELECTION_MARGIN_MM, type ShapePoint, type ShapeSelectDefinition } from "../base";
 import OvalSelectPreview from "./preview";
 
@@ -316,11 +317,11 @@ export const ovalSelectDefinition: ShapeSelectDefinition<OvalSelectState> = {
 
   hint: (state) => {
     if (!state) {
-      return "Drag from one end of the oval to the other to set its length and angle. Ctrl+drag adds to the selection, Alt+drag removes from it.";
+      return `Drag from one end of the oval to the other to set its length and angle. ${keyLabel("add")}+drag adds to the selection, ${keyLabel("remove")}+drag removes from it.`;
     }
     return state.stage === "major"
-      ? "Release at the far end to fix the oval's length and angle. Esc to start over."
-      : "Move to set the oval's width, then click to select. Esc to start over.";
+      ? `Release at the far end to fix the oval's length and angle. ${keyLabel("esc")} to start over.`
+      : `Move to set the oval's width, then click to select. ${keyLabel("esc")} to start over.`;
   },
 
   Preview: OvalSelectPreview,

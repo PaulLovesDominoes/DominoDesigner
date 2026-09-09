@@ -119,7 +119,10 @@ all rather than the line being copied four times.
 and the only thing that paints without an explicit swatch click is a brush, only while its button
 is down.
 
-**Ctrl and Alt are one value, not two booleans.** `SelectionGestureMode` is `"replace" | "add" |
+**The add modifier and Alt are one value, not two booleans.** Note *which key adds* is
+`platform.ts`'s `isAddModifier` to answer, not this file's — Ctrl on Windows, Command on a Mac,
+where Ctrl+click is the operating system's own secondary click. "Ctrl" below means that seam's
+answer. `SelectionGestureMode` is `"replace" | "add" |
 "remove"`, captured into `GestureSequenceState` at the sequence's first press. Four decisions:
 
 - **It is read once and then fixed** — tapping Alt part-way through a drag changes nothing. That is
@@ -284,8 +287,11 @@ There are three ways in, and they behave identically because they are all one ca
   handler instead of being swallowed as one-letter buffer entries. Keep that early return
   unconditional — every Ctrl chord is dispatched from that one place, which is why the clipboard and
   Ctrl+A needed no change here at all.
-- **Delete hides, Backspace unassigns** — the `DEL`/`Bksp` labels on the two specials name exactly
-  these keys, and both route through `pickDominoSwatch`, so they *are* ordinary swatch picks in
+- **Delete hides, Backspace unassigns** — and **Shift+Backspace hides as well**, because a MacBook
+  keyboard has no forward Delete at all and would otherwise leave Hide unreachable while Unassign
+  sat under the key marked "delete". The labels on the two specials name exactly whichever keys
+  apply them *on this machine*, resolved through `platform.ts` rather than written out. All of them
+  route through `pickDominoSwatch`, so they *are* ordinary swatch picks in
   every respect: same undo step, same `colorByCell` sync, same empty-selection no-op, and they
   become the selected swatch. The labels are *not* typeable; the buffer only matches inventory
   entries' own `shortcut`. **That uniformity is a deliberate reversal** — these two once skipped the

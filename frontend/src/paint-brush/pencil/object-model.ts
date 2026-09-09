@@ -3,6 +3,7 @@ import {
   PaintCircleMediumIcon,
   PaintCircleSmallIcon,
 } from "../../icons";
+import { keyLabel } from "../../platform";
 import type { DominoBrushDefinition } from "../base";
 import PencilBrushPreview from "./preview";
 
@@ -21,7 +22,7 @@ export const pencilBrushDefinition: DominoBrushDefinition = {
     medium: PaintCircleMediumIcon,
     large: PaintCircleLargeIcon,
   },
-  hint: "Click then drag to paint the selected color. ESC during a stroke undoes it.",
+  hint: `Click then drag to paint the selected color. ${keyLabel("esc")} during a stroke undoes it.`,
 
   contains: (sizeMm, dx, dy) => {
     const radius = sizeMm / 2;

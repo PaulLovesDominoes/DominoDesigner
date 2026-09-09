@@ -26,6 +26,17 @@ body,
   margin: 0;
 }
 
+html,
+body {
+  /* Stops a sideways two-finger swipe on a trackpad from navigating the browser
+     back, which on a Mac is the standard gesture for it. Nothing in this app is
+     saved anywhere, so leaving the page throws the whole design away — and the
+     swipe is easy to make by accident while scrolling the sidebar. Over the
+     canvas the view controls already swallow the gesture; this covers the
+     chrome around it, which is where the hazard actually is. */
+  overscroll-behavior-x: none;
+}
+
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;

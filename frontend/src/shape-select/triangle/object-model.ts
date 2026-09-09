@@ -1,4 +1,5 @@
 import { TriangleSelectIcon } from "../../icons";
+import { keyLabel } from "../../platform";
 import { SELECTION_MARGIN_MM, type ShapePoint, type ShapeSelectDefinition } from "../base";
 import TriangleSelectPreview from "./preview";
 
@@ -219,11 +220,11 @@ export const triangleSelectDefinition: ShapeSelectDefinition<TriangleSelectState
 
   hint: (state) => {
     if (!state) {
-      return "Click-drag to draw one side of the triangle. Ctrl+drag adds to the selection, Alt+drag removes from it.";
+      return `Click-drag to draw one side of the triangle. ${keyLabel("add")}+drag adds to the selection, ${keyLabel("remove")}+drag removes from it.`;
     }
     return state.stage === "side"
-      ? "Release to fix that side of the triangle. Esc to start over."
-      : "Move to place the third corner, then click to select. Esc to start over.";
+      ? `Release to fix that side of the triangle. ${keyLabel("esc")} to start over.`
+      : `Move to place the third corner, then click to select. ${keyLabel("esc")} to start over.`;
   },
 
   Preview: TriangleSelectPreview,

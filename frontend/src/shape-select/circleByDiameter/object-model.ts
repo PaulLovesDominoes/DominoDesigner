@@ -1,4 +1,5 @@
 import { CircleByDiameterSelectIcon } from "../../icons";
+import { keyLabel } from "../../platform";
 import { SELECTION_MARGIN_MM, type ShapePoint, type ShapeSelectDefinition } from "../base";
 import CircleSelectPreview from "../circle/preview";
 import type { CircleSelectState } from "../circle/object-model";
@@ -117,8 +118,8 @@ export const circleByDiameterSelectDefinition: ShapeSelectDefinition<CircleByDia
 
   hint: (state) =>
     state
-      ? "Release to select every domino inside the circle. Esc to start over."
-      : "Drag from one side of the circle to the other. Ctrl+drag adds to the selection, Alt+drag removes from it.",
+      ? `Release to select every domino inside the circle. ${keyLabel("esc")} to start over.`
+      : `Drag from one side of the circle to the other. ${keyLabel("add")}+drag adds to the selection, ${keyLabel("remove")}+drag removes from it.`,
 
   Preview: CircleSelectPreview,
 };

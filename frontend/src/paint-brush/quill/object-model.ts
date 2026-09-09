@@ -3,6 +3,7 @@ import {
   PaintQuillMediumIcon,
   PaintQuillSmallIcon,
 } from "../../icons";
+import { keyLabel } from "../../platform";
 import type { DominoBrushDefinition } from "../base";
 import QuillBrushPreview from "./preview";
 
@@ -43,7 +44,7 @@ export const quillBrushDefinition: DominoBrushDefinition = {
     medium: PaintQuillMediumIcon,
     large: PaintQuillLargeIcon,
   },
-  hint: "Click then drag paint the selected color. ESC during a stroke undoes it.",
+  hint: `Click then drag to paint the selected color. ${keyLabel("esc")} during a stroke undoes it.`,
 
   contains: (sizeMm, dx, dy) => {
     const along = (dx + dy) * Math.SQRT1_2;

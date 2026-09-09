@@ -76,15 +76,17 @@ export default function DesignerScreen() {
           return;
         }
         useStore.getState().selectAllDominoes();
-      } else if (key === "i" && !e.shiftKey) {
+      } else if (key === "i" && !e.shiftKey && !e.altKey) {
         // Show or hide the overlay picture, or ask for one if the element has
         // none — the keyboard equivalent of the toolbar's image button.
         //
         // Gated on the mode first and only then preventDefault'd, exactly as
         // Ctrl+A above is, so outside domino editing the browser keeps whatever
-        // Ctrl+I means to it. !e.shiftKey matters: `key` was lowercased above,
-        // so without it this would also swallow Ctrl+Shift+I, which opens the
-        // browser's developer tools.
+        // Ctrl+I means to it. The two modifier exclusions are both about the
+        // developer tools, which different platforms open differently: `key` was
+        // lowercased above, so without !e.shiftKey this would swallow
+        // Ctrl+Shift+I, and without !e.altKey it would swallow the Cmd+Option+I
+        // a Mac uses instead.
         if (!s.dominoEditingId) return;
         // Unlike the branches above, this one can fire while the pointer is in
         // the image mapping sidebar, which does hold form controls — hence the

@@ -7,6 +7,7 @@ import {
 } from "@remixicon/react";
 
 import { useStore } from "../store";
+import { keyLabel } from "../platform";
 import { getDDObjectBounds, getDominoExpansion } from "../object-types/registry";
 import { SHAPE_SELECT_LIST, type ShapeSelectId } from "../shape-select/registry";
 import { DOMINO_BRUSH_LIST } from "../paint-brush/registry";
@@ -76,7 +77,7 @@ export default function DominoEditingTools() {
           row/column). */}
       <button
         className={styles.iconBtn}
-        title="Select all dominoes (Ctrl+A)"
+        title={`Select all dominoes (${keyLabel("mod")}+A)`}
         aria-label="Select all dominoes"
         onClick={selectAllDominoes}
         disabled={off}

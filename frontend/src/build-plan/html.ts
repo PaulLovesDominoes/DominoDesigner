@@ -41,6 +41,20 @@ export function mm(value: number): string {
   return String(Math.round(value * 1000) / 1000);
 }
 
+/**
+ * The rules every plan document shares, sized to the paper the user chose.
+ *
+ * **`@page { size }` is what makes the whole layout true, and Safari ignores
+ * it.** Every measurement the pagination makes assumes the sheet really is this
+ * many millimetres across. WebKit has never implemented that descriptor, so
+ * there a plan prints onto whatever paper the macOS print dialog happens to have
+ * selected while the `.page` boxes stay at their exact mm — pages come out
+ * scaled or clipped, and taped sheets will not tile. That is the specific defect
+ * behind the startup notice `App.tsx` raises on that engine. It is warned about
+ * rather than worked around, because working around it means giving up mm-exact
+ * pages altogether; do not drop the rule, which is what makes the arithmetic
+ * true on every other browser.
+ */
 function sharedStyles(geometry: PageGeometry): string {
   return `
     /* Inherited, so this one declaration covers everything below it. */

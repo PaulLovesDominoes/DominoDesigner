@@ -2,6 +2,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 
+import RightDragGesture from "../RightDragGesture";
 import Scene from "./Scene";
 import CameraRig from "./CameraRig";
 import CreateByRegionTool from "./CreateByRegionTool";
@@ -69,6 +70,14 @@ export default function DesignerCanvas() {
           RIGHT: THREE.MOUSE.PAN,
         }}
       />
+
+      {/* Not optional, and not about rotating: with enableRotate off,
+          OrbitControls drops a right-press outright whenever ctrl, meta or
+          shift is held, so without this a modified right-drag does nothing.
+          That is how a MacBook trackpad pans — Ctrl plus a one-finger drag is
+          its only right-drag — so panning this canvas depended on it. This view
+          stays flat, so Shift is not spent on rotating; see RightDragGesture. */}
+      <RightDragGesture shiftRotates={false} />
 
       <CameraRig />
     </Canvas>

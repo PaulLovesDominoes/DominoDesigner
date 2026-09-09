@@ -1,4 +1,5 @@
 import { CircleSelectIcon } from "../../icons";
+import { keyLabel } from "../../platform";
 import type { ShapeSelectDefinition } from "../base";
 import CircleSelectPreview from "./preview";
 
@@ -83,8 +84,8 @@ export const circleSelectDefinition: ShapeSelectDefinition<CircleSelectState> = 
 
   hint: (s) =>
     s
-      ? "Release to select every domino inside the circle. Esc to start over."
-      : "Drag from the center of the circle out to its edge. Ctrl+drag adds to the selection, Alt+drag removes from it.",
+      ? `Release to select every domino inside the circle. ${keyLabel("esc")} to start over.`
+      : `Drag from the center of the circle out to its edge. ${keyLabel("add")}+drag adds to the selection, ${keyLabel("remove")}+drag removes from it.`,
 
   Preview: CircleSelectPreview,
 };

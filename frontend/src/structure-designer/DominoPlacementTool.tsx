@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 
+import { isAddModifier } from "../platform";
 import {
   JUNCTION_DOT_LIFT_MM,
   JUNCTION_HIGHLIGHT_COLOR,
@@ -167,7 +168,7 @@ const ADVANCE_CONE_MAX_RAD = Math.PI / 4;
  *
  * Only the left button is answered, which is enough. StructureCanvas leaves the
  * left button unassigned in OrbitControls for exactly this, and the right-button
- * gestures cannot be disturbed from here: ShiftRotateGesture listens in the
+ * gestures cannot be disturbed from here: RightDragGesture listens in the
  * capture phase, which runs before react-three-fiber dispatches anything into
  * the scene, and OrbitControls listens to the canvas element directly, where
  * stopping propagation between scene objects has no effect at all.
@@ -451,7 +452,7 @@ export default function DominoPlacementTool() {
     // placement — see the release below.
     pressedRef.current = {
       domino: dominoUnderPointer(boxes, e),
-      additive: e.ctrlKey || e.metaKey,
+      additive: isAddModifier(e),
     };
 
     const nearest = pointFor(e);

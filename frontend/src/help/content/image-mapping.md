@@ -72,7 +72,7 @@ Above the swatches is a **Use Colors** setting.
 -  **All** is the default and uses every active color. The swatches below are dimmed and do nothing.
 -  **Selected** turns the swatches into tick boxes. Click one to take it out of the palette, click it again to put it back. A ticked swatch is ringed and carries a **✓**; the colors are never dimmed, so you can always see exactly what you are choosing between.
 
-Beside the setting are **Select: All** and **None**, and **Ctrl+A** ticks everything, as it does everywhere else in domino editing.
+Beside the setting are **Select: All** and **None**, and **{{mod}}+A** ticks everything, as it does everywhere else in domino editing.
 
 The two special swatches, Hide and Unassigned, are not shown while image mapping is on. Neither is a color a picture could be mapped onto.
 
@@ -140,7 +140,7 @@ The count goes by where the picture *is*, not by what is drawn on it. If your pi
 
 If it would be zero, you are told when you switch the mode on rather than being left to press the button and watch nothing happen. There are two reasons for it, and the message says which:
 
--  **Every domino under the picture already has a color.** Select the dominoes you want filled in and press Backspace to unassign them, then switch image mapping back on.
+-  **Every domino under the picture already has a color.** Select the dominoes you want filled in and press **{{unassign}}** to unassign them, then switch image mapping back on.
 -  **The picture is not over any dominoes.** Use Resize and Move to bring it over the element.
 
 Closing that message leaves image mapping, because there is nothing you could usefully do from inside it — the list is fixed for as long as the mode is on, so whatever you do next has to start with getting out. Coming back takes a fresh list.
@@ -156,7 +156,7 @@ This is the button that actually colors dominoes.
 
 On a large element a progress bar appears under the button, with a Cancel next to it. Cancel puts every domino it has already colored back the way it was. On smaller elements the whole thing finishes in a fraction of a second and no bar appears at all — that is not a fault, there is simply nothing to wait for.
 
-The whole mapping is a single step in the undo history, so **Ctrl+Z** takes all of it back at once — not one domino at a time.
+The whole mapping is a single step in the undo history, so **{{mod}}+Z** takes all of it back at once — not one domino at a time.
 
 ## Clear
 

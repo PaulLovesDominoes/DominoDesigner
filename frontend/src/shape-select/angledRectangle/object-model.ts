@@ -1,4 +1,5 @@
 import { AngledRectangleSelectIcon } from "../../icons";
+import { keyLabel } from "../../platform";
 import { SELECTION_MARGIN_MM, type ShapePoint, type ShapeSelectDefinition } from "../base";
 import AngledRectangleSelectPreview from "./preview";
 
@@ -262,11 +263,11 @@ export const angledRectangleSelectDefinition: ShapeSelectDefinition<AngledRectan
 
   hint: (state) => {
     if (!state) {
-      return "Drag out one side of the rectangle to set its start and angle. Ctrl+drag adds to the selection, Alt+drag removes from it.";
+      return `Drag out one side of the rectangle to set its start and angle. ${keyLabel("add")}+drag adds to the selection, ${keyLabel("remove")}+drag removes from it.`;
     }
     return state.stage === "side"
-      ? "Release to fix that side of the rectangle. Esc to start over."
-      : "Move to set the opposite corner, then click to select. Esc to start over.";
+      ? `Release to fix that side of the rectangle. ${keyLabel("esc")} to start over.`
+      : `Move to set the opposite corner, then click to select. ${keyLabel("esc")} to start over.`;
   },
 
   Preview: AngledRectangleSelectPreview,
