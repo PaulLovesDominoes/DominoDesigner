@@ -3,6 +3,7 @@ import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 
 import RightDragGesture from "../RightDragGesture";
+import { WHEEL_ZOOM_SPEED } from "../platform";
 import Scene from "./Scene";
 import CameraRig from "./CameraRig";
 import CreateByRegionTool from "./CreateByRegionTool";
@@ -63,6 +64,9 @@ export default function DesignerCanvas() {
         makeDefault
         enableRotate={false}
         enableDamping={false}
+        // Calmed right down on a Mac trackpad, where one flick is a burst of
+        // momentum-scroll events — see WHEEL_ZOOM_SPEED.
+        zoomSpeed={WHEEL_ZOOM_SPEED}
         screenSpacePanning
         mouseButtons={{
           LEFT: undefined,

@@ -3,6 +3,7 @@ import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 
 import RightDragGesture from "../RightDragGesture";
+import { WHEEL_ZOOM_SPEED } from "../platform";
 import AllLayersView from "./AllLayersView";
 import { MAX_POLAR_ANGLE } from "./constants";
 import DominoPlacementTool from "./DominoPlacementTool";
@@ -63,6 +64,9 @@ export default function StructureCanvas() {
         makeDefault
         enableRotate
         enableDamping={false}
+        // Calmed right down on a Mac trackpad, where one flick is a burst of
+        // momentum-scroll events — see WHEEL_ZOOM_SPEED.
+        zoomSpeed={WHEEL_ZOOM_SPEED}
         // Panning follows the screen rather than the ground, so a drag moves
         // what is under the pointer by the same amount at any tilt.
         screenSpacePanning

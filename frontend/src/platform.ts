@@ -52,6 +52,22 @@ function platformDescription(): string {
 export const IS_APPLE = /mac|iphone|ipad|ipod/i.test(platformDescription());
 
 /**
+ * How fast the mouse wheel / trackpad zooms the canvases — drei's
+ * `<OrbitControls zoomSpeed>`, which scales its fixed ~5%-per-wheel-event dolly
+ * step (this version of the control ignores how far the wheel actually turned
+ * and only looks at the direction, so this multiplier is the only lever).
+ *
+ * A Windows mouse wheel sends one event per physical click of the wheel, so the
+ * default of 1 is fine there. A Mac trackpad — and a Magic Mouse — sends a long
+ * burst of momentum-scroll events for a single small two-finger flick, often
+ * dozens of them, and at the default each one compounds on the last: the view
+ * shoots from filling the screen to an unfindable speck and back. macOS exposes
+ * no setting to calm this, so the app does, with a much smaller per-event step
+ * that keeps a whole inertia burst down to a sane amount of zoom.
+ */
+export const WHEEL_ZOOM_SPEED = IS_APPLE ? 0.4 : 1;
+
+/**
  * Safari, or any browser on iOS/iPadOS.
  *
  * A different question from IS_APPLE, and the two must not be confused. This
