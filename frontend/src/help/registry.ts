@@ -8,6 +8,7 @@ import type { ScreenId, ToolId } from "../types";
 // is hidden by its build flag (structure-designer/enabled.ts) there is no way
 // to reach this screen, and so no way to reach its page either.
 const SCREEN_TOPIC: Partial<Record<ScreenId, string>> = {
+  dominoInventory: "domino-inventory",
   structureDesigner: "structure-designer",
 };
 

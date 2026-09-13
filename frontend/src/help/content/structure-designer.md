@@ -2,6 +2,14 @@
 
 # The Structure Designer
 
+UNDER CONSTRUCTION
+UNDER CONSTRUCTION
+UNDER CONSTRUCTION
+UNDER CONSTRUCTION
+UNDER CONSTRUCTION
+
+NOT YET AVAILABLE
+
 This is the page where you design three-dimensional domino structures — towers, walls, and
 anything else built upward rather than flat on the floor.
 

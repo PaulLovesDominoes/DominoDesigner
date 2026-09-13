@@ -9,6 +9,11 @@ __pycache__/
 node_modules/
 frontend/dist/
 .vite/
+
+# The Firebase CLI's record of what it last uploaded, so a deploy can skip
+# unchanged files. Purely a local cache.
+.firebase/
+
 # Vite's convention for a personal override of a committed .env.* file — e.g.
 # turning a build flag on locally without changing what everyone else builds.
 *.local

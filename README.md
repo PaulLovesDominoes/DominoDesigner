@@ -2,22 +2,38 @@
 
 A graphical **domino build planner** to help design domino builds.
 
-My long-term goal is to create a full-scale planner usable by the
+My long-term goal is to create a full-scale, open source planner usable by the
 domino community to design complete build plans made of many domino elements, with nested
 tools for choosing colors, mapping images onto domino colors, animating domino pacing (possibly), and
 more.
 
-This is **v1**: the expandable app framework — a title bar with menu-driven screen switching
-and a Designer screen with a working pan/zoom 2D canvas, an extensible object model for the
-build's contents, live property editing, editing of domino colors — by hand, by brush, or
-by mapping a picture onto them — and printed build plans to take to the build site.
+This version has:
+- Creating fields
+- Editing field colors
+    -  With many fun tools :-)
+- Mapping images to fields
+- Outputting build plans and sort plans
+- Managing domino inventory with upload/download
 
 Future plans:
-- Uploading / downloading personal domino inventories (lists of domino colors and counts)
 - More flat element types (circle-bombs, spirals, lines, curves, triangles, etc.)
 - Handling three-dimensional structures
-- More element types beyond the domino field (walls, towers, lines)
+    - Including patterns for variable-sized structures
 - Saving, loading, and sharing build plans
+
+BIG NOTE:  THIS VERSION HAS NO SAVE!
+-  Anything you build will be erased if you refresh the screen, your laptop gets rebooted, or you close the browser!
+
+## Limitations
+
+These are current limitations, and may exist forever.
+
+-  Designed for desktops with a mouse
+    -  Is not tested or intended for ipads, phones, etc
+-  Only tested with Google Chrome
+    -  May work on other browsers, but this is not guaranteed
+
+Why?  Because I only have limited hours in the day and I can't build and test every possible variation. Maybe, if there's enough community support, others can step in.
 
 ## Conventions
 
@@ -38,6 +54,8 @@ Future plans:
 - **Backend:** [FastAPI](https://fastapi.tiangolo.com/) — a thin static-file server for the
   built frontend. No API endpoints in v1.
 
+NOTE:  Backend is UNUSED right now. My intention is to someday use it for saving, sharing and real-time collaboration. It could go away. TBD. Deployments currently only need the front-end. No calls are made to the backend at all.
+
 ## Prerequisites
 
 - **Node.js 18+** (includes npm) — for the frontend.
@@ -55,17 +73,39 @@ Open the URL Vite prints (default http://localhost:5173). Editing files hot-relo
 
 ## Run the deployable build (served by FastAPI)
 
+(see notes above about use of backend)
+
 ```
 cd frontend
 npm run build          # outputs frontend/dist
 
 cd ../server
 pip install -r requirements.txt
-start_server.bat       # or: python -m uvicorn main:app --reload
+python -m uvicorn main:app --reload      # or server.bat, from the repo root
 ```
 
 Then browse to http://127.0.0.1:8000. The server just serves `frontend/dist`; rebuild the
 frontend (`npm run build`) after changing frontend code.
+
+## Deploying
+
+This project's own deployment is the static build published to Firebase Hosting at
+https://domino-designer.web.app. Nothing server-side goes with it — `server/` exists for running
+the built frontend locally, not in the cloud. It needs the Firebase CLI
+(`npm install -g firebase-tools`) and a one-time `firebase login`.
+
+```
+deploy.bat                            # the live site; refuses if the working tree is dirty
+deploy.bat preview                    # a temporary URL, expiring in 7 days
+deploy.bat preview -Project my-proj   # ...to your own Google Cloud project instead
+```
+
+`.firebaserc` names the project published to; `-Project` overrides it, so a fork never has to edit
+a tracked file. Any other host can serve this build just as well, and needs the same three things
+`firebase.json` asks for: serve `frontend/dist` at the site root, send `index.html` with
+`Cache-Control: no-cache`, and send `/assets/**` as immutable — those filenames carry a content
+hash, so a given one never changes meaning, while a cached `index.html` would go on asking for a
+bundle that no longer exists.
 
 ## What v1 does
 
@@ -78,7 +118,7 @@ frontend (`npm run build`) after changing frontend code.
   rooted at the build plane, shown in a left sidebar as a live tree (type icon + name) that
   updates as objects are created.
 
-Note that nothing is persisted today; every load starts a fresh default project.
+NOTE WELL: Nothing is persisted today; every load starts a fresh default project.
 
 ### The Domino Designer
 
@@ -90,11 +130,15 @@ Note that nothing is persisted today; every load starts a fresh default project.
   stretching the dominoes, so the dominoes you already have — and the colors on them —
   stay exactly where they are no matter which edge you drag. 
 - **Hierarchical List of Build Elements** for selecting elements
-    -  Also includes a **⋯** menu to edit the **Properties** for any element in a modeless dialog that previews edits live on the canvas, with Save/Cancel. Properties include:
-    - For the build plane:  Plane size and color
-    - For Domino Fields:  number of rows, row spacing, number of dominoes / row, and domino spacing
-    -  The same menu prints the element's [build plans](#printed-build-plans) — the layout and the
-       sort plan
+    NOTE:  The only element type available currently is a field.
+    -  Each element in the list has **⋯** (hover over) menu:
+        -  **Delete** - remove the element entirely (undoable)
+        -  **Properties** - Edits the properties (size, spacing)
+        -  **Edit Colors** - Allows you to edit the colors of the element (same as double-clicking the element)
+        -  **Print Layout** - Allows you to print out the layout of the element
+            -  With many options to control how many rows/columns show per page
+        -  **Print Sort Plan** - Prints the run-length sort plan
+        -  **Export CSV** - Exports the build plan as a CSV to be used elsewhere
 
 ### Domino Editing Mode
 
@@ -156,60 +200,38 @@ Other Features:
         - **Paste onto larger selection / Tiling Colors** - Pasting domino colors into a destination selection which is larger will automatically tile the original pattern into the larger selection
     -  **Works across elements** - You can copy colors, leave domino editing mode, then go edit the colors of a different element on the build plane and click "paste"
 
+### Image Mapping
 
+Clicking the image toolbar allows you to upload an image.
+-  Once uploaded, you can scale it and move it over your dominoes
+-  The image toolbar contains many sub-commands:
+    -  **Transparency** - Chooses how transparent the image is
+    -  **Resize and move** - To change how the image maps onto your dominoes
+        -  Use the corner handles to resize and preserve aspect ratio
+        -  Use the side handles to squeeze the image
+        -  Click on the image itself to move it
+    -  **Hide** - Hides/Unhides the image
+    -  **Show Over** - Displays the image over ALL dominoes vs just over the unassigned dominoes
+    -  **Reset Size** - Resets any sizing changes to show the full image as uploaded
+    -  **New Image...** - Allows you to choose a new image
+    -  **Delete** - Removes the image entirely
+- Mapping Images:
+    -  Choosing **Map Image Colors** will automatically choose domino colors
+    -  There are several sampling, color distance, and dithering choices to choose from
+    -  Other options include:
+        -  **Dither Strength** - How much to apply dithering to 
+        -  **Use Colors** - Choose which colors from your inventory to use when color matching
 
-### Using a Picture
-
-Still inside domino editing mode, a picture can be laid over the element being edited — from the
-image button on the toolbar, or with **Ctrl+I**. It does two quite different jobs, and only the
-second is a mode:
-
-- **Tracing** — the picture is just an overlay, and every tool above keeps working over it. This is
-  the one that matters for a sponsor's logo: most logos are built out of exactly the shapes the
-  selection tools draw, and a shape snapped to the grid gives a cleaner edge than freehand will. The
-  button's menu holds transparency, hide/unhide, whether the picture sits over or under the colored
-  dominoes, a size reset, and **Resize and Move**, which puts drag handles on it.
-- **Mapping its colors** — a sidebar that gives each domino the nearest inventory color to the
-  picture over it. Choices are how each domino's patch of picture is read (average, for
-  photographs; most-common, for flat artwork with anti-aliased edges), which color-distance metric
-  decides "nearest" (OKLab, CIELAB, two RGB variants, greyscale), and which dither breaks up the
-  banding (ordered, random, or error diffusion). Mapping only fills dominoes that were unassigned
-  when the mode was switched on, so anything colored by hand is safe from it.
-
-### Printed Build Plans
-
-A design on the screen still has to be built in the real world, so an element's **⋯** menu (outside
-domino editing mode) prints the two documents that get you there. Both open in a new tab and print
-through the browser's own dialog, which is also where a PDF comes from.
-
-Both are **template-aware**. Dominoes are usually set up with a *template* — a comb 10–50 teeth
-wide that a row is slotted into and slid into place — so both documents mark where one template
-load ends and the next begins, and each has its own setting for how wide the template is.
-
-- **Layout** — a picture of the element, one cell per domino, in the assigned colors, with a legend
-  number in every cell. Colors on paper are much harder to tell apart than colors on a screen, so
-  the number is never dropped or shrunk past reading size; instead it works the other way round and
-  the smallest readable number decides how many dominoes fit on a sheet. Thick and thin rules mark
-  the major and minor divisions, and a division landing on the edge of a page draws its own weight
-  there — the sign that a template stops at that sheet and does not carry on to the next. Pages
-  are labelled `Page 1:2 — Rows 1-10, Columns 49-96`, and dominoes print at the same size on every
-  sheet so pages tile when laid side by side. Pagination can be automatic, set by hand, or fitted
-  to a chosen number of pages wide and long.
-- **Sort Plan** — each row written out as runs of color, for counting dominoes into stacks in
-  advance, usually at home days before anything is set up:
-
-      Row 1: White(x14) - Khaki(x1) - White(x5) || White(x10) - Light Gray(x1) ...
-
-  The `||` marks each template load. Dominoes hidden from the build appear as `skip`, since a
-  builder loading a template has to know which teeth to leave empty.
-
-Dominoes with no color yet are numbered **0** and listed first in the legend, so every number from
-1 up is a color you actually have to go and fetch — a part-finished field still prints a complete,
-usable plan.
+Note 1:  Map Image Colors currently does not pay attention to the number of dominoes in your inventory
+Note 2:  Showing a transparent image over your dominoes allows you to set domino colors manually to the image. Like tracing paper. :-)
 
 ### Undo / Redo
 
 Undo/Redo covers both DDObject-level edits (create/delete/move/resize/properties) and domino color changes, hiding included, on one shared history — undoing a color change works even after leaving domino editing mode, and editing or deleting an inventory color's RGB immediately updates every domino painted with it.
 
 A picture's placement — adding, moving, resizing, replacing and deleting one — is undoable too, but only for as long as you are editing that element's dominoes. Pressing **Done** clears those steps out of the history: a picture is only ever drawn inside domino editing mode, so an undo from outside it would have nothing visible to show for itself.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, change it, build with it; just keep the copyright notice.
 

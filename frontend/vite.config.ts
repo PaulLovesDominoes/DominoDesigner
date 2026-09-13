@@ -2,8 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import svgr from "vite-plugin-svgr";
 
-// Built assets are served from the FastAPI app at the site root, so the
-// default base ("/") is correct. dist/ is what server/main.py serves.
+// Built assets are served from the root of a site — Firebase Hosting when
+// published, server/main.py when run locally — so the default base ("/") is
+// correct. dist/ is what both of them serve.
 export default defineConfig({
   plugins: [
     react(),
@@ -66,10 +67,11 @@ export default defineConfig({
     // FastAPI server is as easy to place as one found under `npm run dev`.
     //
     // The .map files sit beside the bundle in dist/ and are only fetched when
-    // devtools is open, so this costs nothing at runtime. It does publish the
-    // source to anyone who looks; `"hidden"` would emit the maps without the
-    // comment pointing at them, which is the choice to make if that ever
-    // matters. It does not today — this is a local tool.
+    // devtools is open, so this costs nothing at runtime. They are uploaded to
+    // the published site along with the bundle, so anyone can read the source
+    // through them — which costs nothing either, the repository itself being
+    // public. `"hidden"` would emit the maps without the comment pointing at
+    // them, and is the choice to make if that ever stops being true.
     sourcemap: true,
   },
 });

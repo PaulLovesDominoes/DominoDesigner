@@ -1,5 +1,13 @@
 [Home](home) > Build Designer
 
+# Goals
+
+1. Encourage and expand creativity in domino art
+2. A platform for designing all types of builds
+3. A platform for designing large, public builds
+
+The current structure is a "Build Designer" - where you can create elements (only a field element exists currently), and then "Domino Editor" where you can specify the colors (including image mapping) for your elements.
+
 # The Build Designer
 
 This is the page where you can edit your overall domino build:

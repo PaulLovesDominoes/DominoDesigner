@@ -12,7 +12,6 @@ In this mode you can edit domino colors and hide dominoes from the build. This i
 -  Undo / redo to return to previous domino colors
 -  The ability to "hide" or "unhide" dominoes from the build
     -  Hidden dominoes will not be included in the build output
--  [Laying an image over the dominoes](using-an-image) to trace over by hand
 -  [Mapping an image](image-mapping) onto the dominoes to set their colors automatically
 
 To leave domino editing mode:
@@ -43,35 +42,6 @@ First, select some dominoes and then use one of the methods below to set the col
     -  See "Details on shortcut keys" below for more information
 
 3.  Cut & paste colors from someplace else
-
-### The selected color
-
-Whenever you pick a color - by clicking its swatch or by typing its shortcut - that swatch
-stays outlined in blue. That is the **selected color**, and it is what the paint brushes
-paint with.
-
-A few things worth knowing:
-
--  One click does both jobs. It colors whatever dominoes are selected right now, *and* it
-   becomes the selected color. There is nothing extra to do to pick up a color for a brush.
--  Clicking the same swatch again does not un-pick it. To change color, click a different
-   swatch.
--  The selected color stays put. {{esc}} does not clear it, and neither does picking up a
-   brush, so you can choose a color once and keep painting with it. It is cleared only when
-   you leave domino editing mode.
--  **Hide** and **Unassigned** can be the selected color too, which is what turns a brush
-   into an eraser - see *Hidden and Unassigned Dominoes* below. The **{{hide}}** and
-   **{{unassign}}** keys are simply those two swatches on the keyboard, and behave exactly as
-   clicking them does, selected color included. Each swatch shows its own key on its face.
--  Swatches press in like a physical button when you use them - held down under the mouse,
-   or a quick flash when you use a shortcut key. That is there so a click still looks like it
-   landed even when nothing on the build plane changes, for example re-applying red to
-   dominoes that are already red.
--  This all works the same with a paint brush in hand. Picking a color colors whatever is
-   selected *and* loads the brush, exactly as it does otherwise.
-
-Selecting dominoes never changes their color on its own. Only clicking a swatch, typing a
-shortcut, pasting, or dragging a brush does that.
 
 ### Details on shortcut keys
 
@@ -192,94 +162,18 @@ Some ideas on how to use these features:
 -  **Invert selection** - Press the "Invert Selection" toolbar button
     -  Selected dominoes become de-selected and vice-versa
 
-
 ## Painting with the Circle and Bar brushes
 
 The two paint brushes at the right-hand end of the toolbar are freehand painting tools.
-Instead of selecting dominoes and then choosing a color, you drag a small shape across the
-build plane and the dominoes it passes over are painted as you go - just like a brush in a
-drawing program.
+-  Select a color
+-  Select a brush
+-  Start painting
 
-**Both brushes paint the selected color** (see *The selected color* above). If you have
-not chosen one yet, the brush shows nothing and paints nothing, and the hint bar says so;
-click any swatch and it comes to life. Because the two special swatches can be selected
-too, choosing **Hide** turns a brush into an eraser that hides dominoes, and choosing
-**Unassigned** turns it into one that clears them back to unpainted.
+You can also use brushes to hide dominoes or set them to "unassigned".
 
-The two differ only in the shape of the nib:
+Press {{esc}} to return to rectangle select mode.
 
-- **Circle** - paints the same width whichever way you drag.
-- **Bar** - a thin bar held at an angle, running from lower-left to upper-right. Drag
-  *along* that angle and you leave a hairline; drag *across* it and you leave a broad
-  mark. This is how a real calligraphy pen behaves.
-
-### Choosing a brush and its size
-
-Each brush is a single toolbar button, and the icon on it *is* the nib at the size
-currently chosen - so you can see which size you are holding without opening anything.
-**Clicking the button opens that brush's size menu**, and picking Small, Medium or Large
-from the menu is what picks up the brush.
-
-The two brushes do not use the same measurements, because they do not stay useful over
-the same range:
-
-- **Circle** - Small 20mm, Medium 60mm, Large 120mm, measured across the circle. Small is
-  roughly one domino, which is the size to reach for when placing single dominoes.
-- **Bar** - Small 60mm, Medium 100mm, Large 140mm, measured along the nib's *length*.
-  Its width never changes, which is what keeps the thick/thin contrast at every size -
-  and it is also why the bar starts at 60 rather than 20. A nib barely longer than it
-  is wide is just a blob, with no angle left to draw with.
-
-Clicking a brush you are already holding just reopens the menu, so you can change size
-without putting the brush down. As with every other tool in this toolbar, the way to put
-it down is to pick up a different tool - a shape, or plain Rectangle select - or to press
-{{esc}}.
-
-### How painting works
-
-1. **Pick up the brush**, by choosing a size from its menu. Your selected color is kept, so
-   a brush picked up after choosing one is ready to paint immediately. Anything you had
-   selected is kept too - see *Selecting dominoes while painting* below.
-2. **Hover.** Move the pointer over the build plane and you will see a faint shape
-   following it, with no outline. The dominoes underneath it are outlined in white to
-   show what you *would* paint. Nothing is changed yet.
-3. **Press and drag.** The shape gains a white outline, and every domino it passes over
-   is painted with the selected color immediately.
-4. **Release.** The stroke is finished.
-
-To change color part-way through a drawing, click another swatch or type its shortcut -
-the brush stays in your hand either way.
-
-### Selecting dominoes while painting
-
-Selecting still works normally with a brush in hand - {{mod}}+A, Invert, and the Select
-commands in each swatch's menu all do what they always do, and what you select **stays**
-selected while you move the pointer around. Clicking a swatch or typing a shortcut colors
-it, just as anywhere else.
-
-So the quickest way to start over is **{{mod}}+A** then **{{unassign}}**.
-
-Two things to know:
-
--  **Pressing the mouse to paint clears the selection.** That is the moment the brush takes
-   over: from then on only what the nib passes over gets painted.
--  **Selected dominoes and the dominoes under the nib are both outlined in white**, so with
-   a selection standing you cannot tell them apart. If you want to see exactly what the
-   brush would hit, clear the selection first (press {{esc}}).
-
-One thing that can surprise you: if dominoes are selected and you click a swatch just to
-load the brush with a color, that click *also* colors the selection - because that is what
-clicking a swatch means everywhere. Press {{esc}} first if you did not want that.
-
-### Undoing a stroke
-
-**A whole stroke undoes as one step.** However many dominoes you painted between pressing
-and releasing, a single {{mod}}+Z takes them all back - individual dominoes within a stroke
-cannot be undone separately.
-
-If you change your mind part-way through, **press {{esc}} before releasing the mouse**. Every
-domino painted since you pressed goes back to the color it had, the tool leaves painting
-mode, and nothing is recorded in the undo history at all.
+Also press {{esc}} **before releasign the mouse** if you are painting something and you change your mind. What you painted will be cancelled.
 
 ## Copying and pasting colors
 

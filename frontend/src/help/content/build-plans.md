@@ -7,32 +7,11 @@ documents get you there, and they are used at different times by different
 people:
 
 -  **The Layout** — a picture of the field, one cell per domino, in the colors
-   you chose, with a number in each cell saying which color it is. This is what
-   you work from on site.
+   you chose, with a number in each cell saying which color it is.
 -  **The Sort Plan** — each row written out as runs of color, like
-   "Row 1: White(x14) - Khaki(x1) - White(x15)". This is what you work from in
-   advance, at home, counting dominoes into stacks days before anything is set
-   up.
+   "Row 1: White(x14) - Khaki(x1) - White(x15)". For sorting dominoes before they are placed.
 
-Both are printed from the **⋯** menu on the field's row in the sidebar, outside
-of domino editing mode. Choose **Print Layout** or **Print Sort Plan**, set the
-options, and press **Output for Print**. The plan opens in a new browser tab
-with a **Print** button at the top — from there your browser's normal print
-dialog will print it, or save it as a PDF.
-
-The build plane itself has no build plan, since it holds no dominoes of its own.
-
-## Templates and batches
-
-Dominoes are usually set up with a *template* — a big comb, somewhere between 10
-and 50 teeth wide. A row of dominoes is slotted into the teeth and slid into
-place as one piece.
-
-Both documents can mark where one template load ends and the next begins, so you
-can count a template's worth of each color at a time. The Layout draws a thick
-line at each boundary; the Sort Plan writes `||`. Each document has its own
-setting for how wide the template is, because there is no reason you cannot sort
-against one template and set up with another.
+Both are printed from the **⋯** menu in sidebar (hover over the field)
 
 ## The Layout
 
@@ -55,47 +34,28 @@ dominoes fit on a sheet.
 
 ### Plan dividers
 
--  **Major** divisions get a thick line, **minor** divisions a thin one.
--  Rows and dominoes are set separately, since they are different things — a
-   major column division is usually one template wide.
--  Where a division falls exactly on the edge of a page, that edge is drawn with
-   the division's own thick or thin line rather than a plain border. That is your
-   sign that a template **stops here** and does not carry on to the next sheet.
+**Major** divisions get a thick line, **minor** divisions a thin one.
+-  Consider using the horizontal (dominoes) divisions to map on to your domino template size
 
 ### Pages
 
 **Pagination** offers three ways to decide how much goes on a sheet:
 
--  **Paginate Automatically** works it out for you: it fits as much on a page as
-   it can while keeping the numbers readable, then makes the dominoes as large as
-   will fit without needing any extra pages. The result is shown in the summary
-   at the bottom of the dialog.
+-  **Paginate Automatically** works it out for you. It tries to break on major or minor divisions and tries too fit as much on a page as possible.
 -  **Paginate Manually** lets you set rows and dominoes per page yourself.
 -  **Fit to Pages** lets you say how many pages wide and long you want, and sizes
    the dominoes to suit. Pages are then **filled from left to right** — as many
-   dominoes on each sheet as will fit while still breaking where you asked, with
-   the leftovers on the last page. So 86 dominoes over two pages come out 60 and
-   26, not 43 and 43. You may end up with fewer pages than you asked for, which
-   just means everything fitted in less.
+   dominoes on each sheet as will fit while still breaking on major or minor divisions.
 
 With either of the last two, if what you ask for would print numbers too small to
 read, the dialog says so and tells you what would fit — but it still prints
 exactly what you asked for.
 
-Dominoes are never printed larger than 8mm across, so a small field on a big
-sheet does not turn into a handful of giant squares.
-
 **Break rows on** and **Break columns on** control where a page is allowed to
 end. Pages break on major divisions by default for columns, so a template is
 never split across a page turn, and on either kind of division for rows.
 
-Note that a field whose shape does not match the paper's will leave some empty
-space on the page, and no amount of enlarging can remove it without spilling onto
-another sheet. A roughly square field on landscape paper is the usual case —
-switching to portrait, or using **Fit to Pages**, is the answer.
-
-Every page is labelled with both its position and the dominoes on it, for
-example:
+Pages are labelled with both its X:Y page number and how many rows/columns of dominoes are on the page. For example:
 
     Page 1:2 — Rows 1-10, Columns 49-96
 
@@ -107,7 +67,7 @@ taped together and will line up.
 Rows are numbered from **1 at the top**, and read left to right — the same
 numbering the Layout's page headers use.
 
-Turn **Batching** on to break each row into template loads. The batch count
+Turn **Batching** on to break each row into template batches. The batch count
 starts again at the beginning of every row, since a template is loaded one row at
 a time. A run that crosses a boundary is split, with both halves keeping their
 color name:
@@ -130,6 +90,4 @@ template.
 
 Dominoes you have not given a color yet are printed as a color called
 **Unassigned**, in the same grey they show on the build plane, numbered **0** and
-listed first in the legend. They are counted like any other color, so a field you
-are only part way through still prints a complete, usable plan — and the numbers
-from 1 up are exactly the colors you need to have on hand.
+listed first in the legend. 
